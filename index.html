@@ -6304,9 +6304,8 @@ function addCommunityWO() {
   var name = document.getElementById('new-comm-name').value.trim();
   if (!name) { toast('Enter a community name'); return; }
   document.querySelector('.overlay.open')?.remove();
-  // Open community panel immediately so user can upload
-  openCommunityWO(name);
-  renderWorkOrders();
+  // Go straight to upload so user can add work orders
+  openUploadWO(name);
 }
 
 function openUploadWO(community) {
@@ -6323,9 +6322,18 @@ function openUploadWO(community) {
         '<button id="wo-type-land" class="pill active" onclick="document.getElementById(\'wo-type-land\').className=\'pill active\';document.getElementById(\'wo-type-irr\').className=\'pill\';">🌿 Landscaping</button>' +
         '<button id="wo-type-irr" class="pill" onclick="document.getElementById(\'wo-type-irr\').className=\'pill active\';document.getElementById(\'wo-type-land\').className=\'pill\';">💧 Irrigation</button>' +
       '</div>' +
-      '<textarea id="wo-paste-area" class="inp" rows="8" placeholder="Paste your work order data here (CSV or tab-separated).\n\nExpected columns:\nDate, WO Number, Address, Village, Owner Name, Request Type, Details\n\nOr paste rows directly from Excel/Sheets." style="font-size:12px;font-family:monospace;"></textarea>' +
-      '<div style="font-size:11px;color:var(--text3);margin:8px 0 12px;">Tip: Copy rows from your spreadsheet and paste above</div>' +
-      '<button class="btn btn-green" onclick="processWOUpload(\'' + community.replace(/'/g,"\\'") + '\')">Import Work Orders</button>' +
+      '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
+        '<label style="flex:1;cursor:pointer;">' +
+          '<div style="background:var(--bg3);border:1px dashed var(--border2);border-radius:10px;padding:12px;text-align:center;font-size:13px;color:var(--text3);">' +
+            '📄 Upload PDF or Excel<br><span style="font-size:11px;">tap to select file</span>' +
+          '</div>' +
+          '<input type="file" id="wo-file-input" accept=".pdf,.xlsx,.xls,.csv" style="display:none;" onchange="handleWOFileUpload(this, \'' + community.replace(/'/g,"\\'") + '\')">' +
+        '</label>' +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:8px;">— or paste data below —</div>' +
+      '<textarea id="wo-paste-area" class="inp" rows="6" placeholder="Paste rows from Excel/Sheets here..." style="font-size:12px;font-family:monospace;"></textarea>' +
+      '<div style="font-size:11px;color:var(--text3);margin:8px 0 12px;">Columns: Date, WO#, Address, Village, Owner, Request Type, Details</div>' +
+      '<button class="btn btn-green" onclick="processWOUpload(\'' + community.replace(/'/g,"\\'") + '\')" id="wo-import-btn">Import Work Orders</button>' +
     '</div>';
   document.body.appendChild(sheet);
 }
@@ -6774,6 +6782,96 @@ function submitCrewWOComplete(woId, photoData) {
   toast('Work order completed ✓');
 }
 
+
+
+
+function handleWOFileUpload(input, community) {
+  var file = input.files[0];
+  if (!file) return;
+  var btn = document.getElementById('wo-import-btn');
+  if (btn) { btn.textContent = '⏳ Reading file...'; btn.disabled = true; }
+
+  var ext = file.name.split('.').pop().toLowerCase();
+
+  if (ext === 'pdf') {
+    // Read PDF as text using FileReader
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var b64 = e.target.result.split(',')[1];
+      parsePDFWorkOrders(b64, community, file.name);
+    };
+    reader.readAsDataURL(file);
+
+  } else if (ext === 'xlsx' || ext === 'xls') {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        var wb = XLSX.read(e.target.result, {type:'array'});
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        var rows = XLSX.utils.sheet_to_csv(ws);
+        var ta = document.getElementById('wo-paste-area');
+        if (ta) ta.value = rows;
+        if (btn) { btn.textContent = 'Import Work Orders'; btn.disabled = false; }
+        toast('Excel loaded — click Import to continue');
+      } catch(err) {
+        if (btn) { btn.textContent = 'Import Work Orders'; btn.disabled = false; }
+        toast('Could not read Excel file');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+
+  } else if (ext === 'csv') {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var ta = document.getElementById('wo-paste-area');
+      if (ta) ta.value = e.target.result;
+      if (btn) { btn.textContent = 'Import Work Orders'; btn.disabled = false; }
+      toast('CSV loaded — click Import to continue');
+    };
+    reader.readAsText(file);
+  }
+}
+
+function parsePDFWorkOrders(b64data, community, filename) {
+  var btn = document.getElementById('wo-import-btn');
+  var isIrrigation = document.getElementById('wo-type-irr')?.classList.contains('active');
+
+  // Call Claude API to extract table from PDF
+  fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2000,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'document',
+            source: { type: 'base64', media_type: 'application/pdf', data: b64data }
+          },
+          {
+            type: 'text',
+            text: 'Extract the work order table from this PDF. Return ONLY tab-separated rows with these columns in order: Date, WO Number, Address, Village, Owner Name, Request Type, Details. One row per line. No header row. No extra text. If a column is blank use an empty tab. Ignore any handwritten notes.'
+          }
+        ]
+      }]
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    var text = (data.content || []).filter(function(b) { return b.type === 'text'; }).map(function(b) { return b.text; }).join('');
+    var ta = document.getElementById('wo-paste-area');
+    if (ta) ta.value = text;
+    if (btn) { btn.textContent = 'Import Work Orders'; btn.disabled = false; }
+    toast('PDF parsed — review and click Import');
+  })
+  .catch(function(err) {
+    console.error('PDF parse error:', err);
+    if (btn) { btn.textContent = 'Import Work Orders'; btn.disabled = false; }
+    toast('Could not parse PDF — try pasting data manually');
+  });
+}
 
 
 // ─── SEED DATA ───────────────────────────────────────────────────────────
