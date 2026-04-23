@@ -2501,7 +2501,14 @@ function openAddFlag(propId) {
     <div style="display:flex;flex-direction:column;gap:10px;">
       <select class="inp" id="flag-service">${SERVICES.map(s=>`<option>${s}</option>`).join('')}</select>
       <select class="inp" id="flag-priority">${PRIORITIES.map(p=>`<option>${p}</option>`).join('')}</select>
-      <textarea class="inp" id="flag-note" placeholder="Describe the issue (e.g. mulch needs refresh, irrigation head broken...)" rows="3"></textarea>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div style="font-size:12px;color:var(--text3);font-weight:700;">DESCRIPTION</div>
+          <button id="flag-lang-btn" onclick="toggleFlagLang()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;color:var(--blue);cursor:pointer;">🇲🇽 Escribir en Español</button>
+        </div>
+        <textarea class="inp" id="flag-note" placeholder="Describe the issue..." rows="3"></textarea>
+        <div id="flag-translate-status" style="display:none;font-size:11px;color:var(--text3);margin-top:4px;"></div>
+      </div>
       <div>
         <div style="font-size:12px;color:var(--text3);margin-bottom:6px;font-weight:700;">ATTACH PHOTO (optional)</div>
         <label class="photo-zone" for="flag-photo-input">
@@ -2512,7 +2519,7 @@ function openAddFlag(propId) {
         <img id="flag-photo-preview" style="display:none;width:100%;border-radius:10px;margin-top:8px;max-height:200px;object-fit:cover;"/>
       </div>
       <input class="inp" id="flag-by" placeholder="Your name (who's reporting)"/>
-      <button class="btn btn-green" onclick="saveFlag()">Submit Flag</button>
+      <button class="btn btn-green" onclick="saveFlagWithTranslation()">Submit Flag</button>
       <button class="btn btn-outline" onclick="document.getElementById('flag-sheet').remove()">Cancel</button>
     </div>
   </div>`;
@@ -2887,6 +2894,16 @@ function loadFieldView() {
         </div>
         <div class="stop-body" id="fs-${i}" style="padding-top:12px;">
           ${prop?.notes?`<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.2);border-radius:8px;padding:10px;font-size:12px;color:var(--yellow);margin-bottom:10px;">📝 ${prop.notes}</div>`:''}
+          ${(prop?.flagNotes||[]).filter(fn=>fn.crewNote||fn.note).length?`
+            <div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);border-radius:8px;padding:10px;margin-bottom:10px;">
+              <div style="font-size:10px;font-weight:800;color:var(--red);letter-spacing:1px;margin-bottom:6px;">⚑ MANAGER FLAGS</div>
+              ${(prop.flagNotes||[]).filter(fn=>fn.crewNote||fn.note).map((fn,fni)=>`
+                <div style="font-size:12px;color:var(--text2);padding:6px 0;border-bottom:1px solid rgba(248,113,113,.1);">
+                  <div style="font-size:10px;color:var(--text4);margin-bottom:2px;">${fn.service||''}</div>
+                  <span id="flag-note-text-${fni}">${fn.crewNote||fn.note}</span>
+                  <button onclick="translateFlagNote(this,'${(fn.crewNote||fn.note).replace(/'/g,"\\'")}',${fni})" style="background:var(--bg4);border:none;font-size:10px;color:var(--blue);cursor:pointer;margin-left:6px;padding:2px 6px;border-radius:6px;">🇲🇽 ES</button>
+                </div>`).join('')}
+            </div>`:''}
           <div class="sec-title">Tasks</div>
           ${(prop?.services||[]).map(svc=>`
             <div class="svc-item">
@@ -5159,16 +5176,13 @@ function openReportFlag(flagId) {
 
       ${!f.resolved ? `
       <div class="card" style="margin-bottom:12px;">
-        <div class="sec-title">Assign to Next Service</div>
-        <div style="font-size:13px;color:var(--text3);margin-bottom:10px;">Schedule this fix on the next visit:</div>
-        <select class="inp" id="flag-assign-route-${f.id}" style="margin-bottom:10px;">
-          <option value="">— Select a route —</option>
-          ${(state.routes||[]).map(r => `<option value="${r.id}">${r.name} (${r.day})</option>`).join('')}
-        </select>
-        <input class="inp" id="flag-assign-note-${f.id}" placeholder="Add note for crew (optional)" style="margin-bottom:10px;"/>
-        <button class="btn btn-green" onclick="assignFlagToRoute('${f.id}')" style="font-size:13px;">
-          📅 Assign to Route
+        <div class="sec-title">Crew Instructions</div>
+        <div style="font-size:13px;color:var(--text3);margin-bottom:10px;">Add a note — crew will see this when they visit this property:</div>
+        <textarea class="inp" id="flag-crew-note-${f.id}" rows="3" placeholder="Instructions for crew (e.g. Check the back irrigation valve, trim the hedge near fence...)" style="margin-bottom:10px;">${f.crewNote||''}</textarea>
+        <button class="btn btn-green" onclick="saveFlagCrewNote('${f.id}')" style="font-size:13px;">
+          💾 Save Instructions
         </button>
+        ${f.crewNote ? `<div style="margin-top:8px;font-size:11px;color:var(--green);">✓ Instructions saved — crew will see this on their next visit</div>` : ''}
       </div>` : ''}
 
 
@@ -5193,33 +5207,27 @@ function openReportFlag(flagId) {
   document.getElementById('app').appendChild(panel);
 }
 
-function assignFlagToRoute(flagId) {
-  const routeId = document.getElementById('flag-assign-route-'+flagId)?.value;
-  const note    = document.getElementById('flag-assign-note-'+flagId)?.value || '';
-  if (!routeId) { toast('Select a route first'); return; }
-
-  const f     = state.flags.find(x => x.id === flagId);
-  const route = state.routes.find(r => r.id === routeId);
-  if (!f || !route) return;
-
-  // tag the flag with the assigned route
-  f.assignedRouteId   = routeId;
-  f.assignedRouteName = route.name;
-  f.assignedNote      = note;
-  f.assignedDate      = new Date().toLocaleDateString();
-
-  // add a note to the matching stop in that route
-  const stop = route.stops?.find(s => s.propId === f.propId);
-  if (stop) {
-    if (!stop.flagNotes) stop.flagNotes = [];
-    stop.flagNotes.push(`[FLAG] ${f.service}: ${f.note}${note?' — '+note:''}`);
-    saveAndSync('routes', route);
-  }
-
+function saveFlagCrewNote(flagId) {
+  const f = state.flags.find(x => x.id === flagId);
+  if (!f) return;
+  const note = document.getElementById('flag-crew-note-'+flagId)?.value?.trim() || '';
+  f.crewNote = note;
+  f.crewNoteDate = new Date().toLocaleDateString();
   saveAndSync('flags', f);
+  // Also save note directly on the property for crew to see
+  const prop = (state.properties||[]).find(p => p.id === f.propId);
+  if (prop) {
+    if (!prop.flagNotes) prop.flagNotes = [];
+    // Replace existing note for this flag or add new
+    const existingIdx = prop.flagNotes.findIndex(n => n.flagId === flagId);
+    const entry = { flagId, service: f.service, note: f.note, crewNote: note, date: f.date };
+    if (existingIdx > -1) prop.flagNotes[existingIdx] = entry;
+    else prop.flagNotes.push(entry);
+    saveAndSync('properties', prop);
+  }
   document.getElementById('report-flag-panel')?.remove();
   renderReports();
-  toast(`Assigned to ${route.name} ✓`);
+  toast('Instructions saved ✓');
 }
 
 function openReportOutstanding(routeId, propId) {
@@ -7175,6 +7183,88 @@ function hideCrewBottomNav() {
   if (nav) nav.classList.remove('visible');
 }
 
+
+// ─── FLAG TRANSLATION ────────────────────────────────────────────────────────
+let flagInSpanish = false;
+
+function toggleFlagLang() {
+  flagInSpanish = !flagInSpanish;
+  var btn = document.getElementById('flag-lang-btn');
+  var ta  = document.getElementById('flag-note');
+  var st  = document.getElementById('flag-translate-status');
+  if (flagInSpanish) {
+    if (btn) { btn.textContent = '🇺🇸 Switch to English'; btn.style.color = 'var(--green)'; }
+    if (ta)  ta.placeholder = 'Describa el problema en español...';
+    if (st)  { st.style.display='block'; st.textContent = '✓ Escribe en español — se traducirá automáticamente al enviarse'; }
+  } else {
+    if (btn) { btn.textContent = '🇲🇽 Escribir en Español'; btn.style.color = 'var(--blue)'; }
+    if (ta)  ta.placeholder = 'Describe the issue...';
+    if (st)  st.style.display='none';
+  }
+}
+
+function saveFlagWithTranslation() {
+  var note = document.getElementById('flag-note').value.trim();
+  if (!note) { toast('Add a description'); return; }
+
+  if (flagInSpanish && note) {
+    // translate Spanish → English before saving
+    var st = document.getElementById('flag-translate-status');
+    if (st) { st.style.display='block'; st.textContent='⏳ Translating...'; }
+    var btn = document.querySelector('#flag-sheet .btn.btn-green');
+    if (btn) { btn.disabled=true; btn.textContent='⏳ Submitting...'; }
+
+    fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(note) + '&langpair=es|en')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var translated = data.responseData && data.responseData.translatedText;
+      if (translated && translated !== note) {
+        document.getElementById('flag-note').value = translated;
+      }
+      flagInSpanish = false;
+      saveFlag();
+    })
+    .catch(function(){
+      // If translation fails, submit as-is
+      flagInSpanish = false;
+      saveFlag();
+    });
+  } else {
+    saveFlag();
+  }
+}
+
+
+function translateFlagNote(btn, text, idx) {
+  var isSpanish = btn.dataset.translated === '1';
+  if (isSpanish) {
+    // Switch back to English
+    btn.parentElement.querySelector('span').textContent = btn.dataset.original || text;
+    btn.textContent = '🇲🇽 ES';
+    btn.dataset.translated = '0';
+    return;
+  }
+  btn.textContent = '⏳';
+  btn.disabled = true;
+  btn.dataset.original = text;
+  fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=en|es')
+  .then(function(r){ return r.json(); })
+  .then(function(data){
+    var translated = data.responseData && data.responseData.translatedText;
+    if (translated) {
+      btn.parentElement.querySelector('span').textContent = translated;
+      btn.textContent = '🇺🇸 EN';
+      btn.dataset.translated = '1';
+    } else {
+      btn.textContent = '🇲🇽 ES';
+    }
+    btn.disabled = false;
+  })
+  .catch(function(){
+    btn.textContent = '🇲🇽 ES';
+    btn.disabled = false;
+  });
+}
 // ─── SEED DATA ───────────────────────────────────────────────────────────
 function seedData() {
   // No default data — all data comes from Google Sheets or user input
