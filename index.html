@@ -6853,35 +6853,100 @@ function renderCrewWorkOrders() {
 }
 
 // ── Crew complete work order (requires photo) ────────────────────────────────
+function crewWODetailClose() { var s=document.getElementById('crew-wo-detail-sheet'); if(s)s.remove(); }
+
 function openCrewWODetail(woId) {
   var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
   if (!wo) return;
+
+  var existing = document.getElementById('crew-wo-detail-sheet');
+  if (existing) existing.remove();
 
   var sheet = document.createElement('div');
   sheet.id = 'crew-wo-detail-sheet';
   sheet.className = 'overlay open';
 
-  var typeIcon = wo.type === 'irrigation' ? '💧 Irrigation' : '🌿 Landscaping';
+  var typeIcon = wo.type === 'irrigation' ? '💧 Irrigación' : '🌿 Paisajismo';
+  var requestText = wo.requestType || '';
+  var detailText  = wo.details || '';
 
-  sheet.innerHTML =
-    '<div class="sheet">' +
+  var inner = document.createElement('div');
+  inner.className = 'sheet';
+  sheet.appendChild(inner);
+
+  function buildContent(reqLabel, detailLabel, isSpanish) {
+    inner.innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
         '<div class="sheet-title" style="margin-bottom:0;">' + typeIcon + '</div>' +
-        '<button onclick="document.getElementById(\'crew-wo-detail-sheet\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+        '<button onclick="crewWODetailClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
       '</div>' +
-      '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:14px;">' +
+
+      '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:12px;">' +
         '<div style="font-weight:800;font-size:15px;margin-bottom:4px;">#' + (wo.woNumber||wo.id.slice(-4)) + ' · ' + (wo.ownerName||'') + '</div>' +
         '<div style="font-size:13px;color:var(--text3);">' + (wo.address||'') + '</div>' +
-        '<div style="font-size:13px;color:var(--text3);">' + (wo.community||'') + (wo.village ? ' · Village ' + wo.village : '') + '</div>' +
+        (wo.dueDate ? '<div style="font-size:12px;color:var(--red);font-weight:700;margin-top:4px;">⏰ ' + (isSpanish ? 'Vence: ' : 'Due: ') + wo.dueDate + '</div>' : '') +
         '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:13px;">' +
-          '<strong>' + (wo.requestType||'') + '</strong>' +
-          (wo.details ? '<div style="font-size:12px;color:var(--text2);margin-top:4px;">' + wo.details + '</div>' : '') +
+          '<strong>' + reqLabel + '</strong>' +
+          (detailLabel ? '<div style="font-size:12px;color:var(--text2);margin-top:4px;">' + detailLabel + '</div>' : '') +
         '</div>' +
       '</div>' +
-      '<button class="btn btn-green" onclick="document.getElementById(\'crew-wo-detail-sheet\').remove();openCrewWOComplete(\'' + woId + '\')">📷 Complete with Photo</button>' +
-    '</div>';
 
+      '<div id="wo-translate-status" style="display:none;text-align:center;font-size:12px;color:var(--text3);padding:8px;"></div>' +
+
+      '<div style="display:flex;gap:8px;margin-bottom:12px;">' +
+        (isSpanish ?
+          '<button class="btn-sm" onclick="showCrewWOEnglish()" style="flex:1;background:var(--bg3);color:var(--text2);border:1px solid var(--border2);">🇺🇸 English</button>' :
+          '<button class="btn-sm" onclick="translateCrewWO()" style="flex:1;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">🇲🇽 Traducir al Español</button>'
+        ) +
+      '</div>' +
+
+      '<button class="btn btn-green" onclick="crewWODetailClose();openCrewWOComplete(\'' + woId + '\')">' +
+      (isSpanish ? '📷 Completar con Foto' : '📷 Complete with Photo') + '</button>';
+  }
+
+  buildContent(requestText, detailText, false);
   document.body.appendChild(sheet);
+
+  // Store original text for toggle back
+  sheet._orig = { req: requestText, det: detailText };
+
+  window.translateCrewWO = function() {
+    var st = document.getElementById('wo-translate-status');
+    if (st) { st.style.display='block'; st.textContent='⏳ Traduciendo...'; }
+
+    var textToTranslate = requestText + (detailText ? '. ' + detailText : '');
+
+    fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 500,
+        messages: [{
+          role: 'user',
+          content: 'Translate this work order description to Spanish. Return ONLY the translation, nothing else. Keep any proper nouns, addresses, and numbers as-is: ' + textToTranslate
+        }]
+      })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var translated = (data.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('').trim();
+      if (st) st.style.display='none';
+      // Split translated text back into request/details roughly
+      var parts = translated.split('. ');
+      var transReq = parts[0] || translated;
+      var transDet = parts.slice(1).join('. ');
+      buildContent(transReq, transDet, true);
+    })
+    .catch(function(err) {
+      console.error(err);
+      if (st) { st.style.display='block'; st.style.color='var(--red)'; st.textContent='⚠ Translation failed'; }
+    });
+  };
+
+  window.showCrewWOEnglish = function() {
+    buildContent(requestText, detailText, false);
+  };
 }
 
 function openCrewWOComplete(woId) {
