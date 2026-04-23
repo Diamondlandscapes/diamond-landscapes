@@ -6916,31 +6916,30 @@ function openCrewWODetail(woId) {
 
     var textToTranslate = requestText + (detailText ? '. ' + detailText : '');
 
-    fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 500,
-        messages: [{
-          role: 'user',
-          content: 'Translate this work order description to Spanish. Return ONLY the translation, nothing else. Keep any proper nouns, addresses, and numbers as-is: ' + textToTranslate
-        }]
-      })
-    })
+    // Use MyMemory free translation API - no key needed
+    var encoded = encodeURIComponent(textToTranslate);
+    fetch('https://api.mymemory.translated.net/get?q=' + encoded + '&langpair=en|es')
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      var translated = (data.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('').trim();
+      var translated = data.responseData && data.responseData.translatedText;
+      if (!translated) throw new Error('No translation');
       if (st) st.style.display='none';
       // Split translated text back into request/details roughly
-      var parts = translated.split('. ');
-      var transReq = parts[0] || translated;
-      var transDet = parts.slice(1).join('. ');
-      buildContent(transReq, transDet, true);
+      var splitPoint = textToTranslate.indexOf('. ');
+      if (splitPoint > -1 && detailText) {
+        // find approximate split in translation
+        var transWords = translated.split(' ');
+        var reqWordCount = requestText.split(' ').length;
+        var transReq = transWords.slice(0, reqWordCount).join(' ');
+        var transDet = transWords.slice(reqWordCount).join(' ').replace(/^\.\s*/, '');
+        buildContent(transReq || translated, transDet, true);
+      } else {
+        buildContent(translated, '', true);
+      }
     })
     .catch(function(err) {
-      console.error(err);
-      if (st) { st.style.display='block'; st.style.color='var(--red)'; st.textContent='⚠ Translation failed'; }
+      console.error('Translation error:', err);
+      if (st) { st.style.display='block'; st.style.color='var(--red)'; st.textContent='⚠ Translation unavailable — check connection'; }
     });
   };
 
