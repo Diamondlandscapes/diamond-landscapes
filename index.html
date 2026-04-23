@@ -1493,6 +1493,7 @@ let state = {
   flags: [],
   equipment: [],
   workOrders: [],
+  routeWeeks: {},
   eqCategory: 'All',
   routeDay: 'Monday',
   selectedProps: [],
@@ -2865,13 +2866,16 @@ function loadFieldView() {
   const route = myRoutes.find(r => r.day === today);
   if (!route) {
     el.innerHTML = `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;padding:20px;">
-      No route assigned for ${selectedDay}
+      No route assigned for today
     </div>`;
     return;
   }
 
-  const stops = route.stops || [];
-  const done = stops.filter(s=>s.completed).length;
+  // Use today's weekly instance so completion is week-specific
+  const todayDate  = new Date();
+  const instance   = getOrCreateWeekInstance(route, todayDate);
+  const stops      = instance.stops || [];
+  const done       = stops.filter(s=>s.completed).length;
   el.innerHTML = `
     <div style="background:linear-gradient(135deg,var(--green3),var(--green2));border-radius:14px;padding:14px;margin-bottom:12px;color:#fff;">
       <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:14px;font-weight:700;opacity:.8;">YOUR ROUTE</div>
@@ -2919,7 +2923,7 @@ function loadFieldView() {
             <div class="sec-title">Report Issue / Flag</div>
             <button class="btn" onclick="openAddFlag('${s.propId}')" style="font-size:13px;margin-bottom:10px;background:rgba(251,146,60,.15);border:1px solid rgba(251,146,60,.4);color:var(--orange);border-radius:11px;padding:12px;">⚑ Report an Issue</button>
           </div>
-          <button class="btn btn-green" onclick="markStopDone('${route.id}','${s.propId}');loadFieldView();" style="font-size:14px;">
+          <button class="btn btn-green" onclick="markWeekStopDone('${route.id}','${s.propId}',new Date());loadFieldView();" style="font-size:14px;">
             ${s.completed?'✓ Mark Incomplete':'✓ Mark Job Complete'}
           </button>
         </div>
@@ -5872,8 +5876,9 @@ function buildCwCalendar() {
     const route    = myRoutes.find(r => r.day === dayName);
     const hasRoute = !!route;
     const isSelected = state.crewWeekDay === dateStr;
-    const done   = route?.stops?.filter(s=>s.completed).length || 0;
-    const total  = route?.stops?.length || 0;
+    const weekSummary = hasRoute ? getWeekInstanceSummary(route, date) : {done:0, total:0};
+    const done   = weekSummary.done;
+    const total  = weekSummary.total;
     const allDone = hasRoute && total > 0 && done === total;
 
     let bg, color, border;
@@ -5900,13 +5905,13 @@ function setCwDay(dateStr, dayName) {
 }
 
 function renderCwDayContent() {
-  const crewId   = state.loggedInCrewId;
+  const crewId    = state.loggedInCrewId;
   const todayName = new Date().toLocaleDateString('en-US',{weekday:'long'});
-  const dayName  = state.crewWeekDayName || todayName;
-  const dateStr  = state.crewWeekDay;
-  const myRoutes = (state.routes||[]).filter(r => r.crewId === crewId);
-  const route    = myRoutes.find(r => r.day === dayName);
-  const el       = document.getElementById('cw-route-content');
+  const dayName   = state.crewWeekDayName || todayName;
+  const dateStr   = state.crewWeekDay;
+  const myRoutes  = (state.routes||[]).filter(r => r.crewId === crewId);
+  const route     = myRoutes.find(r => r.day === dayName);
+  const el        = document.getElementById('cw-route-content');
   if (!el) return;
 
   if (!dateStr) {
@@ -5919,35 +5924,51 @@ function renderCwDayContent() {
     return;
   }
 
-  const stops   = route.stops || [];
-  const done    = stops.filter(s=>s.completed).length;
-  const total   = stops.length;
-  const pct     = total ? Math.round((done/total)*100) : 0;
-  const isToday = dayName === todayName;
-  const label   = dateStr ? new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}) : dayName;
+  // Get or create the weekly instance for this specific date
+  const selectedDate = new Date(dateStr + 'T12:00:00');
+  const instance     = getOrCreateWeekInstance(route, selectedDate);
+  const stops        = instance.stops || [];
+  const done         = stops.filter(s => s.completed).length;
+  const total        = stops.length;
+  const pct          = total ? Math.round((done/total)*100) : 0;
+  const isToday      = dayName === todayName && new Date().toDateString() === selectedDate.toDateString();
+  const label        = selectedDate.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
+
+  // Count skipped (in template but not due this week)
+  const templateTotal = (route.stops||[]).length;
+  const skipped = templateTotal - total;
 
   let html = '<div style="background:' + (isToday?'linear-gradient(135deg,var(--green3),var(--green2))':'linear-gradient(135deg,var(--bg3),var(--bg2))') + ';border-radius:14px;padding:16px;margin-bottom:14px;' + (isToday?'color:#fff;':'border:1px solid var(--border);') + '">'
     + '<div style="font-size:11px;font-weight:700;letter-spacing:1px;opacity:.8;margin-bottom:4px;">' + label.toUpperCase() + (isToday?' — TODAY':'') + '</div>'
     + '<div style="font-size:20px;font-weight:800;">' + route.name + '</div>'
-    + '<div style="font-size:13px;margin-top:4px;opacity:.85;">' + done + '/' + total + ' stops · ' + pct + '% complete</div>'
+    + '<div style="font-size:13px;margin-top:4px;opacity:.85;">' + done + '/' + total + ' stops · ' + pct + '% complete' + (skipped?' · '+skipped+' skipped (not due)':'') + '</div>'
     + '<div style="background:rgba(255,255,255,.2);border-radius:6px;height:6px;overflow:hidden;margin-top:8px;">'
     + '<div style="height:100%;width:' + pct + '%;background:' + (isToday?'rgba(255,255,255,.9)':'var(--green)') + ';border-radius:6px;"></div></div>'
     + '</div>';
 
-  stops.forEach(function(s, i) {
-    const prop  = (state.properties||[]).find(p => p.id === s.propId);
-    const flags = (state.flags||[]).filter(f => f.propId === s.propId && !f.resolved);
-    html += '<div class="card" style="margin-bottom:10px;' + (s.completed?'opacity:.7;':'') + '">'
-      + '<div style="display:flex;gap:10px;align-items:flex-start;">'
-      + '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:' + (s.completed?'var(--green3)':'var(--bg4)') + ';border:2px solid ' + (s.completed?'var(--green)':'var(--border2)') + ';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:' + (s.completed?'#fff':'var(--text3)') + ';">' + (i+1) + '</div>'
-      + '<div style="flex:1;min-width:0;">'
-      + '<div style="font-weight:800;font-size:14px;">' + (prop?.name||'Property') + '</div>'
-      + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">📍 ' + (prop?.address||'No address') + '</div>'
-      + (flags.length ? '<div style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);border-radius:8px;padding:6px 10px;margin-top:8px;font-size:12px;color:var(--red);font-weight:700;">⚑ ' + flags.length + ' open flag' + (flags.length>1?'s':'') + '</div>' : '')
-      + '</div>'
-      + '<div style="flex-shrink:0;">' + (s.completed?'<span class="badge badge-green">✓ Done</span>':'<span class="badge badge-blue">Pending</span>') + '</div>'
-      + '</div></div>';
-  });
+  if (!stops.length) {
+    html += '<div class="card" style="text-align:center;padding:20px;color:var(--text4);font-size:13px;">No stops due this week</div>';
+  } else {
+    stops.forEach(function(s, i) {
+      const prop  = (state.properties||[]).find(p => p.id === s.propId);
+      const flags = (state.flags||[]).filter(f => f.propId === s.propId && !f.resolved);
+      html += '<div class="card" style="margin-bottom:10px;' + (s.completed?'opacity:.7;':'') + '">'
+        + '<div style="display:flex;gap:10px;align-items:flex-start;">'
+        + '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:' + (s.completed?'var(--green3)':'var(--bg4)') + ';border:2px solid ' + (s.completed?'var(--green)':'var(--border2)') + ';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:' + (s.completed?'#fff':'var(--text3)') + ';">' + (i+1) + '</div>'
+        + '<div style="flex:1;min-width:0;">'
+        + '<div style="font-weight:800;font-size:14px;">' + (prop?.name||'Property') + '</div>'
+        + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">📍 ' + (prop?.address||'No address') + '</div>'
+        + (prop?.frequency ? '<div style="font-size:11px;color:var(--text4);margin-top:2px;">🔄 ' + prop.frequency + '</div>' : '')
+        + (flags.length ? '<div style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);border-radius:8px;padding:6px 10px;margin-top:8px;font-size:12px;color:var(--red);font-weight:700;">⚑ ' + flags.length + ' open flag' + (flags.length>1?'s':'') + '</div>' : '')
+        + '</div>'
+        + '<div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">'
+        + (s.completed ? '<span class="badge badge-green">✓ Done</span>' : '<span class="badge badge-blue">Pending</span>')
+        + '<button onclick="markWeekStopDone(\'' + route.id + '\',\'' + s.propId + '\',new Date(\'' + dateStr + 'T12:00:00\'))" style="font-size:11px;background:' + (s.completed?'rgba(248,113,113,.15)':'rgba(74,222,128,.15)') + ';color:' + (s.completed?'var(--red)':'var(--green)') + ';border:1px solid ' + (s.completed?'rgba(248,113,113,.3)':'rgba(74,222,128,.3)') + ';border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap;">'
+        + (s.completed ? '↩ Undo' : '✓ Done') + '</button>'
+        + '</div>'
+        + '</div></div>';
+    });
+  }
 
   el.innerHTML = html;
 }
@@ -7493,6 +7514,153 @@ function translateFlagPanelNote(originalText) {
     btn.disabled = false;
   });
 }
+
+// ─── WEEKLY ROUTE INSTANCES ──────────────────────────────────────────────────
+// Routes are templates. Each week generates an instance with only due stops.
+// Instance key: routeId + '_' + YYYY + '_' + weekNumber
+// Instance stored in state.routeWeeks[key] = { stops: [{propId, completed, completedAt, completedServices}] }
+
+function getWeekNumber(date) {
+  // ISO week: Mon=start of week
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+function getWeekKey(routeId, date) {
+  const y = date.getFullYear();
+  const w = String(getWeekNumber(date)).padStart(2, '0');
+  return routeId + '_' + y + '_' + w;
+}
+
+function getMondayOfWeek(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day; // Mon=1, Sun=0
+  d.setDate(d.getDate() + diff);
+  d.setHours(0,0,0,0);
+  return d;
+}
+
+function isPropertyDueThisWeek(prop, weekMonday) {
+  if (!prop) return true; // unknown prop - include it
+  const freq = prop.frequency;
+  if (!freq || freq === 'Weekly' || freq === '2x Per Week') return true;
+  if (freq === 'As Needed' || freq === 'Custom') return false; // manual only
+
+  // Parse last service date
+  let lastDate = null;
+  if (prop.lastServiceDate) {
+    lastDate = new Date(prop.lastServiceDate);
+    if (isNaN(lastDate.getTime())) lastDate = null;
+  }
+
+  if (!lastDate) {
+    // Never serviced - include on first occurrence (week 1 of year)
+    const weekNum = getWeekNumber(weekMonday);
+    if (freq === 'Bi-Weekly') return weekNum % 2 === 1;
+    if (freq === '2x Per Month') return weekNum % 2 === 1;
+    if (freq === 'Monthly') return weekNum % 4 === 1;
+    if (freq === 'Quarterly') return weekNum % 13 === 1;
+    return true;
+  }
+
+  const daysSinceLast = (weekMonday - lastDate) / 86400000;
+  const freqDays = FREQ_DAYS[freq];
+  if (!freqDays) return false;
+
+  // Due if it's been >= (freqDays - 2) days since last service (2 day buffer)
+  return daysSinceLast >= (freqDays - 2);
+}
+
+function getOrCreateWeekInstance(route, date) {
+  if (!state.routeWeeks) state.routeWeeks = {};
+  const key = getWeekKey(route.id, date);
+
+  if (!state.routeWeeks[key]) {
+    // Generate new instance from template
+    const weekMonday = getMondayOfWeek(date);
+    const dueStops = (route.stops || []).filter(function(s) {
+      const prop = (state.properties || []).find(function(p) { return p.id === s.propId; });
+      return isPropertyDueThisWeek(prop, weekMonday);
+    }).map(function(s) {
+      return {
+        propId: s.propId,
+        completed: false,
+        completedAt: '',
+        completedServices: [],
+        photos: [],
+        notes: ''
+      };
+    });
+
+    state.routeWeeks[key] = {
+      routeId: route.id,
+      weekKey: key,
+      weekMonday: weekMonday.toISOString().slice(0,10),
+      stops: dueStops,
+      generatedAt: new Date().toISOString()
+    };
+    save();
+  }
+
+  return state.routeWeeks[key];
+}
+
+function markWeekStopDone(routeId, propId, date) {
+  const route = (state.routes || []).find(function(r) { return r.id === routeId; });
+  if (!route) return;
+
+  const instance = getOrCreateWeekInstance(route, date);
+  const stop = instance.stops.find(function(s) { return s.propId === propId; });
+  if (!stop) return;
+
+  stop.completed = !stop.completed;
+  if (stop.completed) {
+    stop.completedAt = new Date().toLocaleString();
+    // Update property last/next service dates
+    const prop = (state.properties || []).find(function(p) { return p.id === propId; });
+    if (prop) {
+      const today = new Date();
+      prop.lastServiceDate = today.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+      const days = FREQ_DAYS[prop.frequency];
+      if (days) {
+        const next = new Date(today.getTime() + days*24*60*60*1000);
+        prop.nextServiceDate = next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+      }
+      saveAndSync('properties', prop);
+    }
+  } else {
+    stop.completedAt = '';
+  }
+
+  save();
+  // Refresh current view
+  if (document.getElementById('cw-route-content')) renderCwDayContent();
+  if (document.getElementById('field-stops')) loadFieldView();
+  toast(stop.completed ? '✓ Job complete' : 'Reopened');
+}
+
+function getWeekInstanceSummary(route, date) {
+  // Returns {done, total} for a given week without creating the instance
+  if (!state.routeWeeks) return {done:0, total:0};
+  const key = getWeekKey(route.id, date);
+  const instance = state.routeWeeks[key];
+  if (!instance) {
+    // Count how many would be due without creating
+    const weekMonday = getMondayOfWeek(date);
+    const total = (route.stops||[]).filter(function(s) {
+      const prop = (state.properties||[]).find(function(p) { return p.id === s.propId; });
+      return isPropertyDueThisWeek(prop, weekMonday);
+    }).length;
+    return { done: 0, total: total };
+  }
+  const done = instance.stops.filter(function(s) { return s.completed; }).length;
+  return { done: done, total: instance.stops.length };
+}
+
+
 // ─── SEED DATA ───────────────────────────────────────────────────────────
 function seedData() {
   // No default data — all data comes from Google Sheets or user input
