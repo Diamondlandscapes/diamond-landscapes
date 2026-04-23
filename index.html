@@ -1077,13 +1077,16 @@ select.inp{cursor:pointer;}
 
 
     <div id="screen-crew-week" class="screen">
-      <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;margin-bottom:14px;">My Week</div>
-
-
-      <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px;" id="cw-day-pills"></div>
-
-
-      <div id="cw-route-content"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div style="font-size:20px;font-weight:800;">My Month</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button onclick="cwPrevMonth()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:18px;color:var(--text2);display:flex;align-items:center;justify-content:center;line-height:1;">‹</button>
+          <div id="cw-month-label" style="font-size:14px;font-weight:700;min-width:130px;text-align:center;"></div>
+          <button onclick="cwNextMonth()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:18px;color:var(--text2);display:flex;align-items:center;justify-content:center;line-height:1;">›</button>
+        </div>
+      </div>
+      <div id="cw-calendar"></div>
+      <div id="cw-route-content" style="margin-top:14px;"></div>
     </div>
 
 
@@ -1442,7 +1445,7 @@ select.inp{cursor:pointer;}
     <span class="cbn-icon">📋</span><span class="cbn-label">My Jobs</span>
   </button>
   <button class="cbn-btn" data-tab="crew-week" onclick="switchTab('crew-week');updateCrewBottomNav('crew-week')">
-    <span class="cbn-icon">📅</span><span class="cbn-label">My Week</span>
+    <span class="cbn-icon">📅</span><span class="cbn-label">My Month</span>
   </button>
   <button class="cbn-btn" data-tab="properties" onclick="switchTab('properties');updateCrewBottomNav('properties')">
     <span class="cbn-icon">🏡</span><span class="cbn-label">Properties</span>
@@ -5809,122 +5812,144 @@ function cpSelectDay(crewId, day) {
 
 // ─── CREW WEEK VIEW ───────────────────────────────────────────────────────
 function renderCrewWeek() {
-  const crewId   = state.loggedInCrewId;
-  const crew     = state.crew.find(c => c.id === crewId);
-  const today    = new Date().toLocaleDateString('en-US',{weekday:'long'});
-  const allDays  = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const myRoutes = (state.routes||[]).filter(r => r.crewId === crewId);
+  const crewId = state.loggedInCrewId;
+  const today  = new Date();
+  if (!state.cwYear)  state.cwYear  = today.getFullYear();
+  if (!state.cwMonth) state.cwMonth = today.getMonth();
+  buildCwCalendar();
+  if (!state.crewWeekDay) renderCwDayContent();
+}
 
-  // init selected day to today or first busy day
-  const busyDays = allDays.filter(d => myRoutes.some(r => r.day === d));
-  if (!state.crewWeekDay) {
-    state.crewWeekDay = busyDays.includes(today) ? today : (busyDays[0] || today);
-  }
-
-  // day pills
-  const pillsEl = document.getElementById('cw-day-pills');
-  if (pillsEl) {
-    pillsEl.innerHTML = allDays.map(d => {
-      const dayRoute = myRoutes.find(r => r.day === d);
-      const isToday  = d === today;
-      const isActive = d === state.crewWeekDay;
-      const hasSched = !!dayRoute;
-      const done     = dayRoute?.stops?.filter(s=>s.completed).length || 0;
-      const total    = dayRoute?.stops?.length || 0;
-      return `<button onclick="setCwDay('${d}')"
-        style="flex-shrink:0;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:700;
-        border:none;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;white-space:nowrap;transition:all .15s;
-        background:${isActive?'linear-gradient(135deg,var(--green3),var(--green2))':hasSched?'var(--bg3)':'var(--bg4)'};
-        color:${isActive?'#fff':hasSched?'var(--text2)':'var(--text4)'};
-        border:1px solid ${isToday&&!isActive?'rgba(74,222,128,.4)':isActive?'transparent':'var(--border)'};
-        opacity:${hasSched?1:0.45};">
-        ${d.slice(0,3)}${isToday?' ●':''}${total?' · '+done+'/'+total:''}
-      </button>`;
-    }).join('');
-  }
-
+function cwPrevMonth() {
+  if (state.cwMonth === 0) { state.cwMonth = 11; state.cwYear--; }
+  else state.cwMonth--;
+  state.crewWeekDay = null;
+  buildCwCalendar();
   renderCwDayContent();
 }
 
-function setCwDay(day) {
-  state.crewWeekDay = day;
-  // update pills
-  renderCrewWeek();
+function cwNextMonth() {
+  if (state.cwMonth === 11) { state.cwMonth = 0; state.cwYear++; }
+  else state.cwMonth++;
+  state.crewWeekDay = null;
+  buildCwCalendar();
+  renderCwDayContent();
+}
+
+function buildCwCalendar() {
+  const crewId   = state.loggedInCrewId;
+  const myRoutes = (state.routes||[]).filter(r => r.crewId === crewId);
+  const year     = state.cwYear  || new Date().getFullYear();
+  const month    = state.cwMonth !== undefined ? state.cwMonth : new Date().getMonth();
+  const today    = new Date();
+  const todayStr = today.toDateString();
+  const ROUTE_DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  const monthLabel = document.getElementById('cw-month-label');
+  if (monthLabel) monthLabel.textContent = new Date(year, month, 1)
+    .toLocaleDateString('en-US', { month:'long', year:'numeric' });
+
+  const calEl = document.getElementById('cw-calendar');
+  if (!calEl) return;
+
+  const firstDay    = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+
+  let html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">';
+  DOW.forEach(d => {
+    html += '<div style="text-align:center;font-size:10px;font-weight:700;color:var(--text4);padding:4px 0;">' + d + '</div>';
+  });
+  html += '</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">';
+
+  for (let i = 0; i < firstDay; i++) html += '<div></div>';
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date     = new Date(year, month, d);
+    const dayName  = ROUTE_DAYS[date.getDay()];
+    const isToday  = date.toDateString() === todayStr;
+    const dateStr  = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+    const route    = myRoutes.find(r => r.day === dayName);
+    const hasRoute = !!route;
+    const isSelected = state.crewWeekDay === dateStr;
+    const done   = route?.stops?.filter(s=>s.completed).length || 0;
+    const total  = route?.stops?.length || 0;
+    const allDone = hasRoute && total > 0 && done === total;
+
+    let bg, color, border;
+    if (isSelected)      { bg='var(--green3)'; color='#fff'; border='2px solid var(--green)'; }
+    else if (isToday)    { bg='rgba(74,222,128,.15)'; color='var(--green)'; border='2px solid var(--green)'; }
+    else if (hasRoute)   { bg='var(--bg3)'; color='var(--text)'; border='1px solid var(--border2)'; }
+    else                 { bg='transparent'; color='var(--text4)'; border='1px solid transparent'; }
+
+    html += '<div onclick="setCwDay(\'' + dateStr + '\',\'' + dayName + '\')" style="text-align:center;border-radius:8px;padding:5px 2px;cursor:' + (hasRoute?'pointer':'default') + ';background:' + bg + ';color:' + color + ';border:' + border + ';min-height:42px;display:flex;flex-direction:column;align-items:center;justify-content:center;">'
+      + '<div style="font-size:13px;font-weight:' + (isToday||isSelected?'800':'600') + ';">' + d + '</div>'
+      + (hasRoute ? '<div style="width:5px;height:5px;border-radius:50%;background:' + (allDone?'var(--green)':isSelected?'#fff':'var(--teal)') + ';margin-top:2px;"></div>' : '')
+      + (hasRoute && total ? '<div style="font-size:9px;opacity:.75;margin-top:1px;">' + done + '/' + total + '</div>' : '')
+      + '</div>';
+  }
+  html += '</div>';
+  calEl.innerHTML = html;
+}
+
+function setCwDay(dateStr, dayName) {
+  state.crewWeekDay     = dateStr;
+  state.crewWeekDayName = dayName;
+  buildCwCalendar();
+  renderCwDayContent();
 }
 
 function renderCwDayContent() {
   const crewId   = state.loggedInCrewId;
-  const today    = new Date().toLocaleDateString('en-US',{weekday:'long'});
-  const day      = state.crewWeekDay || today;
+  const todayName = new Date().toLocaleDateString('en-US',{weekday:'long'});
+  const dayName  = state.crewWeekDayName || todayName;
+  const dateStr  = state.crewWeekDay;
   const myRoutes = (state.routes||[]).filter(r => r.crewId === crewId);
-  const route    = myRoutes.find(r => r.day === day);
+  const route    = myRoutes.find(r => r.day === dayName);
   const el       = document.getElementById('cw-route-content');
   if (!el) return;
 
-  if (!route) {
-    el.innerHTML = `<div class="card" style="text-align:center;padding:30px 20px;">
-      <div style="font-size:36px;margin-bottom:10px;">🌿</div>
-      <div style="font-size:14px;font-weight:700;color:var(--text2);margin-bottom:6px;">Day off — no route</div>
-      <div style="font-size:13px;color:var(--text4);">No route assigned for ${day}</div>
-    </div>`;
+  if (!dateStr) {
+    el.innerHTML = '<div class="card" style="text-align:center;padding:20px;color:var(--text4);font-size:13px;">Tap a day on the calendar to see your route</div>';
     return;
   }
 
-  const stops  = route.stops || [];
-  const done   = stops.filter(s => s.completed).length;
-  const total  = stops.length;
-  const pct    = total ? Math.round((done/total)*100) : 0;
-  const isToday = day === today;
+  if (!route) {
+    el.innerHTML = '<div class="card" style="text-align:center;padding:24px 20px;"><div style="font-size:32px;margin-bottom:8px;">🌿</div><div style="font-size:14px;font-weight:700;color:var(--text2);margin-bottom:4px;">Day off</div><div style="font-size:12px;color:var(--text4);">No route for ' + dayName + '</div></div>';
+    return;
+  }
 
-  el.innerHTML = `
+  const stops   = route.stops || [];
+  const done    = stops.filter(s=>s.completed).length;
+  const total   = stops.length;
+  const pct     = total ? Math.round((done/total)*100) : 0;
+  const isToday = dayName === todayName;
+  const label   = dateStr ? new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}) : dayName;
 
-    <div style="background:${isToday?'linear-gradient(135deg,var(--green3),var(--green2))':'linear-gradient(135deg,var(--bg3),var(--bg2))'};
-      border-radius:14px;padding:16px;margin-bottom:14px;${isToday?'color:#fff;':'border:1px solid var(--border);'}">
-      <div style="font-size:11px;font-weight:700;letter-spacing:1px;opacity:.8;margin-bottom:4px;">${day.toUpperCase()}${isToday?' — TODAY':''}</div>
-      <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">${route.name}</div>
-      <div style="font-size:13px;margin-top:4px;opacity:.85;">${done}/${total} stops · ${pct}% complete</div>
-      <div style="background:rgba(255,255,255,.2);border-radius:6px;height:6px;overflow:hidden;margin-top:8px;">
-        <div style="height:100%;width:${pct}%;background:${isToday?'rgba(255,255,255,.9)':'var(--green)'};border-radius:6px;transition:width .5s;"></div>
-      </div>
-    </div>
+  let html = '<div style="background:' + (isToday?'linear-gradient(135deg,var(--green3),var(--green2))':'linear-gradient(135deg,var(--bg3),var(--bg2))') + ';border-radius:14px;padding:16px;margin-bottom:14px;' + (isToday?'color:#fff;':'border:1px solid var(--border);') + '">'
+    + '<div style="font-size:11px;font-weight:700;letter-spacing:1px;opacity:.8;margin-bottom:4px;">' + label.toUpperCase() + (isToday?' — TODAY':'') + '</div>'
+    + '<div style="font-size:20px;font-weight:800;">' + route.name + '</div>'
+    + '<div style="font-size:13px;margin-top:4px;opacity:.85;">' + done + '/' + total + ' stops · ' + pct + '% complete</div>'
+    + '<div style="background:rgba(255,255,255,.2);border-radius:6px;height:6px;overflow:hidden;margin-top:8px;">'
+    + '<div style="height:100%;width:' + pct + '%;background:' + (isToday?'rgba(255,255,255,.9)':'var(--green)') + ';border-radius:6px;"></div></div>'
+    + '</div>';
 
+  stops.forEach(function(s, i) {
+    const prop  = (state.properties||[]).find(p => p.id === s.propId);
+    const flags = (state.flags||[]).filter(f => f.propId === s.propId && !f.resolved);
+    html += '<div class="card" style="margin-bottom:10px;' + (s.completed?'opacity:.7;':'') + '">'
+      + '<div style="display:flex;gap:10px;align-items:flex-start;">'
+      + '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:' + (s.completed?'var(--green3)':'var(--bg4)') + ';border:2px solid ' + (s.completed?'var(--green)':'var(--border2)') + ';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:' + (s.completed?'#fff':'var(--text3)') + ';">' + (i+1) + '</div>'
+      + '<div style="flex:1;min-width:0;">'
+      + '<div style="font-weight:800;font-size:14px;">' + (prop?.name||'Property') + '</div>'
+      + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">📍 ' + (prop?.address||'No address') + '</div>'
+      + (flags.length ? '<div style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);border-radius:8px;padding:6px 10px;margin-top:8px;font-size:12px;color:var(--red);font-weight:700;">⚑ ' + flags.length + ' open flag' + (flags.length>1?'s':'') + '</div>' : '')
+      + '</div>'
+      + '<div style="flex-shrink:0;">' + (s.completed?'<span class="badge badge-green">✓ Done</span>':'<span class="badge badge-blue">Pending</span>') + '</div>'
+      + '</div></div>';
+  });
 
-    ${stops.length ? stops.map((s,i) => {
-      const prop  = (state.properties||[]).find(p => p.id === s.propId);
-      const flags = (state.flags||[]).filter(f => f.propId === s.propId && !f.resolved);
-      return `<div class="card" style="margin-bottom:10px;${s.completed?'opacity:.7;':''}" >
-        <div style="display:flex;gap:10px;align-items:flex-start;">
-          <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;
-            background:${s.completed?'var(--green3)':'var(--bg4)'};
-            border:2px solid ${s.completed?'var(--green)':'var(--border2)'};
-            display:flex;align-items:center;justify-content:center;
-            font-size:12px;font-weight:800;color:${s.completed?'#fff':'var(--text3)'};">${i+1}</div>
-          <div style="flex:1;min-width:0;">
-            <div style="font-weight:800;font-size:14px;">${prop?.name||'Property'}</div>
-            <div style="font-size:12px;color:var(--text3);margin-top:2px;">📍 ${prop?.address||'No address'}</div>
-            ${prop?.notes?`<div style="font-size:12px;color:var(--yellow);margin-top:4px;">📝 ${prop.notes}</div>`:''}
-            ${prop?.lastServiceDate||prop?.nextServiceDate?`<div style="display:flex;gap:10px;margin-top:6px;">
-              ${prop.lastServiceDate?`<span style="font-size:11px;color:var(--text3);">Last: <strong style="color:var(--text2);">${prop.lastServiceDate}</strong></span>`:''}
-              ${prop.nextServiceDate?`<span style="font-size:11px;color:var(--text3);">Next: <strong style="color:var(--teal);">${prop.nextServiceDate}</strong></span>`:''}
-            </div>`:''}
-            ${prop?.services?.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;">
-              ${prop.services.map(sv=>`<span style="font-size:10px;background:var(--bg4);color:var(--text2);
-                padding:2px 8px;border-radius:10px;border:1px solid var(--border2);">${sv}</span>`).join('')}
-            </div>`:''}
-            ${flags.length?`<div style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);
-              border-radius:8px;padding:6px 10px;margin-top:8px;font-size:12px;color:var(--red);font-weight:700;">
-              ⚑ ${flags.length} open flag${flags.length>1?'s':''}</div>`:''}
-          </div>
-          <div style="flex-shrink:0;">
-            ${s.completed?'<span class="badge badge-green">✓ Done</span>':'<span class="badge badge-blue">Pending</span>'}
-          </div>
-        </div>
-      </div>`;
-    }).join('') : '<div style="font-size:13px;color:var(--text4);text-align:center;padding:20px;">No stops on this route</div>'}
-
-    ${isToday ? `<button class="btn btn-green" onclick="switchTab('field')" style="margin-top:4px;font-size:14px;">
-      Go to Today's Jobs →
-    </button>` : ''}`;
+  el.innerHTML = html;
 }
 
 
