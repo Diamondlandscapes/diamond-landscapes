@@ -6941,58 +6941,88 @@ function handleWOFileUpload(file, community) {
 
 
 function parsePDFWorkOrders(b64data, community, done, fail) {
+  // These are scanned image PDFs - need to render to canvas first
+  // Load pdf.js, render page to canvas, then use Tesseract OCR
+  function loadScript(src, cb) {
+    if (document.querySelector('script[src="'+src+'"]')) { cb(); return; }
+    var s = document.createElement('script');
+    s.src = src; s.onload = cb;
+    s.onerror = function() { if(fail) fail('⚠ Could not load PDF library'); };
+    document.head.appendChild(s);
+  }
+
   var binary = atob(b64data);
   var bytes = new Uint8Array(binary.length);
   for (var i=0; i<binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  function runExtract() {
+
+  loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', function() {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     pdfjsLib.getDocument({data: bytes}).promise.then(function(pdf) {
-      var allLines = [];
-      var chain = Promise.resolve();
-      for (var p=1; p<=pdf.numPages; p++) {
-        (function(pageNum) {
-          chain = chain.then(function() {
-            return pdf.getPage(pageNum).then(function(page) {
-              return page.getTextContent().then(function(tc) {
-                var byY = {};
-                tc.items.forEach(function(item) {
-                  var y = Math.round(item.transform[5]);
-                  if (!byY[y]) byY[y] = [];
-                  byY[y].push({x: item.transform[4], text: item.str});
-                });
-                var ys = Object.keys(byY).map(Number).sort(function(a,b){return b-a;});
-                ys.forEach(function(y) {
-                  var cols = byY[y].sort(function(a,b){return a.x-b.x;}).map(function(i){return i.text.trim();}).filter(Boolean);
-                  if (cols.length) allLines.push(cols.join('	'));
-                });
+      return pdf.getPage(1).then(function(page) {
+        var scale = 2.0;
+        var viewport = page.getViewport({scale: scale});
+        var canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        var ctx = canvas.getContext('2d');
+        return page.render({canvasContext: ctx, viewport: viewport}).promise.then(function() {
+          // Try text extraction first (works for non-scanned PDFs)
+          return page.getTextContent().then(function(tc) {
+            if (tc.items.length > 5) {
+              // Has text layer - extract directly
+              var byY = {};
+              tc.items.forEach(function(item) {
+                var y = Math.round(item.transform[5] / 4) * 4;
+                if (!byY[y]) byY[y] = [];
+                byY[y].push({x: item.transform[4], text: item.str.trim()});
+              });
+              var ys = Object.keys(byY).map(Number).sort(function(a,b){return b-a;});
+              var rows = [];
+              ys.forEach(function(y) {
+                var cols = byY[y].sort(function(a,b){return a.x-b.x;}).map(function(i){return i.text;}).filter(Boolean);
+                if (cols.length > 1) rows.push(cols.join('	'));
+              });
+              var skip = ['date','work order','address','village','owner','request','assigned','type'];
+              var data = rows.filter(function(r){
+                var lo = r.toLowerCase().split('	')[0];
+                return !skip.some(function(s){return lo.startsWith(s);}) && r.replace(/	/g,'').trim().length > 2;
+              });
+              if (data.length > 0) {
+                var ta = document.getElementById('wo-paste-area');
+                if (ta) ta.value = data.join('\n');
+                if (done) done('✓ PDF extracted — ' + data.length + ' rows. Review and click Import');
+                return;
+              }
+            }
+            // Scanned PDF - use Tesseract OCR
+            var imgData = canvas.toDataURL('image/png');
+            var st = document.getElementById('wo-file-status');
+            if (st) { st.style.display='block'; st.textContent='⏳ Running OCR on scanned PDF (may take 30s)...'; }
+            loadScript('https://unpkg.com/tesseract.js@5/dist/tesseract.min.js', function() {
+              Tesseract.recognize(imgData, 'eng', {
+                tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz .,/-#:&()'
+              }).then(function(result) {
+                var text = result.data.text;
+                // Parse OCR output into rows
+                var rawLines = text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length>3;});
+                var ta = document.getElementById('wo-paste-area');
+                if (ta) ta.value = rawLines.join('\n');
+                if (done) done('✓ OCR complete — ' + rawLines.length + ' lines extracted. Please review and edit before importing');
+              }).catch(function(err) {
+                console.error('OCR error:', err);
+                if (fail) fail('⚠ OCR failed — please export your spreadsheet as CSV and upload that instead');
               });
             });
           });
-        })(p);
-      }
-      return chain.then(function() {
-        var skip = ['date','work order','address','village','owner','request','assigned'];
-        var data = allLines.filter(function(l) {
-          var lo = l.toLowerCase();
-          return !skip.some(function(s){return lo.startsWith(s);}) && l.replace(/	/g,'').trim().length > 2;
         });
-        var ta = document.getElementById('wo-paste-area');
-        if (ta) ta.value = data.join('\n');
-        if (done) done('✓ PDF extracted — ' + data.length + ' rows. Review and click Import');
       });
     }).catch(function(err) {
-      console.error(err);
-      if (fail) fail('⚠ PDF extract failed — try saving as CSV instead');
+      console.error('PDF render error:', err);
+      if (fail) fail('⚠ Could not read PDF — please export as CSV from Excel/Sheets and upload that');
     });
-  }
-  if (typeof pdfjsLib === 'undefined') {
-    var s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    s.onload = runExtract;
-    s.onerror = function() { if(fail) fail('⚠ Could not load PDF parser'); };
-    document.head.appendChild(s);
-  } else { runExtract(); }
+  });
 }
+
 
 
 
