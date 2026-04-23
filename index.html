@@ -5166,15 +5166,16 @@ function openReportFlag(flagId) {
 
       <div class="card" style="margin-bottom:12px;border-left:3px solid ${pColor};">
         <div class="sec-title">Issue</div>
-        <div style="font-size:14px;color:var(--text2);line-height:1.6;">${f.note}</div>
-        <div style="font-size:12px;color:var(--text4);margin-top:8px;">
-          Reported by <strong style="color:var(--text3);">${f.by||'—'}</strong> · ${f.date||''}
+        <div id="flag-panel-note-text" style="font-size:14px;color:var(--text2);line-height:1.6;">${f.note}</div>
+        <div style="font-size:12px;color:var(--text4);margin-top:6px;display:flex;align-items:center;gap:10px;">
+          <span>Reported by <strong style="color:var(--text3);">${f.by||'—'}</strong> · ${f.date||''}</span>
+          <button onclick="translateFlagPanelNote('${f.note.replace(/'/g,"\\'")}')" id="flag-panel-translate-btn" style="background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;color:var(--blue);cursor:pointer;">🇲🇽 Español</button>
         </div>
         ${f.photo ? `<img src="${f.photo}" onclick="openPhoto('${f.photo}','Issue Photo — ${f.service}')" style="width:100%;border-radius:10px;margin-top:10px;max-height:200px;object-fit:cover;cursor:zoom-in;"/>` : ''}
       </div>
 
 
-      ${!f.resolved ? `
+      ${!f.resolved && state.role === 'manager' ? `
       <div class="card" style="margin-bottom:12px;">
         <div class="sec-title">Assign to Next Service</div>
         <div style="font-size:13px;color:var(--text3);margin-bottom:10px;">Schedule this fix on the next visit:</div>
@@ -5199,10 +5200,10 @@ function openReportFlag(flagId) {
     </div>
 
     <div style="padding:12px 16px;padding-bottom:calc(12px + var(--safe-bottom));border-top:1px solid var(--border);background:var(--bg2);display:flex;gap:10px;">
-      ${!f.resolved
+      ${state.role === 'manager' ? (!f.resolved
         ? `<button class="btn btn-green" onclick="resolveFlag('${f.id}','${f.propId}');document.getElementById('report-flag-panel').remove();renderReports();" style="font-size:14px;">✓ Mark Resolved</button>`
-        : `<button class="btn btn-outline" style="font-size:14px;color:var(--text3);">Already Resolved</button>`
-      }
+        : `<button class="btn btn-outline" style="font-size:14px;color:var(--text3);">Already Resolved</button>`)
+        : ''}
       <button class="btn btn-outline" onclick="document.getElementById('report-flag-panel').remove()" style="font-size:14px;flex:0.4;">Back</button>
     </div>`;
 
@@ -7256,6 +7257,40 @@ function translateFlagNote(btn, text, idx) {
   })
   .catch(function(){
     btn.textContent = '🇲🇽 ES';
+    btn.disabled = false;
+  });
+}
+
+function translateFlagPanelNote(originalText) {
+  var btn = document.getElementById('flag-panel-translate-btn');
+  var noteEl = document.getElementById('flag-panel-note-text');
+  if (!btn || !noteEl) return;
+
+  var isSpanish = btn.dataset.translated === '1';
+  if (isSpanish) {
+    noteEl.textContent = originalText;
+    btn.textContent = '🇲🇽 Español';
+    btn.dataset.translated = '0';
+    return;
+  }
+
+  btn.textContent = '⏳';
+  btn.disabled = true;
+  fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(originalText) + '&langpair=en|es')
+  .then(function(r){ return r.json(); })
+  .then(function(data){
+    var translated = data.responseData && data.responseData.translatedText;
+    if (translated) {
+      noteEl.textContent = translated;
+      btn.textContent = '🇺🇸 English';
+      btn.dataset.translated = '1';
+    } else {
+      btn.textContent = '🇲🇽 Español';
+    }
+    btn.disabled = false;
+  })
+  .catch(function(){
+    btn.textContent = '🇲🇽 Español';
     btn.disabled = false;
   });
 }
