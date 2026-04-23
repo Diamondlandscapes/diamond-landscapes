@@ -6187,7 +6187,7 @@ function renderWorkOrders() {
     '</div>';
 
   communities.forEach(function(comm) {
-    var commWOs = wos.filter(function(w) { return w.community === comm; });
+    var commWOs = wos.filter(function(w) { return w.community === comm && w.status !== 'placeholder'; });
     var open = commWOs.filter(function(w) { return w.status === 'open'; }).length;
     var inProgress = commWOs.filter(function(w) { return w.status === 'in_progress'; }).length;
     var completed = commWOs.filter(function(w) { return w.status === 'completed'; }).length;
@@ -6293,19 +6293,41 @@ function openAddCommunityWO() {
         '<div class="sheet-title" style="margin-bottom:0;">Add Community</div>' +
         '<button onclick="this.closest(\'.overlay\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
       '</div>' +
-      '<div style="font-size:13px;color:var(--text3);margin-bottom:10px;">Enter the community name to get started</div>' +
-      '<input id="new-comm-name" class="inp" placeholder="Community name (e.g. Palm Beach Gardens)" style="margin-bottom:16px;"/>' +
-      '<button class="btn btn-green" onclick="addCommunityWO()">Create Community</button>' +
+      '<div style="font-size:13px;color:var(--text3);margin-bottom:10px;">Enter the community name</div>' +
+      '<input id="new-comm-name" class="inp" placeholder="e.g. Palm Beach Gardens" style="margin-bottom:14px;"/>' +
+      '<div style="display:flex;gap:8px;">' +
+        '<button class="btn btn-green" style="flex:1;" onclick="addCommunityWO(false)">Save Community</button>' +
+        '<button class="btn" style="flex:1;background:var(--bg3);" onclick="addCommunityWO(true)">Save & Upload</button>' +
+      '</div>' +
     '</div>';
   document.body.appendChild(sheet);
 }
 
-function addCommunityWO() {
+function addCommunityWO(goToUpload) {
   var name = document.getElementById('new-comm-name').value.trim();
   if (!name) { toast('Enter a community name'); return; }
+  // Save a placeholder work order so the community persists
+  if (!(state.workOrders||[]).find(function(w){return w.community===name && w.id.startsWith('placeholder_');})) {
+    var placeholder = {
+      id: 'placeholder_' + Date.now(),
+      type: 'placeholder', community: name,
+      date: '', woNumber: '', address: '', village: '',
+      ownerName: '', requestType: '', details: '',
+      assignedTo: '', status: 'placeholder',
+      completedOn: '', completedPhoto: '', completedBy: ''
+    };
+    state.workOrders = state.workOrders || [];
+    state.workOrders.push(placeholder);
+    save();
+  }
   document.querySelector('.overlay.open')?.remove();
-  // Go straight to upload so user can add work orders
-  openUploadWO(name);
+  if (goToUpload) {
+    openUploadWO(name);
+  } else {
+    openCommunityWO(name);
+    renderWorkOrders();
+    toast(name + ' saved ✓');
+  }
 }
 
 function openUploadWO(community) {
@@ -6789,15 +6811,26 @@ function handleWOFileUpload(input, community) {
   var file = input.files[0];
   if (!file) return;
   var btn = document.getElementById('wo-import-btn');
+  var zone = document.getElementById('wo-file-zone');
+  var status = document.getElementById('wo-file-status');
+
+  // Show file name in zone
+  if (zone) zone.innerHTML = '<div style="font-size:28px;margin-bottom:6px;">📄</div><div style="font-size:13px;font-weight:700;">' + file.name + '</div><div style="font-size:11px;color:var(--text3);">Reading...</div>';
   if (btn) { btn.textContent = '⏳ Reading file...'; btn.disabled = true; }
 
   var ext = file.name.split('.').pop().toLowerCase();
 
+  function showStatus(msg) {
+    if (status) { status.style.display = 'block'; status.textContent = msg; }
+    if (btn) { btn.textContent = 'Import Work Orders'; btn.disabled = false; }
+    if (zone) zone.innerHTML = '<div style="font-size:28px;margin-bottom:4px;">✅</div><div style="font-size:12px;font-weight:700;">' + file.name + '</div>';
+  }
+
   if (ext === 'pdf') {
-    // Read PDF as text using FileReader
     var reader = new FileReader();
     reader.onload = function(e) {
       var b64 = e.target.result.split(',')[1];
+      if (status) { status.style.display = 'block'; status.textContent = '⏳ Claude is reading your PDF...'; }
       parsePDFWorkOrders(b64, community, file.name);
     };
     reader.readAsDataURL(file);
@@ -6811,11 +6844,9 @@ function handleWOFileUpload(input, community) {
         var rows = XLSX.utils.sheet_to_csv(ws);
         var ta = document.getElementById('wo-paste-area');
         if (ta) ta.value = rows;
-        if (btn) { btn.textContent = 'Import Work Orders'; btn.disabled = false; }
-        toast('Excel loaded — click Import to continue');
+        showStatus('✓ Excel file loaded — click Import to continue');
       } catch(err) {
-        if (btn) { btn.textContent = 'Import Work Orders'; btn.disabled = false; }
-        toast('Could not read Excel file');
+        showStatus('⚠ Could not read Excel file — try CSV');
       }
     };
     reader.readAsArrayBuffer(file);
@@ -6825,8 +6856,7 @@ function handleWOFileUpload(input, community) {
     reader.onload = function(e) {
       var ta = document.getElementById('wo-paste-area');
       if (ta) ta.value = e.target.result;
-      if (btn) { btn.textContent = 'Import Work Orders'; btn.disabled = false; }
-      toast('CSV loaded — click Import to continue');
+      showStatus('✓ CSV loaded — click Import to continue');
     };
     reader.readAsText(file);
   }
@@ -6864,11 +6894,15 @@ function parsePDFWorkOrders(b64data, community, filename) {
     var ta = document.getElementById('wo-paste-area');
     if (ta) ta.value = text;
     if (btn) { btn.textContent = 'Import Work Orders'; btn.disabled = false; }
+    var st = document.getElementById('wo-file-status');
+    if (st) { st.style.display='block'; st.textContent = '✓ PDF parsed by AI — review data and click Import'; }
     toast('PDF parsed — review and click Import');
   })
   .catch(function(err) {
     console.error('PDF parse error:', err);
     if (btn) { btn.textContent = 'Import Work Orders'; btn.disabled = false; }
+    var st = document.getElementById('wo-file-status');
+    if (st) { st.style.display='block'; st.style.color='var(--red)'; st.textContent = '⚠ Could not parse PDF automatically — paste data manually below'; }
     toast('Could not parse PDF — try pasting data manually');
   });
 }
