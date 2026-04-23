@@ -2894,14 +2894,14 @@ function loadFieldView() {
         </div>
         <div class="stop-body" id="fs-${i}" style="padding-top:12px;">
           ${prop?.notes?`<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.2);border-radius:8px;padding:10px;font-size:12px;color:var(--yellow);margin-bottom:10px;">📝 ${prop.notes}</div>`:''}
-          ${(prop?.flagNotes||[]).filter(fn=>fn.crewNote||fn.note).length?`
+          ${(state.flags||[]).filter(f=>f.propId===s.propId&&!f.resolved).length?`
             <div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);border-radius:8px;padding:10px;margin-bottom:10px;">
-              <div style="font-size:10px;font-weight:800;color:var(--red);letter-spacing:1px;margin-bottom:6px;">⚑ MANAGER FLAGS</div>
-              ${(prop.flagNotes||[]).filter(fn=>fn.crewNote||fn.note).map((fn,fni)=>`
+              <div style="font-size:10px;font-weight:800;color:var(--red);letter-spacing:1px;margin-bottom:6px;">⚑ OPEN FLAGS</div>
+              ${(state.flags||[]).filter(f=>f.propId===s.propId&&!f.resolved).map((fn,fni)=>`
                 <div style="font-size:12px;color:var(--text2);padding:6px 0;border-bottom:1px solid rgba(248,113,113,.1);">
-                  <div style="font-size:10px;color:var(--text4);margin-bottom:2px;">${fn.service||''}</div>
-                  <span id="flag-note-text-${fni}">${fn.crewNote||fn.note}</span>
-                  <button onclick="translateFlagNote(this,'${(fn.crewNote||fn.note).replace(/'/g,"\\'")}',${fni})" style="background:var(--bg4);border:none;font-size:10px;color:var(--blue);cursor:pointer;margin-left:6px;padding:2px 6px;border-radius:6px;">🇲🇽 ES</button>
+                  <div style="font-size:10px;color:var(--text4);font-weight:700;margin-bottom:2px;">${fn.service||''} · ${fn.priority||''}</div>
+                  <span class="flag-note-span">${fn.note}</span>
+                  <button onclick="translateFlagNote(this,'${fn.note.replace(/'/g,"\\'")}',${fni})" style="background:var(--bg4);border:none;font-size:10px;color:var(--blue);cursor:pointer;margin-left:6px;padding:2px 6px;border-radius:6px;">🇲🇽 ES</button>
                 </div>`).join('')}
             </div>`:''}
           <div class="sec-title">Tasks</div>
@@ -5176,13 +5176,15 @@ function openReportFlag(flagId) {
 
       ${!f.resolved ? `
       <div class="card" style="margin-bottom:12px;">
-        <div class="sec-title">Crew Instructions</div>
-        <div style="font-size:13px;color:var(--text3);margin-bottom:10px;">Add a note — crew will see this when they visit this property:</div>
-        <textarea class="inp" id="flag-crew-note-${f.id}" rows="3" placeholder="Instructions for crew (e.g. Check the back irrigation valve, trim the hedge near fence...)" style="margin-bottom:10px;">${f.crewNote||''}</textarea>
-        <button class="btn btn-green" onclick="saveFlagCrewNote('${f.id}')" style="font-size:13px;">
-          💾 Save Instructions
+        <div class="sec-title">Assign to Next Service</div>
+        <div style="font-size:13px;color:var(--text3);margin-bottom:10px;">Schedule this fix on the next visit:</div>
+        <select class="inp" id="flag-assign-route-${f.id}" style="margin-bottom:10px;">
+          <option value="">— Select a route —</option>
+          ${(state.routes||[]).map(r => `<option value="${r.id}">${r.name} (${r.day})</option>`).join('')}
+        </select>
+        <button class="btn btn-green" onclick="assignFlagToRoute('${f.id}')" style="font-size:13px;">
+          📅 Assign to Route
         </button>
-        ${f.crewNote ? `<div style="margin-top:8px;font-size:11px;color:var(--green);">✓ Instructions saved — crew will see this on their next visit</div>` : ''}
       </div>` : ''}
 
 
@@ -5207,27 +5209,19 @@ function openReportFlag(flagId) {
   document.getElementById('app').appendChild(panel);
 }
 
-function saveFlagCrewNote(flagId) {
-  const f = state.flags.find(x => x.id === flagId);
-  if (!f) return;
-  const note = document.getElementById('flag-crew-note-'+flagId)?.value?.trim() || '';
-  f.crewNote = note;
-  f.crewNoteDate = new Date().toLocaleDateString();
+function assignFlagToRoute(flagId) {
+  const routeId = document.getElementById('flag-assign-route-'+flagId)?.value;
+  if (!routeId) { toast('Select a route first'); return; }
+  const f     = state.flags.find(x => x.id === flagId);
+  const route = state.routes.find(r => r.id === routeId);
+  if (!f || !route) return;
+  f.assignedRouteId   = routeId;
+  f.assignedRouteName = route.name;
+  f.assignedDate      = new Date().toLocaleDateString();
   saveAndSync('flags', f);
-  // Also save note directly on the property for crew to see
-  const prop = (state.properties||[]).find(p => p.id === f.propId);
-  if (prop) {
-    if (!prop.flagNotes) prop.flagNotes = [];
-    // Replace existing note for this flag or add new
-    const existingIdx = prop.flagNotes.findIndex(n => n.flagId === flagId);
-    const entry = { flagId, service: f.service, note: f.note, crewNote: note, date: f.date };
-    if (existingIdx > -1) prop.flagNotes[existingIdx] = entry;
-    else prop.flagNotes.push(entry);
-    saveAndSync('properties', prop);
-  }
   document.getElementById('report-flag-panel')?.remove();
   renderReports();
-  toast('Instructions saved ✓');
+  toast('Assigned to ' + route.name + ' ✓');
 }
 
 function openReportOutstanding(routeId, propId) {
