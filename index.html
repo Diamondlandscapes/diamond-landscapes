@@ -6941,30 +6941,59 @@ function handleWOFileUpload(file, community) {
 
 
 function parsePDFWorkOrders(b64data, community, done, fail) {
-  fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      messages: [{role:'user', content:[
-        {type:'document', source:{type:'base64', media_type:'application/pdf', data:b64data}},
-        {type:'text', text:'Extract the work order table from this PDF. Return ONLY tab-separated rows: Date, WO Number, Address, Village, Owner Name, Request Type, Details. One row per line. No header. No explanation. Empty tab for blank columns. Ignore handwritten notes.'}
-      ]}]
-    })
-  })
-  .then(function(r){return r.json();})
-  .then(function(data){
-    var text = (data.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
-    var ta = document.getElementById('wo-paste-area');
-    if (ta) ta.value = text.trim();
-    if (done) done('✓ PDF parsed — review data and click Import');
-  })
-  .catch(function(err){
-    console.error(err);
-    if (fail) fail('⚠ PDF parse failed — paste data manually');
-  });
+  var binary = atob(b64data);
+  var bytes = new Uint8Array(binary.length);
+  for (var i=0; i<binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  function runExtract() {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfjsLib.getDocument({data: bytes}).promise.then(function(pdf) {
+      var allLines = [];
+      var chain = Promise.resolve();
+      for (var p=1; p<=pdf.numPages; p++) {
+        (function(pageNum) {
+          chain = chain.then(function() {
+            return pdf.getPage(pageNum).then(function(page) {
+              return page.getTextContent().then(function(tc) {
+                var byY = {};
+                tc.items.forEach(function(item) {
+                  var y = Math.round(item.transform[5]);
+                  if (!byY[y]) byY[y] = [];
+                  byY[y].push({x: item.transform[4], text: item.str});
+                });
+                var ys = Object.keys(byY).map(Number).sort(function(a,b){return b-a;});
+                ys.forEach(function(y) {
+                  var cols = byY[y].sort(function(a,b){return a.x-b.x;}).map(function(i){return i.text.trim();}).filter(Boolean);
+                  if (cols.length) allLines.push(cols.join('	'));
+                });
+              });
+            });
+          });
+        })(p);
+      }
+      return chain.then(function() {
+        var skip = ['date','work order','address','village','owner','request','assigned'];
+        var data = allLines.filter(function(l) {
+          var lo = l.toLowerCase();
+          return !skip.some(function(s){return lo.startsWith(s);}) && l.replace(/	/g,'').trim().length > 2;
+        });
+        var ta = document.getElementById('wo-paste-area');
+        if (ta) ta.value = data.join('\n');
+        if (done) done('✓ PDF extracted — ' + data.length + ' rows. Review and click Import');
+      });
+    }).catch(function(err) {
+      console.error(err);
+      if (fail) fail('⚠ PDF extract failed — try saving as CSV instead');
+    });
+  }
+  if (typeof pdfjsLib === 'undefined') {
+    var s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = runExtract;
+    s.onerror = function() { if(fail) fail('⚠ Could not load PDF parser'); };
+    document.head.appendChild(s);
+  } else { runExtract(); }
 }
+
 
 
 
