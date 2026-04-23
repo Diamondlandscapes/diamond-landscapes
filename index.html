@@ -5200,10 +5200,10 @@ function openReportFlag(flagId) {
     </div>
 
     <div style="padding:12px 16px;padding-bottom:calc(12px + var(--safe-bottom));border-top:1px solid var(--border);background:var(--bg2);display:flex;gap:10px;">
-      ${state.role === 'manager' ? (!f.resolved
+      ${!f.resolved
         ? `<button class="btn btn-green" onclick="resolveFlag('${f.id}','${f.propId}');document.getElementById('report-flag-panel').remove();renderReports();" style="font-size:14px;">✓ Mark Resolved</button>`
-        : `<button class="btn btn-outline" style="font-size:14px;color:var(--text3);">Already Resolved</button>`)
-        : ''}
+        : `<button class="btn btn-outline" style="font-size:14px;color:var(--text3);">Already Resolved</button>`
+      }
       <button class="btn btn-outline" onclick="document.getElementById('report-flag-panel').remove()" style="font-size:14px;flex:0.4;">Back</button>
     </div>`;
 
