@@ -6287,26 +6287,27 @@ function openCommunityWO(community) {
 function openAddCommunityWO() {
   var sheet = document.createElement('div');
   sheet.className = 'overlay open';
-  sheet.innerHTML =
-    '<div class="sheet">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
-        '<div class="sheet-title" style="margin-bottom:0;">Add Community</div>' +
-        '<button onclick="this.closest(\'.overlay\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
-      '</div>' +
-      '<div style="font-size:13px;color:var(--text3);margin-bottom:10px;">Enter the community name</div>' +
-      '<input id="new-comm-name" class="inp" placeholder="e.g. Palm Beach Gardens" style="margin-bottom:14px;"/>' +
-      '<div style="display:flex;gap:8px;">' +
-        '<button class="btn btn-green" style="flex:1;" onclick="addCommunityWO(false)">Save Community</button>' +
-        '<button class="btn" style="flex:1;background:var(--bg3);" onclick="addCommunityWO(true)">Save & Upload</button>' +
-      '</div>' +
-    '</div>';
+  var inner = document.createElement('div');
+  inner.className = 'sheet';
+  inner.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
+      '<div class="sheet-title" style="margin-bottom:0;">Add Community</div>' +
+      '<button id="add-comm-close" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+    '</div>' +
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:10px;">Enter the community name</div>' +
+    '<input id="new-comm-name" class="inp" placeholder="e.g. Palm Beach Gardens" style="margin-bottom:14px;"/>' +
+    '<button id="add-comm-save" class="btn btn-green">Save Community</button>';
+  sheet.appendChild(inner);
   document.body.appendChild(sheet);
+  document.getElementById('add-comm-close').onclick = function() { sheet.remove(); };
+  document.getElementById('add-comm-save').onclick = function() { addCommunityWO(); };
+  document.getElementById('new-comm-name').onkeydown = function(e) { if (e.key==='Enter') addCommunityWO(); };
+  setTimeout(function() { document.getElementById('new-comm-name').focus(); }, 100);
 }
 
-function addCommunityWO(goToUpload) {
+function addCommunityWO() {
   var name = document.getElementById('new-comm-name').value.trim();
   if (!name) { toast('Enter a community name'); return; }
-  // Save a placeholder work order so the community persists
   if (!(state.workOrders||[]).find(function(w){return w.community===name && w.id.startsWith('placeholder_');})) {
     var placeholder = {
       id: 'placeholder_' + Date.now(),
@@ -6320,44 +6321,131 @@ function addCommunityWO(goToUpload) {
     state.workOrders.push(placeholder);
     save();
   }
-  document.querySelector('.overlay.open')?.remove();
-  if (goToUpload) {
-    openUploadWO(name);
-  } else {
-    openCommunityWO(name);
-    renderWorkOrders();
-    toast(name + ' saved ✓');
-  }
+  document.querySelectorAll('.overlay.open').forEach(function(o){o.remove();});
+  openCommunityWO(name);
+  renderWorkOrders();
+  toast(name + ' saved ✓');
+}
+
+function woUploadClose() {
+  var s = document.getElementById('wo-upload-sheet');
+  if (s) s.remove();
+  var f = document.getElementById('wo-hidden-file');
+  if (f) f.remove();
 }
 
 function openUploadWO(community) {
+  woUploadClose();
+
+  // File input attached to body - survives sheet redraws
+  var fi = document.createElement('input');
+  fi.type = 'file';
+  fi.id = 'wo-hidden-file';
+  fi.accept = '.pdf,.xlsx,.xls,.csv';
+  fi.style.cssText = 'position:fixed;top:-999px;left:-999px;opacity:0;';
+  document.body.appendChild(fi);
+
+  fi.addEventListener('change', function() {
+    var file = fi.files && fi.files[0];
+    if (!file) return;
+    var zone = document.getElementById('wo-file-zone');
+    if (zone) {
+      zone.innerHTML = '';
+      var ic = document.createElement('div'); ic.textContent = '📄'; ic.style.fontSize='24px';
+      var nm = document.createElement('div'); nm.textContent = file.name; nm.style.cssText='font-weight:700;font-size:13px;margin-top:4px;';
+      var ok = document.createElement('div'); ok.textContent = 'File attached ✓'; ok.style.cssText='font-size:11px;color:var(--green);';
+      zone.appendChild(ic); zone.appendChild(nm); zone.appendChild(ok);
+    }
+    var st = document.getElementById('wo-file-status');
+    if (st) { st.style.display='block'; st.textContent='⏳ Processing...'; }
+    var btn = document.getElementById('wo-import-btn');
+    if (btn) { btn.disabled=true; btn.textContent='⏳ Processing...'; }
+    handleWOFileUpload(file, community);
+  });
+
+  // Build sheet using DOM API - no innerHTML for interactive elements
   var sheet = document.createElement('div');
+  sheet.id = 'wo-upload-sheet';
   sheet.className = 'overlay open';
-  sheet.innerHTML =
-    '<div class="sheet" style="max-height:92vh;">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
-        '<div class="sheet-title" style="margin-bottom:0;">Upload Work Orders</div>' +
-        '<button onclick="this.closest(\'.overlay\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
-      '</div>' +
-      '<div style="font-size:13px;color:var(--text3);margin-bottom:14px;">Community: <strong style="color:var(--text);">' + community + '</strong></div>' +
-      '<div style="display:flex;gap:8px;margin-bottom:14px;">' +
-        '<button id="wo-type-land" class="pill active" onclick="document.getElementById(\'wo-type-land\').className=\'pill active\';document.getElementById(\'wo-type-irr\').className=\'pill\';">🌿 Landscaping</button>' +
-        '<button id="wo-type-irr" class="pill" onclick="document.getElementById(\'wo-type-irr\').className=\'pill active\';document.getElementById(\'wo-type-land\').className=\'pill\';">💧 Irrigation</button>' +
-      '</div>' +
-      '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
-        '<label style="flex:1;cursor:pointer;">' +
-          '<div style="background:var(--bg3);border:1px dashed var(--border2);border-radius:10px;padding:12px;text-align:center;font-size:13px;color:var(--text3);">' +
-            '📄 Upload PDF or Excel<br><span style="font-size:11px;">tap to select file</span>' +
-          '</div>' +
-          '<input type="file" id="wo-file-input" accept=".pdf,.xlsx,.xls,.csv" style="display:none;" onchange="handleWOFileUpload(this, \'' + community.replace(/'/g,"\\'") + '\')">' +
-        '</label>' +
-      '</div>' +
-      '<div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:8px;">— or paste data below —</div>' +
-      '<textarea id="wo-paste-area" class="inp" rows="6" placeholder="Paste rows from Excel/Sheets here..." style="font-size:12px;font-family:monospace;"></textarea>' +
-      '<div style="font-size:11px;color:var(--text3);margin:8px 0 12px;">Columns: Date, WO#, Address, Village, Owner, Request Type, Details</div>' +
-      '<button class="btn btn-green" onclick="processWOUpload(\'' + community.replace(/'/g,"\\'") + '\')" id="wo-import-btn">Import Work Orders</button>' +
-    '</div>';
   document.body.appendChild(sheet);
+
+  var inner = document.createElement('div');
+  inner.className = 'sheet';
+  inner.style.maxHeight = '92vh';
+  sheet.appendChild(inner);
+
+  // Header row
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+  var title = document.createElement('div');
+  title.className = 'sheet-title';
+  title.style.marginBottom = '0';
+  title.textContent = 'Upload Work Orders';
+  var xBtn = document.createElement('button');
+  xBtn.style.cssText = 'background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);';
+  xBtn.textContent = '✕';
+  xBtn.onclick = woUploadClose;
+  hdr.appendChild(title); hdr.appendChild(xBtn);
+  inner.appendChild(hdr);
+
+  // Community label
+  var cl = document.createElement('div');
+  cl.style.cssText = 'font-size:13px;color:var(--text3);margin-bottom:14px;';
+  cl.innerHTML = 'Community: <strong style="color:var(--text);">' + community + '</strong>';
+  inner.appendChild(cl);
+
+  // Type pills
+  var pillRow = document.createElement('div');
+  pillRow.style.cssText = 'display:flex;gap:8px;margin-bottom:14px;';
+  var landPill = document.createElement('button');
+  landPill.id = 'wo-type-land'; landPill.className = 'pill active'; landPill.textContent = '🌿 Landscaping';
+  var irrPill = document.createElement('button');
+  irrPill.id = 'wo-type-irr'; irrPill.className = 'pill'; irrPill.textContent = '💧 Irrigation';
+  landPill.onclick = function() { landPill.className='pill active'; irrPill.className='pill'; };
+  irrPill.onclick  = function() { irrPill.className='pill active'; landPill.className='pill'; };
+  pillRow.appendChild(landPill); pillRow.appendChild(irrPill);
+  inner.appendChild(pillRow);
+
+  // File zone
+  var zone = document.createElement('div');
+  zone.id = 'wo-file-zone';
+  zone.style.cssText = 'background:var(--bg3);border:2px dashed var(--border2);border-radius:12px;padding:24px;text-align:center;margin-bottom:12px;cursor:pointer;';
+  zone.innerHTML = '<div style="font-size:32px;margin-bottom:8px;">📄</div><div style="font-size:14px;font-weight:700;margin-bottom:4px;">Tap to upload PDF, Excel, or CSV</div><div style="font-size:11px;color:var(--text4);">.pdf · .xlsx · .csv</div>';
+  zone.onclick = function() { fi.click(); };
+  inner.appendChild(zone);
+
+  // Status bar
+  var st = document.createElement('div');
+  st.id = 'wo-file-status';
+  st.style.cssText = 'display:none;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;font-weight:700;color:var(--green);';
+  inner.appendChild(st);
+
+  // Divider
+  var div2 = document.createElement('div');
+  div2.style.cssText = 'font-size:11px;color:var(--text3);text-align:center;margin-bottom:8px;';
+  div2.textContent = '— or paste data below —';
+  inner.appendChild(div2);
+
+  // Textarea
+  var ta = document.createElement('textarea');
+  ta.id = 'wo-paste-area'; ta.className = 'inp'; ta.rows = 5;
+  ta.placeholder = 'Paste rows from Excel/Sheets here...';
+  ta.style.cssText = 'font-size:12px;font-family:monospace;';
+  inner.appendChild(ta);
+
+  // Hint
+  var hint = document.createElement('div');
+  hint.style.cssText = 'font-size:11px;color:var(--text3);margin:6px 0 12px;';
+  hint.textContent = 'Columns: Date, WO#, Address, Village, Owner, Request Type, Details';
+  inner.appendChild(hint);
+
+  // Import button
+  var importBtn = document.createElement('button');
+  importBtn.id = 'wo-import-btn';
+  importBtn.className = 'btn btn-green';
+  importBtn.textContent = 'Import Work Orders';
+  importBtn.onclick = function() { processWOUpload(community); };
+  inner.appendChild(importBtn);
 }
 
 function processWOUpload(community) {
@@ -6807,105 +6895,77 @@ function submitCrewWOComplete(woId, photoData) {
 
 
 
-function handleWOFileUpload(input, community) {
-  var file = input.files[0];
-  if (!file) return;
-  var btn = document.getElementById('wo-import-btn');
-  var zone = document.getElementById('wo-file-zone');
-  var status = document.getElementById('wo-file-status');
-
-  // Show file name in zone
-  if (zone) zone.innerHTML = '<div style="font-size:28px;margin-bottom:6px;">📄</div><div style="font-size:13px;font-weight:700;">' + file.name + '</div><div style="font-size:11px;color:var(--text3);">Reading...</div>';
-  if (btn) { btn.textContent = '⏳ Reading file...'; btn.disabled = true; }
-
+function handleWOFileUpload(file, community) {
   var ext = file.name.split('.').pop().toLowerCase();
-
-  function showStatus(msg) {
-    if (status) { status.style.display = 'block'; status.textContent = msg; }
-    if (btn) { btn.textContent = 'Import Work Orders'; btn.disabled = false; }
-    if (zone) zone.innerHTML = '<div style="font-size:28px;margin-bottom:4px;">✅</div><div style="font-size:12px;font-weight:700;">' + file.name + '</div>';
+  function done(msg) {
+    var st = document.getElementById('wo-file-status');
+    var btn = document.getElementById('wo-import-btn');
+    if (st)  { st.style.display='block'; st.style.color='var(--green)'; st.textContent=msg; }
+    if (btn) { btn.disabled=false; btn.textContent='Import Work Orders'; }
   }
-
+  function fail(msg) {
+    var st = document.getElementById('wo-file-status');
+    var btn = document.getElementById('wo-import-btn');
+    if (st)  { st.style.display='block'; st.style.color='var(--red)'; st.textContent=msg; }
+    if (btn) { btn.disabled=false; btn.textContent='Import Work Orders'; }
+  }
   if (ext === 'pdf') {
     var reader = new FileReader();
     reader.onload = function(e) {
       var b64 = e.target.result.split(',')[1];
-      if (status) { status.style.display = 'block'; status.textContent = '⏳ Claude is reading your PDF...'; }
-      parsePDFWorkOrders(b64, community, file.name);
+      parsePDFWorkOrders(b64, community, done, fail);
     };
     reader.readAsDataURL(file);
-
   } else if (ext === 'xlsx' || ext === 'xls') {
     var reader = new FileReader();
     reader.onload = function(e) {
       try {
-        var wb = XLSX.read(e.target.result, {type:'array'});
+        var wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
         var ws = wb.Sheets[wb.SheetNames[0]];
-        var rows = XLSX.utils.sheet_to_csv(ws);
         var ta = document.getElementById('wo-paste-area');
-        if (ta) ta.value = rows;
-        showStatus('✓ Excel file loaded — click Import to continue');
-      } catch(err) {
-        showStatus('⚠ Could not read Excel file — try CSV');
-      }
+        if (ta) ta.value = XLSX.utils.sheet_to_csv(ws);
+        done('✓ Excel loaded — click Import');
+      } catch(err) { fail('⚠ Could not read Excel — try CSV'); }
     };
     reader.readAsArrayBuffer(file);
-
   } else if (ext === 'csv') {
     var reader = new FileReader();
     reader.onload = function(e) {
       var ta = document.getElementById('wo-paste-area');
       if (ta) ta.value = e.target.result;
-      showStatus('✓ CSV loaded — click Import to continue');
+      done('✓ CSV loaded — click Import');
     };
     reader.readAsText(file);
   }
 }
 
-function parsePDFWorkOrders(b64data, community, filename) {
-  var btn = document.getElementById('wo-import-btn');
-  var isIrrigation = document.getElementById('wo-type-irr')?.classList.contains('active');
 
-  // Call Claude API to extract table from PDF
+function parsePDFWorkOrders(b64data, community, done, fail) {
   fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {'Content-Type':'application/json'},
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2000,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'document',
-            source: { type: 'base64', media_type: 'application/pdf', data: b64data }
-          },
-          {
-            type: 'text',
-            text: 'Extract the work order table from this PDF. Return ONLY tab-separated rows with these columns in order: Date, WO Number, Address, Village, Owner Name, Request Type, Details. One row per line. No header row. No extra text. If a column is blank use an empty tab. Ignore any handwritten notes.'
-          }
-        ]
-      }]
+      messages: [{role:'user', content:[
+        {type:'document', source:{type:'base64', media_type:'application/pdf', data:b64data}},
+        {type:'text', text:'Extract the work order table from this PDF. Return ONLY tab-separated rows: Date, WO Number, Address, Village, Owner Name, Request Type, Details. One row per line. No header. No explanation. Empty tab for blank columns. Ignore handwritten notes.'}
+      ]}]
     })
   })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    var text = (data.content || []).filter(function(b) { return b.type === 'text'; }).map(function(b) { return b.text; }).join('');
+  .then(function(r){return r.json();})
+  .then(function(data){
+    var text = (data.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
     var ta = document.getElementById('wo-paste-area');
-    if (ta) ta.value = text;
-    if (btn) { btn.textContent = 'Import Work Orders'; btn.disabled = false; }
-    var st = document.getElementById('wo-file-status');
-    if (st) { st.style.display='block'; st.textContent = '✓ PDF parsed by AI — review data and click Import'; }
-    toast('PDF parsed — review and click Import');
+    if (ta) ta.value = text.trim();
+    if (done) done('✓ PDF parsed — review data and click Import');
   })
-  .catch(function(err) {
-    console.error('PDF parse error:', err);
-    if (btn) { btn.textContent = 'Import Work Orders'; btn.disabled = false; }
-    var st = document.getElementById('wo-file-status');
-    if (st) { st.style.display='block'; st.style.color='var(--red)'; st.textContent = '⚠ Could not parse PDF automatically — paste data manually below'; }
-    toast('Could not parse PDF — try pasting data manually');
+  .catch(function(err){
+    console.error(err);
+    if (fail) fail('⚠ PDF parse failed — paste data manually');
   });
 }
+
 
 
 // ─── SEED DATA ───────────────────────────────────────────────────────────
