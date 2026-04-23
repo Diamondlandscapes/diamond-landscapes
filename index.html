@@ -1196,7 +1196,7 @@ select.inp{cursor:pointer;}
         <div style="font-size:12px;color:var(--text3);font-weight:700;letter-spacing:1px;">SERVICES</div>
         <div id="np-services" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
         <div style="font-size:12px;color:var(--text3);font-weight:700;letter-spacing:1px;">SERVICE FREQUENCY</div>
-        <select class="inp" id="np-frequency">
+        <select class="inp" id="np-frequency" onchange="document.getElementById('np-days-wrap').style.display=this.value==='2x Per Week'?'block':'none'">
           <option value="">— Select frequency —</option>
           <option>Weekly</option>
           <option>2x Per Week</option>
@@ -2325,12 +2325,24 @@ function openPropDetail(id) {
         <input class="inp" id="pe-phone-${id}" value="${p.phone||''}" placeholder="Phone" type="tel"/>
         <textarea class="inp" id="pe-notes-${id}" rows="2" placeholder="Notes (gate code, dog, etc.)">${p.notes||''}</textarea>
         <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">SERVICE FREQUENCY</div>
-        <select class="inp" id="pe-freq-${id}" onchange="document.getElementById('pe-custom-${id}').style.display=this.value==='Custom'?'block':'none'">
+        <select class="inp" id="pe-freq-${id}" onchange="onPeFreqChange('${id}',this.value)">
           <option value="">— Not set —</option>
           ${freqOptions.map(f=>`<option value="${f}" ${p.frequency===f?'selected':''}>${f}</option>`).join('')}
         </select>
         <input class="inp" id="pe-custom-${id}" placeholder="Custom frequency (e.g. Every 10 days)"
           value="${p.customFreq||''}" style="display:${p.frequency==='Custom'?'block':'none'};"/>
+        <div id="pe-days-${id}" style="display:${p.frequency==='2x Per Week'?'block':'none'};">
+          <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">SERVICE DAYS</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(day => `
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:6px 10px;">
+                <input type="checkbox" class="pe-day-cb-${id}" value="${day}"
+                  ${(p.serviceDays||[]).includes(day)?'checked':''}
+                  style="width:16px;height:16px;accent-color:var(--green);cursor:pointer;"/>
+                <span style="font-size:12px;font-weight:700;">${day.slice(0,3)}</span>
+              </label>`).join('')}
+          </div>
+        </div>
         <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">LAST SERVICE DATE</div>
         <input type="date" class="inp" id="pe-last-${id}" value="${formatDateForInput(p.lastServiceDate)}" style="color-scheme:dark;background:var(--bg4);color:var(--text);border:1px solid var(--green);"/>
         <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">NEXT SERVICE DATE</div>
@@ -2441,6 +2453,13 @@ function savePropEdit(id) {
   p.notes      = document.getElementById('pe-notes-'+id)?.value          || '';
   p.frequency  = document.getElementById('pe-freq-'+id)?.value           || '';
   p.customFreq = document.getElementById('pe-custom-'+id)?.value         || '';
+  // Save service days for 2x Per Week
+  if (p.frequency === '2x Per Week') {
+    const cbs = document.querySelectorAll('.pe-day-cb-'+id+':checked');
+    p.serviceDays = Array.from(cbs).map(cb => cb.value);
+  } else {
+    p.serviceDays = [];
+  }
 
   // service dates
   const lastRaw = document.getElementById('pe-last-'+id)?.value;
@@ -7566,7 +7585,17 @@ function getMondayOfWeek(date) {
 function isPropertyDueThisWeek(prop, weekMonday) {
   if (!prop) return true; // unknown prop - include it
   const freq = prop.frequency;
-  if (!freq || freq === 'Weekly' || freq === '2x Per Week') return true;
+  if (!freq || freq === 'Weekly') return true;
+  if (freq === '2x Per Week') {
+    // If specific service days are set, check if the route day matches
+    if (prop.serviceDays && prop.serviceDays.length > 0) {
+      // We need the day of week for this week's instance
+      // weekMonday is the Monday of the week — the caller passes the actual date
+      // Use weekMonday to check — but serviceDays is checked per route day in getOrCreateWeekInstance
+      return true; // day filtering happens at route-stop level
+    }
+    return true;
+  }
   if (freq === 'As Needed' || freq === 'Custom') return false; // manual only
 
   // Parse last service date
@@ -7601,8 +7630,14 @@ function getOrCreateWeekInstance(route, date) {
   if (!state.routeWeeks[key]) {
     // Generate new instance from template
     const weekMonday = getMondayOfWeek(date);
+    const routeDayName = route.day; // e.g. 'Monday'
     const dueStops = (route.stops || []).filter(function(s) {
       const prop = (state.properties || []).find(function(p) { return p.id === s.propId; });
+      if (!prop) return true;
+      // For 2x Per Week: only include if this route's day is in the property's service days
+      if (prop.frequency === '2x Per Week' && prop.serviceDays && prop.serviceDays.length > 0) {
+        if (!prop.serviceDays.includes(routeDayName)) return false;
+      }
       return isPropertyDueThisWeek(prop, weekMonday);
     }).map(function(s) {
       return {
@@ -7933,6 +7968,13 @@ function mgrCalShowDetail(crewId, dateStr, dayName) {
   detailEl.innerHTML = html;
 }
 
+
+function onPeFreqChange(id, val) {
+  var customEl = document.getElementById('pe-custom-' + id);
+  var daysEl   = document.getElementById('pe-days-' + id);
+  if (customEl) customEl.style.display = val === 'Custom' ? 'block' : 'none';
+  if (daysEl)   daysEl.style.display   = val === '2x Per Week' ? 'block' : 'none';
+}
 // ─── SEED DATA ───────────────────────────────────────────────────────────
 function seedData() {
   // No default data — all data comes from Google Sheets or user input
