@@ -1516,6 +1516,8 @@ function toast(msg='✓ Saved') {
 
 // ─── TABS ─────────────────────────────────────────────────────────────────
 function switchTab(tab) {
+  // Close any open panels when switching tabs
+  document.querySelectorAll('.panel.open').forEach(p => p.classList.remove('open'));
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const screenEl = document.getElementById('screen-' + tab);
   if (screenEl) screenEl.classList.add('active');
@@ -1874,7 +1876,7 @@ function openRouteDetail(id) {
     stops.forEach((s,i) => {
       const prop = state.properties.find(p => p.id === s.propId);
       const flags = state.flags.filter(f => f.propId === s.propId && !f.resolved);
-      html += `<div class="stop-card">
+      html += `<div class="stop-card" data-idx="${i}" data-prop="${s.propId}">
         <div class="stop-head" onclick="toggleStop('stop-${id}-${i}')">
           <div style="display:flex;gap:10px;align-items:center;">
             <div style="width:26px;height:26px;border-radius:50%;background:${s.completed?'var(--green3)':'var(--bg4)'};
@@ -1917,6 +1919,7 @@ function openRouteDetail(id) {
   html += `<div style="margin-top:12px;"><button class="btn btn-red" onclick="deleteRoute('${r.id}')" style="font-size:13px;">Delete Route</button></div>`;
   document.getElementById('rp-body').innerHTML = html;
   document.getElementById('route-panel').classList.add('open');
+  if (state.role === 'manager') initRouteDragDrop(r.id);
 }
 
 function toggleStop(id) {
@@ -2041,6 +2044,19 @@ function openCrewDetail(id) {
 
 
     <div class="card" style="margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div class="sec-title" style="margin-bottom:0;">Monthly Schedule</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button onclick="mgr_cwPrev('${id}')" style="background:var(--bg4);border:1px solid var(--border2);border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:14px;color:var(--text2);display:flex;align-items:center;justify-content:center;line-height:1;">‹</button>
+          <div id="mgr-cal-label-${id}" style="font-size:12px;font-weight:700;min-width:100px;text-align:center;"></div>
+          <button onclick="mgr_cwNext('${id}')" style="background:var(--bg4);border:1px solid var(--border2);border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:14px;color:var(--text2);display:flex;align-items:center;justify-content:center;line-height:1;">›</button>
+        </div>
+      </div>
+      <div id="mgr-cal-${id}"></div>
+      <div id="mgr-cal-detail-${id}" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;">
       <div class="sec-title">Assign to Route</div>
       <select class="inp" id="crew-assign-route-${id}" style="margin-bottom:10px;">
         <option value="">— Select a route —</option>
@@ -2054,6 +2070,10 @@ function openCrewDetail(id) {
 
   document.getElementById('cp-body').innerHTML = html;
   document.getElementById('crew-panel').classList.add('open');
+  // init crew calendar for manager view
+  if (!state._mgrCal) state._mgrCal = {};
+  if (!state._mgrCal[id]) state._mgrCal[id] = { year: new Date().getFullYear(), month: new Date().getMonth() };
+  buildMgrCrewCal(id);
 }
 
 function toggleCrewEdit(id) {
@@ -7660,6 +7680,258 @@ function getWeekInstanceSummary(route, date) {
   return { done: done, total: instance.stops.length };
 }
 
+
+
+// ─── ROUTE DRAG-AND-DROP REORDER ─────────────────────────────────────────────
+function initRouteDragDrop(routeId) {
+  var handles = document.querySelectorAll('.drag-handle');
+  var dragSrc = null;
+  var dragSrcIdx = null;
+
+  handles.forEach(function(handle) {
+    var card = handle.closest('.stop-card');
+    if (!card) return;
+    var idx = parseInt(handle.dataset.idx);
+
+    // Desktop: HTML5 drag
+    card.draggable = true;
+    card.dataset.idx = idx;
+    card.dataset.prop = handle.dataset.prop;
+
+    card.addEventListener('dragstart', function(e) {
+      dragSrc = card;
+      dragSrcIdx = idx;
+      card.style.opacity = '0.4';
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    card.addEventListener('dragend', function() {
+      card.style.opacity = '1';
+      document.querySelectorAll('.stop-card').forEach(function(c) {
+        c.style.border = '';
+      });
+    });
+
+    card.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (card !== dragSrc) {
+        card.style.border = '2px solid var(--green)';
+      }
+    });
+
+    card.addEventListener('dragleave', function() {
+      card.style.border = '';
+    });
+
+    card.addEventListener('drop', function(e) {
+      e.preventDefault();
+      card.style.border = '';
+      if (!dragSrc || dragSrc === card) return;
+      var destIdx = parseInt(card.dataset.idx);
+      if (isNaN(dragSrcIdx) || isNaN(destIdx)) return;
+      reorderRouteStop(routeId, dragSrcIdx, destIdx);
+    });
+
+    // Mobile: touch drag
+    var touchStartY = 0;
+    var touchCard = null;
+    var placeholder = null;
+
+    handle.addEventListener('touchstart', function(e) {
+      e.stopPropagation();
+      touchStartY = e.touches[0].clientY;
+      touchCard = card;
+      dragSrcIdx = idx;
+      touchCard.style.opacity = '0.5';
+      touchCard.style.boxShadow = '0 4px 20px rgba(0,0,0,.4)';
+    }, {passive: true});
+
+    handle.addEventListener('touchmove', function(e) {
+      e.preventDefault();
+      var touch = e.touches[0];
+      var el = document.elementFromPoint(touch.clientX, touch.clientY);
+      var target = el ? el.closest('.stop-card') : null;
+      document.querySelectorAll('.stop-card').forEach(function(c) {
+        c.style.border = '';
+      });
+      if (target && target !== touchCard) {
+        target.style.border = '2px solid var(--green)';
+      }
+    }, {passive: false});
+
+    handle.addEventListener('touchend', function(e) {
+      touchCard.style.opacity = '1';
+      touchCard.style.boxShadow = '';
+      var touch = e.changedTouches[0];
+      var el = document.elementFromPoint(touch.clientX, touch.clientY);
+      var target = el ? el.closest('.stop-card') : null;
+      document.querySelectorAll('.stop-card').forEach(function(c) { c.style.border = ''; });
+      if (target && target !== touchCard) {
+        var destIdx = parseInt(target.dataset.idx);
+        if (!isNaN(destIdx) && destIdx !== dragSrcIdx) {
+          reorderRouteStop(routeId, dragSrcIdx, destIdx);
+        }
+      }
+    }, {passive: true});
+  });
+}
+
+function reorderRouteStop(routeId, fromIdx, toIdx) {
+  var route = state.routes.find(function(r) { return r.id === routeId; });
+  if (!route || !route.stops) return;
+  var stops = route.stops;
+  if (fromIdx < 0 || fromIdx >= stops.length || toIdx < 0 || toIdx >= stops.length) return;
+  var moved = stops.splice(fromIdx, 1)[0];
+  stops.splice(toIdx, 0, moved);
+  saveAndSync('routes', route);
+  openRouteDetail(routeId);
+  toast('Stop reordered ✓');
+}
+
+
+// ─── MANAGER CREW CALENDAR ───────────────────────────────────────────────────
+function mgr_cwPrev(crewId) {
+  if (!state._mgrCal) state._mgrCal = {};
+  if (!state._mgrCal[crewId]) state._mgrCal[crewId] = { year: new Date().getFullYear(), month: new Date().getMonth() };
+  var cal = state._mgrCal[crewId];
+  if (cal.month === 0) { cal.month = 11; cal.year--; } else cal.month--;
+  buildMgrCrewCal(crewId);
+}
+
+function mgr_cwNext(crewId) {
+  if (!state._mgrCal) state._mgrCal = {};
+  if (!state._mgrCal[crewId]) state._mgrCal[crewId] = { year: new Date().getFullYear(), month: new Date().getMonth() };
+  var cal = state._mgrCal[crewId];
+  if (cal.month === 11) { cal.month = 0; cal.year++; } else cal.month++;
+  buildMgrCrewCal(crewId);
+}
+
+function buildMgrCrewCal(crewId) {
+  if (!state._mgrCal) state._mgrCal = {};
+  if (!state._mgrCal[crewId]) state._mgrCal[crewId] = { year: new Date().getFullYear(), month: new Date().getMonth() };
+  var cal      = state._mgrCal[crewId];
+  var year     = cal.year;
+  var month    = cal.month;
+  var myRoutes = (state.routes||[]).filter(function(r) { return r.crewId === crewId; });
+  var today    = new Date();
+  var todayStr = today.toDateString();
+  var ROUTE_DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  var labelEl = document.getElementById('mgr-cal-label-' + crewId);
+  if (labelEl) labelEl.textContent = new Date(year, month, 1)
+    .toLocaleDateString('en-US', { month:'long', year:'numeric' });
+
+  var calEl = document.getElementById('mgr-cal-' + crewId);
+  if (!calEl) return;
+
+  var firstDay    = new Date(year, month, 1).getDay();
+  var daysInMonth = new Date(year, month+1, 0).getDate();
+
+  var html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:3px;">';
+  DOW.forEach(function(d) {
+    html += '<div style="text-align:center;font-size:9px;font-weight:700;color:var(--text4);padding:2px 0;">' + d + '</div>';
+  });
+  html += '</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">';
+
+  for (var i = 0; i < firstDay; i++) html += '<div></div>';
+
+  for (var d = 1; d <= daysInMonth; d++) {
+    var date     = new Date(year, month, d);
+    var dayName  = ROUTE_DAYS[date.getDay()];
+    var isToday  = date.toDateString() === todayStr;
+    var dateStr  = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+    var route    = myRoutes.find(function(r) { return r.day === dayName; });
+    var hasRoute = !!route;
+    var selDate  = cal.selectedDate;
+    var isSelected = selDate === dateStr;
+
+    var summary  = hasRoute ? getWeekInstanceSummary(route, date) : {done:0, total:0};
+    var done     = summary.done;
+    var total    = summary.total;
+    var allDone  = hasRoute && total > 0 && done === total;
+
+    var bg, color, border;
+    if (isSelected)    { bg='var(--green3)'; color='#fff'; border='2px solid var(--green)'; }
+    else if (isToday)  { bg='rgba(74,222,128,.12)'; color='var(--green)'; border='2px solid var(--green)'; }
+    else if (hasRoute) { bg='var(--bg3)'; color='var(--text)'; border='1px solid var(--border2)'; }
+    else               { bg='transparent'; color='var(--text4)'; border='1px solid transparent'; }
+
+    html += '<div onclick="mgrCalSelectDay(this)" data-crew="' + crewId + '" data-date="' + dateStr + '" data-day="' + dayName + '" style="text-align:center;border-radius:6px;padding:4px 1px;cursor:' + (hasRoute?'pointer':'default') + ';background:' + bg + ';color:' + color + ';border:' + border + ';min-height:38px;display:flex;flex-direction:column;align-items:center;justify-content:center;">'
+      + '<div style="font-size:12px;font-weight:' + (isToday||isSelected?'800':'500') + ';">' + d + '</div>'
+      + (hasRoute ? '<div style="width:5px;height:5px;border-radius:50%;background:' + (allDone?'var(--green)':isSelected?'#fff':'var(--teal)') + ';margin-top:1px;"></div>' : '')
+      + (hasRoute && total ? '<div style="font-size:8px;opacity:.8;">' + done + '/' + total + '</div>' : '')
+      + '</div>';
+  }
+  html += '</div>';
+  calEl.innerHTML = html;
+
+  // If a day is selected, show its detail
+  if (cal.selectedDate) mgrCalShowDetail(crewId, cal.selectedDate, cal.selectedDayName);
+}
+
+function mgrCalSelectDay(el) {
+  var crewId = el.dataset.crew;
+  var dateStr = el.dataset.date;
+  var dayName = el.dataset.day;
+  if (!crewId || !dateStr || !dayName) return;
+  if (!state._mgrCal) state._mgrCal = {};
+  if (!state._mgrCal[crewId]) state._mgrCal[crewId] = { year: new Date().getFullYear(), month: new Date().getMonth() };
+  state._mgrCal[crewId].selectedDate = dateStr;
+  state._mgrCal[crewId].selectedDayName = dayName;
+  buildMgrCrewCal(crewId);
+}
+
+function mgrCalShowDetail(crewId, dateStr, dayName) {
+  var detailEl = document.getElementById('mgr-cal-detail-' + crewId);
+  if (!detailEl) return;
+
+  var myRoutes = (state.routes||[]).filter(function(r) { return r.crewId === crewId; });
+  var route    = myRoutes.find(function(r) { return r.day === dayName; });
+
+  if (!route) {
+    detailEl.innerHTML = '<div style="font-size:12px;color:var(--text4);text-align:center;padding:10px;">No route assigned for ' + dayName + '</div>';
+    return;
+  }
+
+  var selDate  = new Date(dateStr + 'T12:00:00');
+  var instance = getOrCreateWeekInstance(route, selDate);
+  var stops    = instance.stops || [];
+  var done     = stops.filter(function(s) { return s.completed; }).length;
+  var total    = stops.length;
+  var skipped  = (route.stops||[]).length - total;
+  var label    = selDate.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
+  var isToday  = selDate.toDateString() === new Date().toDateString();
+
+  var html = '<div style="background:var(--bg3);border-radius:10px;padding:12px;border:1px solid var(--border);">'
+    + '<div style="font-size:11px;font-weight:700;color:' + (isToday?'var(--green)':'var(--text3)') + ';margin-bottom:6px;">'
+    + label.toUpperCase() + (isToday?' · TODAY':'') + '</div>'
+    + '<div style="font-size:13px;font-weight:800;margin-bottom:4px;">' + route.name + '</div>'
+    + '<div style="font-size:12px;color:var(--text3);">' + done + '/' + total + ' complete'
+    + (skipped ? ' · <span style="color:var(--text4);">' + skipped + ' skipped (not due)</span>' : '') + '</div>';
+
+  if (total) {
+    html += '<div style="background:var(--bg4);border-radius:6px;height:4px;overflow:hidden;margin:8px 0;">'
+      + '<div style="height:100%;width:' + (total?Math.round(done/total*100):0) + '%;background:var(--green);border-radius:6px;"></div></div>';
+
+    stops.forEach(function(s, i) {
+      var prop = (state.properties||[]).find(function(p) { return p.id === s.propId; });
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">'
+        + '<div style="width:20px;height:20px;border-radius:50%;background:' + (s.completed?'var(--green3)':'var(--bg4)') + ';border:2px solid ' + (s.completed?'var(--green)':'var(--border2)') + ';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:' + (s.completed?'#fff':'var(--text3)') + ';flex-shrink:0;">' + (i+1) + '</div>'
+        + '<div style="flex:1;min-width:0;">'
+        + '<div style="font-size:12px;font-weight:700;">' + (prop?prop.name:'Unknown') + '</div>'
+        + (prop && prop.address ? '<div style="font-size:10px;color:var(--text4);">' + prop.address + '</div>' : '')
+        + '</div>'
+        + '<span style="font-size:10px;font-weight:700;color:' + (s.completed?'var(--green)':'var(--text4)') + ';">' + (s.completed?'✓ Done':'Pending') + '</span>'
+        + (s.completedAt ? '<div style="font-size:9px;color:var(--text4);">' + s.completedAt + '</div>' : '')
+        + '</div>';
+    });
+  }
+
+  html += '</div>';
+  detailEl.innerHTML = html;
+}
 
 // ─── SEED DATA ───────────────────────────────────────────────────────────
 function seedData() {
