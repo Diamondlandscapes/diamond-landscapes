@@ -6494,6 +6494,7 @@ function processWOUpload(community) {
       completedOn: '',
       completedPhoto: '',
       completedBy: '',
+      dueDate: '',
       createdAt: new Date().toLocaleDateString()
     };
     newWOs.push(wo);
@@ -6571,6 +6572,12 @@ function openWODetail(woId) {
         '<select id="wo-status-sel" style="width:100%;background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:10px;color:var(--text);font-size:14px;">' + statusOptions + '</select>' +
       '</div>' +
 
+      '<div style="margin-bottom:14px;">' +
+        '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">DUE DATE (optional)</div>' +
+        '<input type="date" id="wo-due-date" class="inp" value="' + (wo.dueDate||'') + '" style="width:100%;"/>' +
+      '</div>' +
+
+
       (wo.completedPhoto ?
         '<div style="margin-bottom:14px;">' +
           '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">COMPLETION PHOTO</div>' +
@@ -6592,6 +6599,7 @@ function saveWODetail(woId) {
   if (!wo) return;
   wo.assignedTo = document.getElementById('wo-assign-crew').value;
   wo.status = document.getElementById('wo-status-sel').value;
+  wo.dueDate = document.getElementById('wo-due-date')?.value || wo.dueDate || '';
   if (wo.status === 'completed' && !wo.completedOn) {
     wo.completedOn = new Date().toLocaleDateString();
   }
@@ -6721,10 +6729,10 @@ function renderCrewWorkOrders() {
 
   // Show WOs assigned to this crew member
   var myWOs = allWOs.filter(function(w) {
-    return w.assignedTo === crewId && w.status !== 'completed';
+    return (w.assignedTo === crewId || (crew && w.assignedTo === crew.name)) && w.status !== 'completed' && w.status !== 'placeholder';
   });
   var doneWOs = allWOs.filter(function(w) {
-    return w.completedBy === (crew ? crew.name : '') && w.status === 'completed';
+    return (w.completedBy === (crew ? crew.name : '') || w.assignedTo === crewId) && w.status === 'completed';
   }).slice(-10);
 
   if (!crewId) {
@@ -6758,6 +6766,7 @@ function renderCrewWorkOrders() {
         '</div>' +
         '<div style="font-size:12px;color:var(--text2);"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details.slice(0,80) + (w.details.length>80?'…':'') : '') + '</div>' +
         (w.community ? '<div style="font-size:11px;color:var(--text4);margin-top:4px;">' + w.community + '</div>' : '') +
+        (w.dueDate ? '<div style="font-size:11px;color:var(--red);margin-top:4px;font-weight:700;">⏰ Due: ' + w.dueDate + '</div>' : '') +
         '<div style="margin-top:10px;">' +
           '<button class="btn btn-green" style="font-size:12px;padding:8px 14px;" onclick="event.stopPropagation();openCrewWOComplete(\'' + w.id + '\')">📷 Complete with Photo</button>' +
         '</div>' +
