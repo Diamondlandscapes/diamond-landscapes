@@ -667,6 +667,46 @@ select.inp{cursor:pointer;}
   justify-content: center;
 }
 
+
+/* ── Crew mobile bottom nav ─────────────────────────────────────────── */
+#crew-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: calc(56px + var(--safe-bottom, 0px));
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  z-index: 100;
+  padding-bottom: var(--safe-bottom, 0px);
+}
+@media (max-width: 767px) {
+  #crew-bottom-nav.visible {
+    display: flex;
+  }
+  #screens {
+    padding-bottom: calc(60px + var(--safe-bottom, 0px)) !important;
+  }
+}
+.cbn-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 4px;
+  color: var(--text4);
+  transition: color 0.15s;
+}
+.cbn-btn.active { color: var(--green); }
+.cbn-icon { font-size: 20px; line-height: 1; }
+.cbn-label { font-size: 9px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
 </head>
@@ -1396,8 +1436,24 @@ select.inp{cursor:pointer;}
 
 </div><!-- /app -->
 
-
-
+<!-- Crew mobile bottom nav -->
+<div id="crew-bottom-nav">
+  <button class="cbn-btn active" data-tab="field" onclick="switchTab('field');updateCrewBottomNav('field')">
+    <span class="cbn-icon">📋</span><span class="cbn-label">My Jobs</span>
+  </button>
+  <button class="cbn-btn" data-tab="crew-week" onclick="switchTab('crew-week');updateCrewBottomNav('crew-week')">
+    <span class="cbn-icon">📅</span><span class="cbn-label">My Week</span>
+  </button>
+  <button class="cbn-btn" data-tab="properties" onclick="switchTab('properties');updateCrewBottomNav('properties')">
+    <span class="cbn-icon">🏡</span><span class="cbn-label">Properties</span>
+  </button>
+  <button class="cbn-btn" data-tab="wo-crew" onclick="switchTab('wo-crew');updateCrewBottomNav('wo-crew')">
+    <span class="cbn-icon">📋</span><span class="cbn-label">Work Orders</span>
+  </button>
+  <button class="cbn-btn" data-tab="menu" onclick="toggleDrawer()">
+    <span class="cbn-icon">☰</span><span class="cbn-label">Menu</span>
+  </button>
+</div>
 
 
   <div id="nav-drawer-overlay" onclick="closeDrawer()"></div>
@@ -1463,6 +1519,7 @@ function switchTab(tab) {
   const screensEl = document.getElementById('screens');
   if (screensEl) screensEl.scrollTop = 0;
   updateDrawerActive(tab);
+  if (state.role === 'field') updateCrewBottomNav(tab);
   // auto-render reports immediately when opened
   if (tab === 'reports') { setTimeout(() => renderReports(), 50); }
   const renders = { dashboard: renderDashboard, routes: renderRoutes,
@@ -1577,6 +1634,7 @@ function applyRole(r) {
   if (drawerRole) drawerRole.textContent = r === 'manager' ? 'MANAGER' : 'CREW';
   if (drawerLogin) drawerLogin.textContent = r === 'field' ? 'Sign Out' : 'Switch / Sign Out';
   buildDrawerItems(r === 'field' ? CREW_MENU : MANAGER_MENU, r === 'field' ? 'field' : 'dashboard');
+  if (r === 'field') { showCrewBottomNav(); } else { hideCrewBottomNav(); }
 
   if (r === 'field') {
     document.getElementById('nav').innerHTML = `<div id="nav-tabs-wrap">
@@ -7035,6 +7093,23 @@ function parsePDFWorkOrders(b64data, community, done, fail) {
 
 
 
+
+
+function updateCrewBottomNav(activeTab) {
+  document.querySelectorAll('.cbn-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.tab === activeTab);
+  });
+}
+
+function showCrewBottomNav() {
+  var nav = document.getElementById('crew-bottom-nav');
+  if (nav) nav.classList.add('visible');
+}
+
+function hideCrewBottomNav() {
+  var nav = document.getElementById('crew-bottom-nav');
+  if (nav) nav.classList.remove('visible');
+}
 
 // ─── SEED DATA ───────────────────────────────────────────────────────────
 function seedData() {
