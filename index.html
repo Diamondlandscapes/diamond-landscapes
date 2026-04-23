@@ -2331,16 +2331,19 @@ function openPropDetail(id) {
         </select>
         <input class="inp" id="pe-custom-${id}" placeholder="Custom frequency (e.g. Every 10 days)"
           value="${p.customFreq||''}" style="display:${p.frequency==='Custom'?'block':'none'};"/>
-        <div id="pe-days-${id}" style="display:${p.frequency==='2x Per Week'?'block':'none'};">
-          <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">SERVICE DAYS</div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;">
-            ${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(day => `
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:6px 10px;">
-                <input type="checkbox" class="pe-day-cb-${id}" value="${day}"
-                  ${(p.serviceDays||[]).includes(day)?'checked':''}
-                  style="width:16px;height:16px;accent-color:var(--green);cursor:pointer;"/>
-                <span style="font-size:12px;font-weight:700;">${day.slice(0,3)}</span>
-              </label>`).join('')}
+        <div id="pe-days-${id}" style="display:${p.frequency==='2x Per Week'?'block':'none'};margin-bottom:8px;">
+          <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">SERVICE DAYS — tap to select</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(day => {
+              const active = (p.serviceDays||[]).includes(day);
+              return `<button type="button" onclick="togglePeDay('${id}',this,'${day}')"
+                data-day="${day}" data-active="${active?'1':'0'}"
+                style="padding:7px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:2px solid;
+                background:${active?'var(--green3)':'var(--bg4)'};color:${active?'#fff':'var(--text3)'};
+                border-color:${active?'var(--green)':'var(--border2)'};">
+                ${day.slice(0,3)}
+              </button>`;
+            }).join('')}
           </div>
         </div>
         <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">LAST SERVICE DATE</div>
@@ -2455,8 +2458,8 @@ function savePropEdit(id) {
   p.customFreq = document.getElementById('pe-custom-'+id)?.value         || '';
   // Save service days for 2x Per Week
   if (p.frequency === '2x Per Week') {
-    const cbs = document.querySelectorAll('.pe-day-cb-'+id+':checked');
-    p.serviceDays = Array.from(cbs).map(cb => cb.value);
+    const btns = document.querySelectorAll('#pe-days-'+id+' button[data-active="1"]');
+    p.serviceDays = Array.from(btns).map(b => b.dataset.day);
   } else {
     p.serviceDays = [];
   }
@@ -7968,6 +7971,16 @@ function mgrCalShowDetail(crewId, dateStr, dayName) {
   detailEl.innerHTML = html;
 }
 
+
+
+function togglePeDay(id, btn, day) {
+  var active = btn.dataset.active === '1';
+  active = !active;
+  btn.dataset.active = active ? '1' : '0';
+  btn.style.background = active ? 'var(--green3)' : 'var(--bg4)';
+  btn.style.color       = active ? '#fff' : 'var(--text3)';
+  btn.style.borderColor = active ? 'var(--green)' : 'var(--border2)';
+}
 
 function onPeFreqChange(id, val) {
   var customEl = document.getElementById('pe-custom-' + id);
