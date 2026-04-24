@@ -4415,6 +4415,7 @@ function gsLoad() {
     window[cbName] = function(remote) {
       cleanup();
       try {
+        console.log('gsLoad response:', JSON.stringify(remote).slice(0,200));
         if (remote.error) throw new Error(remote.error);
         // smart merge — remote wins for most tables, but for flags
         // keep local version if it's been resolved locally (prevents re-appearing)
@@ -4490,7 +4491,7 @@ function gsLoad() {
     };
 
     script.src = GS_URL + '?key=' + GS_SECRET + '&action=getAll&callback=' + cbName;
-    script.onerror = () => { cleanup(); syncOnline = false; setSyncStatus('offline','Using local data'); resolve(false); };
+    script.onerror = (e) => { console.error('gsLoad script error:', e); cleanup(); syncOnline = false; setSyncStatus('offline','Using local data'); resolve(false); };
     document.head.appendChild(script);
   });
 }
