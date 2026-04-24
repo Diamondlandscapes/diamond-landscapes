@@ -17,6 +17,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
 <style>
+button,a{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
 :root{
   --bg:#0a0f0a; --bg2:#111811; --bg3:#182018; --bg4:#1f281f;
   --border:#243024; --border2:#2e3d2e;
@@ -173,7 +174,7 @@ select.inp{cursor:pointer;}
 
 
 /* login screen keys */
-.ls-key{padding:16px;font-size:22px;font-weight:800;background:#1f281f;border:1px solid #2e3d2e;border-radius:12px;color:white;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;transition:background .1s;}
+.ls-key{padding:16px;font-size:22px;font-weight:800;background:#1f281f;border:1px solid #2e3d2e;border-radius:12px;color:white;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;transition:background .1s;}
 .ls-key:active{background:#243024;}
 /* pin dots */
 .pin-dot{width:14px;height:14px;border-radius:50%;background:var(--bg4);border:2px solid var(--border2);transition:background .15s,border .15s;}
@@ -707,6 +708,12 @@ select.inp{cursor:pointer;}
 .cbn-icon { font-size: 20px; line-height: 1; }
 .cbn-label { font-size: 9px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
 
+
+@media print {
+  #pdf-print-overlay #pdf-btns { display: none !important; }
+  body > *:not(#pdf-print-overlay) { display: none !important; }
+  #pdf-print-overlay { position:static !important; padding:0 !important; }
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
 </head>
@@ -4193,7 +4200,7 @@ function ls_pinKey(k) {
         ls_mgrBuffer = ''; ls_updateDots('lpd', 0);
         setTimeout(() => { document.getElementById('ls-pin-error').textContent = ''; }, 1500);
       }
-    }, 150);
+    }, 50);
   }
 }
 
@@ -4210,7 +4217,7 @@ function ls_crewPinKey(k) {
         ls_crewBuffer = ''; ls_updateDots('lcd', 0);
         setTimeout(() => { document.getElementById('ls-crew-error').textContent = ''; }, 1500);
       }
-    }, 150);
+    }, 50);
   }
 }
 
@@ -4219,11 +4226,8 @@ function ls_showCrewNames() {
   document.getElementById('ls-crew-names').style.display = 'flex';
   const list = document.getElementById('ls-crew-name-list');
 
-  // show loading state
-  list.innerHTML = '<div style="text-align:center;color:#6b8f6b;font-size:14px;padding:20px;">Loading crew...</div>';
-
-  // always pull fresh from Google Sheets before showing names
-  gsLoad().then(() => {
+  // Show cached crew IMMEDIATELY — no waiting for network
+  function renderCrewList() {
     if (!state.crew.length) {
       list.innerHTML = `
         <div style="text-align:center;padding:24px 16px;">
@@ -4236,7 +4240,8 @@ function ls_showCrewNames() {
     list.innerHTML = state.crew.map(c => `
       <button onclick="ls_selectCrew('${c.id}')" style="display:flex;align-items:center;gap:14px;width:100%;
         background:#1f281f;border:1px solid #2e3d2e;border-radius:14px;padding:14px 16px;
-        cursor:pointer;transition:background .15s;margin-bottom:4px;">
+        cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+        transition:background .15s;margin-bottom:4px;">
         <div style="width:42px;height:42px;border-radius:50%;
           background:linear-gradient(135deg,#16a34a,#2dd4bf);
           display:flex;align-items:center;justify-content:center;
@@ -4248,24 +4253,16 @@ function ls_showCrewNames() {
           <div style="font-size:12px;color:#6b8f6b;margin-top:2px;">${c.role}</div>
         </div>
       </button>`).join('');
+  }
+
+  // Show cached data immediately — no waiting
+  renderCrewList();
+
+  // Then sync in background silently — if crew updates, refresh list
+  gsLoad().then(() => {
+    renderCrewList(); // re-render with fresh data if anything changed
   }).catch(() => {
-    // if offline, use whatever is in local state
-    if (!state.crew.length) {
-      list.innerHTML = '<div style="text-align:center;color:#6b8f6b;font-size:13px;padding:20px;">Could not load crew — check your connection.</div>';
-      return;
-    }
-    list.innerHTML = state.crew.map(c => `
-      <button onclick="ls_selectCrew('${c.id}')" style="display:flex;align-items:center;gap:14px;width:100%;
-        background:#1f281f;border:1px solid #2e3d2e;border-radius:14px;padding:14px 16px;cursor:pointer;margin-bottom:4px;">
-        <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#16a34a,#2dd4bf);
-          display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;color:white;flex-shrink:0;">
-          ${c.name.trim()[0].toUpperCase()}
-        </div>
-        <div style="text-align:left;">
-          <div style="font-size:15px;font-weight:800;color:white;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">${c.name}</div>
-          <div style="font-size:12px;color:#6b8f6b;margin-top:2px;">${c.role}</div>
-        </div>
-      </button>`).join('');
+    // offline — cached list is already showing, nothing to do
   });
 }
 
@@ -7089,35 +7086,32 @@ function openWOReport(community) {
 }
 
 
+function pdfClose() { var o=document.getElementById('pdf-print-overlay'); if(o)o.remove(); }
+
 function exportWOPDF(community) {
-  var wos = (state.workOrders || []).filter(function(w) {
+  var wos = (state.workOrders||[]).filter(function(w) {
     return w.community === community && w.status === 'completed';
   });
-  var open = (state.workOrders || []).filter(function(w) {
+  var open = (state.workOrders||[]).filter(function(w) {
     return w.community === community && w.status !== 'completed' && w.status !== 'placeholder';
   });
 
   if (!wos.length && !open.length) { toast('No work orders to export'); return; }
 
-  toast('Generating PDF...');
+  // Remove any existing print overlay
+  var existing = document.getElementById('pdf-print-overlay');
+  if (existing) existing.remove();
 
-  // Build a printable HTML page and open it for printing/saving as PDF
   var dateStr = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
 
-  var completedRows = wos.map(function(w) {
+  var overlay = document.createElement('div');
+  overlay.id = 'pdf-print-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#f9fafb;overflow-y:auto;padding:24px;box-sizing:border-box;';
+
+  var completedHTML = wos.map(function(w) {
     var crew = (state.crew||[]).find(function(c) { return c.id === w.assignedTo; });
     var typeIcon = w.type === 'irrigation' ? '💧 Irrigation' : '🌿 Landscaping';
-    var photoHtml = w.completedPhoto && w.completedPhoto.length > 10
-      ? '<img src="' + w.completedPhoto + '" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:300px;object-fit:cover;border-radius:8px;margin-top:10px;cursor:pointer;" title="Long press or right-click to save this photo"/>'
-      : '<div style="background:#f3f4f6;border-radius:8px;padding:16px;text-align:center;color:#9ca3af;font-size:12px;margin-top:10px;">No photo</div>';
-    // Add save instructions under photo
-    if (w.completedPhoto && w.completedPhoto.length > 10) {
-      photoHtml += '<div style="font-size:11px;color:#6b7280;text-align:center;margin-top:6px;padding:6px;background:#f9fafb;border-radius:6px;">' +
-        '📱 <strong>iPhone/iPad:</strong> Long press photo → Save to Photos &nbsp;|&nbsp; ' +
-        '💻 <strong>Desktop:</strong> Right-click photo → Save Image' +
-        '</div>';
-    }
-    return '<div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #e5e7eb;page-break-inside:avoid;">' +
+    return '<div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #e5e7eb;">' +
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
         '<div>' +
           '<div style="font-size:11px;color:#6b7280;font-weight:700;letter-spacing:1px;">' + typeIcon + '</div>' +
@@ -7127,89 +7121,74 @@ function exportWOPDF(community) {
         '<div style="background:#dcfce7;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:800;color:#16a34a;">✓ COMPLETED</div>' +
       '</div>' +
       '<div style="font-size:13px;color:#374151;margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
-      '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy || (crew ? crew.name : 'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
+      '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
       (w.completedNotes ? '<div style="font-size:11px;color:#6b7280;margin-top:4px;">Notes: ' + w.completedNotes + '</div>' : '') +
-      photoHtml +
+      (w.completedPhoto && w.completedPhoto.length > 10
+        ? '<img src="' + w.completedPhoto + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '"/>' +
+          '<div style="font-size:11px;color:#6b7280;text-align:center;margin-top:4px;">📱 Long press → Save to Photos &nbsp;|&nbsp; 💻 Right-click → Save Image</div>'
+        : '<div style="background:#f3f4f6;border-radius:8px;padding:16px;text-align:center;color:#9ca3af;font-size:12px;margin-top:10px;">No photo attached</div>') +
     '</div>';
   }).join('');
 
-  var openRows = open.map(function(w) {
-    var typeIcon = w.type === 'irrigation' ? '💧' : '🌿';
-    return '<tr style="border-bottom:1px solid #e5e7eb;">' +
-      '<td style="padding:8px;font-size:12px;">' + typeIcon + ' #' + (w.woNumber||'') + '</td>' +
-      '<td style="padding:8px;font-size:12px;">' + (w.ownerName||'') + '</td>' +
-      '<td style="padding:8px;font-size:12px;">' + (w.address||'') + '</td>' +
-      '<td style="padding:8px;font-size:12px;">' + (w.requestType||'') + '</td>' +
-      '<td style="padding:8px;font-size:12px;color:#dc2626;font-weight:700;">' + (w.status==='in_progress'?'In Progress':'Open') + '</td>' +
-    '</tr>';
-  }).join('');
-
-  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
-    '<title>Work Order Report – ' + community + '</title>' +
-    '<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;padding:24px;color:#111;background:#f9fafb;}' +
-    'h1{font-size:24px;font-weight:800;margin:0 0 4px;}' +
-    'h2{font-size:16px;font-weight:800;margin:24px 0 12px;color:#374151;}' +
-    'table{width:100%;border-collapse:collapse;}' +
-    'th{background:#f3f4f6;padding:8px;font-size:11px;text-align:left;font-weight:700;letter-spacing:1px;color:#6b7280;}' +
-    '@media print{body{padding:0;}button{display:none!important;}}' +
-    '</style></head><body>' +
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;">' +
-      '<div>' +
-        '<div style="font-size:11px;font-weight:700;color:#6b7280;letter-spacing:1px;margin-bottom:4px;">WORK ORDER REPORT</div>' +
-        '<h1>' + community + '</h1>' +
-        '<div style="font-size:13px;color:#6b7280;">Generated ' + dateStr + ' · Diamond Landscapes</div>' +
-      '</div>' +
-      '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 20px;text-align:center;">' +
-        '<div style="font-size:28px;font-weight:800;color:#16a34a;">' + wos.length + '</div>' +
-        '<div style="font-size:11px;color:#6b7280;">Completed</div>' +
-        '<div style="font-size:28px;font-weight:800;color:#dc2626;margin-top:8px;">' + open.length + '</div>' +
-        '<div style="font-size:11px;color:#6b7280;">Remaining</div>' +
-      '</div>' +
-    '</div>' +
-
-    (wos.length ? '<h2>✓ Completed Work Orders (' + wos.length + ')</h2>' + completedRows : '') +
-
-    (open.length ?
-      '<h2 style="color:#dc2626;">⏳ Remaining Work Orders (' + open.length + ')</h2>' +
-      '<table><thead><tr>' +
-        '<th>WO #</th><th>Owner</th><th>Address</th><th>Request</th><th>Status</th>' +
-      '</tr></thead><tbody>' + openRows + '</tbody></table>' : '') +
-
-    '<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:11px;color:#9ca3af;text-align:center;">' +
-      'Diamond Landscapes · yourdiamondlawn.com · ' + dateStr +
-    '</div>' +
-
-    '<div style="text-align:center;margin-top:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">' +
-      '<button onclick="window.print()" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:15px;font-weight:700;cursor:pointer;">🖨️ Print / Save as PDF</button>' +
-      '<button onclick="saveAllPhotosFromReport()" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:15px;font-weight:700;cursor:pointer;">⬇ Save All Photos</button>' +
-    '</div>' +
-    '<div style="text-align:center;margin-top:12px;font-size:12px;color:#6b7280;">To save individual photos: <strong>long press (mobile)</strong> or <strong>right-click (desktop)</strong> any photo above</div>' +
-    '<script>' +
-    'function saveAllPhotosFromReport() {' +
-    '  var imgs = document.querySelectorAll("img[data-wo]");' +
-    '  if (!imgs.length) { alert("No photos found"); return; }' +
-    '  imgs.forEach(function(img, i) {' +
-    '    setTimeout(function() {' +
-    '      var a = document.createElement("a");' +
-    '      a.href = img.src;' +
-    '      a.download = img.dataset.wo + ".jpg";' +
-    '      document.body.appendChild(a); a.click(); document.body.removeChild(a);' +
-    '    }, i * 700);' +
-    '  });' +
-    '}' +
-    '</scr' + 'ipt>' +
-    '</body></html>';
-
-  // Open in new window for printing
-  var win = window.open('', '_blank');
-  if (win) {
-    win.document.write(html);
-    win.document.close();
-    // Auto-trigger print dialog after images load
-    win.onload = function() { win.print(); };
-  } else {
-    toast('Please allow popups to export PDF');
+  var openHTML = '';
+  if (open.length) {
+    openHTML = '<div style="margin-top:16px;"><h2 style="font-size:16px;font-weight:800;color:#dc2626;margin:0 0 12px;">⏳ Remaining (' + open.length + ')</h2>';
+    open.forEach(function(w) {
+      var typeIcon = w.type === 'irrigation' ? '💧' : '🌿';
+      openHTML += '<div style="background:#fff;border-radius:10px;padding:12px;margin-bottom:8px;border:1px solid #e5e7eb;border-left:3px solid #dc2626;">' +
+        '<div style="font-size:13px;font-weight:700;">' + typeIcon + ' #' + (w.woNumber||'') + ' · ' + (w.ownerName||'') + '</div>' +
+        '<div style="font-size:11px;color:#6b7280;">' + (w.address||'') + ' · ' + (w.requestType||'') + '</div>' +
+      '</div>';
+    });
+    openHTML += '</div>';
   }
+
+  overlay.innerHTML =
+    // Buttons (hidden on print)
+    '<div id="pdf-btns" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:24px;">' +
+      '<button onclick="window.print()" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">🖨️ Print / Save as PDF</button>' +
+      '<button onclick="pdfSaveAllPhotos()" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">⬇ Save All Photos</button>' +
+      '<button onclick="pdfClose()" style="background:#6b7280;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">✕ Close</button>' +
+    '</div>' +
+    // Report header
+    '<div style="max-width:720px;margin:0 auto;">' +
+      '<div style="font-size:11px;font-weight:700;color:#6b7280;letter-spacing:1px;margin-bottom:4px;">WORK ORDER REPORT</div>' +
+      '<div style="font-size:24px;font-weight:800;color:#111;margin-bottom:4px;">' + community + '</div>' +
+      '<div style="font-size:13px;color:#6b7280;margin-bottom:20px;">Generated ' + dateStr + ' · Diamond Landscapes</div>' +
+      '<div style="display:flex;gap:12px;margin-bottom:20px;">' +
+        '<div style="flex:1;background:#fff;border-radius:10px;padding:14px;text-align:center;border:1px solid #e5e7eb;">' +
+          '<div style="font-size:28px;font-weight:800;color:#16a34a;">' + wos.length + '</div>' +
+          '<div style="font-size:11px;color:#6b7280;">Completed</div>' +
+        '</div>' +
+        '<div style="flex:1;background:#fff;border-radius:10px;padding:14px;text-align:center;border:1px solid #e5e7eb;">' +
+          '<div style="font-size:28px;font-weight:800;color:#dc2626;">' + open.length + '</div>' +
+          '<div style="font-size:11px;color:#6b7280;">Remaining</div>' +
+        '</div>' +
+        '<div style="flex:1;background:#fff;border-radius:10px;padding:14px;text-align:center;border:1px solid #e5e7eb;">' +
+          '<div style="font-size:28px;font-weight:800;color:#374151;">' + (wos.length+open.length) + '</div>' +
+          '<div style="font-size:11px;color:#6b7280;">Total</div>' +
+        '</div>' +
+      '</div>' +
+      (wos.length ? '<h2 style="font-size:16px;font-weight:800;color:#374151;margin:0 0 12px;">✓ Completed Work Orders</h2>' + completedHTML : '') +
+      openHTML +
+      '<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:11px;color:#9ca3af;text-align:center;">Diamond Landscapes · yourdiamondlawn.com · ' + dateStr + '</div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+}
+
+function pdfSaveAllPhotos() {
+  var imgs = document.querySelectorAll('#pdf-print-overlay img[data-wo]');
+  if (!imgs.length) { toast('No photos found'); return; }
+  toast('Saving ' + imgs.length + ' photo' + (imgs.length > 1 ? 's' : '') + '...');
+  imgs.forEach(function(img, i) {
+    setTimeout(function() {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.download = (img.dataset.wo || 'photo') + '.jpg';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    }, i * 700);
+  });
 }
 
 
