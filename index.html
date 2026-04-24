@@ -4421,6 +4421,34 @@ function gsLoad() {
         // keep local version if it's been resolved locally (prevents re-appearing)
         const merge = (key) => {
           if (!remote || !Array.isArray(remote[key]) || remote[key].length === 0) return;
+          if (key === 'workOrders') {
+            // Smart merge: keep local photos since Sheets only stores placeholders
+            const localById = {};
+            (state.workOrders||[]).forEach(w => { localById[w.id] = w; });
+            state.workOrders = remote[key].map(rw => {
+              const lw = localById[rw.id];
+              if (!lw) return rw;
+              // Keep local photo if it's real data and remote only has placeholder
+              const remoteHasRealPhoto = rw.completedPhoto && (rw.completedPhoto.startsWith('data:') || rw.completedPhoto.startsWith('http'));
+              const localHasRealPhoto  = lw.completedPhoto && (lw.completedPhoto.startsWith('data:') || lw.completedPhoto.startsWith('http'));
+              if (!remoteHasRealPhoto && localHasRealPhoto) {
+                rw.completedPhoto = lw.completedPhoto;
+              }
+              // Keep local completed status if local says completed but remote doesn't yet
+              // (handles race condition where gsLoad fires before gsSave completes)
+              if (lw.status === 'completed' && rw.status !== 'completed') {
+                return lw; // keep entire local version
+              }
+              return rw;
+            });
+            // Add any local WOs not yet in remote
+            (state.workOrders||[]).forEach(lw => {
+              if (!remote[key].find(rw => rw.id === lw.id)) {
+                state.workOrders.push(lw);
+              }
+            });
+            return;
+          }
           if (key === 'flags') {
             // merge flags: prefer local resolved state over remote unresolved
             const localById = {};
