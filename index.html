@@ -1112,6 +1112,7 @@ select.inp{cursor:pointer;}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
         <div style="font-size:20px;font-weight:800;">Work Orders</div>
         <div style="display:flex;gap:8px;">
+          <button class="btn-sm" onclick="openCreateWO()" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">+ Create</button>
           <button class="btn-sm" onclick="renderWorkOrders()" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">↺ Refresh</button>
         </div>
       </div>
@@ -2205,21 +2206,43 @@ function openAddRoute() {
   const sel = document.getElementById('nr-crew');
   sel.innerHTML = '<option value="">Assign crew member...</option>' +
     state.crew.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-  // populate properties checkboxes
-  document.getElementById('nr-prop-list').innerHTML = state.properties.length
-    ? state.properties.map(p => `
-        <label style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;">
-          <input type="checkbox" value="${p.id}" style="width:18px;height:18px;accent-color:var(--green);cursor:pointer;"/>
-          <div><div style="font-size:13px;font-weight:700;">${p.name}</div><div style="font-size:11px;color:var(--text3);">${p.address}</div></div>
-        </label>`).join('')
-    : '<div style="font-size:13px;color:var(--text4);padding:8px 0;">Add properties first</div>';
+
+  // populate properties as tap-to-select rows
+  const listEl = document.getElementById('nr-prop-list');
+  if (!state.properties.length) {
+    listEl.innerHTML = '<div style="font-size:13px;color:var(--text4);padding:8px 0;">Add properties first</div>';
+  } else {
+    listEl.innerHTML = '';
+    state.properties.forEach(function(p) {
+      var row = document.createElement('div');
+      row.dataset.propId = p.id;
+      row.dataset.selected = '0';
+      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 8px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:8px;';
+      row.innerHTML =
+        '<div style="width:24px;height:24px;border-radius:6px;border:2px solid var(--border2);background:var(--bg4);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;transition:all .15s;" class="nr-row-check"></div>' +
+        '<div><div style="font-size:13px;font-weight:700;">' + p.name + '</div>' +
+        '<div style="font-size:11px;color:var(--text3);">' + p.address + '</div></div>';
+      row.onclick = function() {
+        var sel = row.dataset.selected === '1';
+        sel = !sel;
+        row.dataset.selected = sel ? '1' : '0';
+        var check = row.querySelector('.nr-row-check');
+        check.style.background    = sel ? 'var(--green3)' : 'var(--bg4)';
+        check.style.borderColor   = sel ? 'var(--green)'  : 'var(--border2)';
+        check.style.color         = sel ? '#fff'          : 'transparent';
+        check.textContent         = sel ? '✓' : '';
+        row.style.background      = sel ? 'rgba(74,222,128,.06)' : '';
+      };
+      listEl.appendChild(row);
+    });
+  }
   openOverlay('add-route-overlay');
 }
 
 function saveRoute() {
   const name = document.getElementById('nr-name').value.trim();
   if (!name) { toast('Enter a route name'); return; }
-  const checked = [...document.querySelectorAll('#nr-prop-list input:checked')].map(i => i.value);
+  const checked = [...document.querySelectorAll('#nr-prop-list div[data-selected="1"]')].map(r => r.dataset.propId);
   state.routes.push({
     id: uid(), name, day: document.getElementById('nr-day').value,
     crewId: document.getElementById('nr-crew').value,
@@ -2560,7 +2583,7 @@ function openAddFlag(propId) {
         <label class="photo-zone" for="flag-photo-input">
           <div style="font-size:28px;margin-bottom:6px;">📷</div>
           <div style="font-size:13px;color:var(--text3);">Tap to take/choose photo</div>
-          <input type="file" id="flag-photo-input" accept="image/*" capture="environment" style="display:none;" onchange="previewFlagPhoto(this)"/>
+          <input type="file" id="flag-photo-input" accept="image/*"  style="display:none;" onchange="previewFlagPhoto(this)"/>
         </label>
         <img id="flag-photo-preview" style="display:none;width:100%;border-radius:10px;margin-top:8px;max-height:200px;object-fit:cover;"/>
       </div>
@@ -2635,7 +2658,7 @@ function resolveFlag(flagId, propId) {
     '<label class="photo-zone" for="mgr-resolve-input" id="mgr-resolve-zone" style="margin-bottom:12px;padding:16px;cursor:pointer;">' +
       '<div style="font-size:28px;margin-bottom:6px;">📷</div>' +
       '<div style="font-size:13px;color:var(--text3);">Tap to take or choose a photo</div>' +
-      '<input type="file" id="mgr-resolve-input" accept="image/*" capture="environment" style="display:none;"/>' +
+      '<input type="file" id="mgr-resolve-input" accept="image/*"  style="display:none;"/>' +
     '</label>' +
     '<img id="mgr-resolve-preview" style="display:none;width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;"/>' +
     '<button id="mgr-resolve-submit-btn" class="btn btn-green" style="margin-bottom:8px;opacity:.4;cursor:not-allowed;">📷 Add photo to resolve</button>' +
@@ -7235,7 +7258,7 @@ function openCrewWOComplete(woId) {
       '<label class="photo-zone" for="wo-photo-input" id="wo-photo-zone" style="margin-bottom:12px;">' +
         '<div style="font-size:28px;margin-bottom:6px;">📷</div>' +
         '<div style="font-size:13px;color:var(--text3);">Tap to take or choose a photo</div>' +
-        '<input type="file" id="wo-photo-input" accept="image/*" capture="environment" style="display:none;"/>' +
+        '<input type="file" id="wo-photo-input" accept="image/*"  style="display:none;"/>' +
       '</label>' +
       '<img id="wo-photo-preview" style="display:none;width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;"/>' +
       '<textarea id="wo-complete-notes" class="inp" rows="2" placeholder="Completion notes (optional)..." style="margin-bottom:12px;"></textarea>' +
@@ -7988,6 +8011,104 @@ function onPeFreqChange(id, val) {
   if (customEl) customEl.style.display = val === 'Custom' ? 'block' : 'none';
   if (daysEl)   daysEl.style.display   = val === '2x Per Week' ? 'block' : 'none';
 }
+
+function cwoSetType(t) { document.getElementById('cwo-type-land').className=t==='land'?'pill active':'pill'; document.getElementById('cwo-type-irr').className=t==='irr'?'pill active':'pill'; }
+
+function createWOClose() { var s=document.getElementById('create-wo-sheet'); if(s)s.remove(); }
+
+function openCreateWO(presetCommunity) {
+  var existing = document.getElementById('create-wo-sheet');
+  if (existing) existing.remove();
+
+  var sheet = document.createElement('div');
+  sheet.id = 'create-wo-sheet';
+  sheet.className = 'overlay open';
+
+  var communities = [...new Set((state.workOrders||[]).map(function(w){return w.community;}).filter(Boolean))].sort();
+
+  var inner = document.createElement('div');
+  inner.className = 'sheet';
+  inner.style.maxHeight = '92vh';
+  sheet.appendChild(inner);
+  document.body.appendChild(sheet);
+
+  function close() { sheet.remove(); }
+
+  inner.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+      '<div class="sheet-title" style="margin-bottom:0;">New Work Order</div>' +
+      '<button onclick="createWOClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+    '</div>' +
+    '<div style="display:flex;flex-direction:column;gap:10px;">' +
+    '<div style="display:flex;gap:8px;margin-bottom:0;">' +
+    '<button id="cwo-type-land" class="pill active" onclick="cwoSetType(\'land\')">🌿 Landscaping</button>' +
+    '<button id="cwo-type-irr" class="pill" onclick="cwoSetType(\'irr\')">💧 Irrigation</button>' +
+    '</div>' +
+
+    '<input class="inp" id="cwo-community" list="cwo-comm-list" placeholder="Community name" value="' + (presetCommunity||'') + '"/>' +
+    '<datalist id="cwo-comm-list">' + communities.map(function(c){return '<option value="'+c+'">';}).join('') + '</datalist>' +
+
+    '<input class="inp" id="cwo-wo-number" placeholder="Work Order # (optional)"/>' +
+    '<input class="inp" id="cwo-owner" placeholder="Owner name"/>' +
+    '<input class="inp" id="cwo-address" placeholder="Address"/>' +
+    '<input class="inp" id="cwo-village" placeholder="Village # (optional)"/>' +
+    '<input class="inp" id="cwo-req-type" placeholder="Request type (e.g. Sprinkler, Trim, Weeds)"/>' +
+    '<textarea class="inp" id="cwo-details" rows="3" placeholder="Details / description"></textarea>' +
+    '<input type="date" class="inp" id="cwo-due-date" placeholder="Due date (optional)"/>' +
+
+    '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">ASSIGN TO</div>' +
+    '<select class="inp" id="cwo-assign">' +
+      '<option value="">— Unassigned —</option>' +
+      (state.crew||[]).map(function(c){return '<option value="'+c.id+'">'+c.name+'</option>';}).join('') +
+    '</select>' +
+
+    '<button class="btn btn-green" id="cwo-save-btn" onclick="saveCreatedWO()">Create Work Order</button>' +
+    '</div>';
+}
+
+function saveCreatedWO() {
+  var community = document.getElementById('cwo-community')?.value.trim();
+  var owner     = document.getElementById('cwo-owner')?.value.trim();
+  var address   = document.getElementById('cwo-address')?.value.trim();
+  var reqType   = document.getElementById('cwo-req-type')?.value.trim();
+
+  if (!community) { toast('Enter a community name'); return; }
+  if (!reqType)   { toast('Enter a request type'); return; }
+
+  var isIrr  = document.getElementById('cwo-type-irr')?.classList.contains('active');
+  var wo = {
+    id:          'wo_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    type:        isIrr ? 'irrigation' : 'landscape',
+    community:   community,
+    date:        new Date().toLocaleDateString(),
+    woNumber:    document.getElementById('cwo-wo-number')?.value.trim() || '',
+    address:     address,
+    village:     document.getElementById('cwo-village')?.value.trim() || '',
+    ownerName:   owner,
+    requestType: reqType,
+    details:     document.getElementById('cwo-details')?.value.trim() || '',
+    dueDate:     document.getElementById('cwo-due-date')?.value || '',
+    assignedTo:  document.getElementById('cwo-assign')?.value || '',
+    status:      'open',
+    completedOn: '', completedPhoto: '', completedBy: '', completedNotes: '',
+    createdAt:   new Date().toLocaleDateString()
+  };
+
+  state.workOrders = state.workOrders || [];
+  state.workOrders.push(wo);
+  save();
+  gsSave('workOrders', wo);
+
+  createWOClose();
+  renderWorkOrders();
+  // Reopen community panel if it was open
+  if (window._woCommunity === community) {
+    var panel = document.getElementById('wo-community-panel');
+    if (panel) { panel.remove(); openCommunityWO(community); }
+  }
+  toast('Work order created ✓');
+}
+
 // ─── SEED DATA ───────────────────────────────────────────────────────────
 function seedData() {
   // No default data — all data comes from Google Sheets or user input
