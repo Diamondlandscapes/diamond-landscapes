@@ -4419,7 +4419,7 @@ function gsLoad() {
         // smart merge — remote wins for most tables, but for flags
         // keep local version if it's been resolved locally (prevents re-appearing)
         const merge = (key) => {
-          if (!Array.isArray(remote[key]) || remote[key].length === 0) return;
+          if (!remote || !Array.isArray(remote[key]) || remote[key].length === 0) return;
           if (key === 'flags') {
             // merge flags: prefer local resolved state over remote unresolved
             const localById = {};
@@ -4448,6 +4448,26 @@ function gsLoad() {
         merge('flags');
         merge('equipment');
         merge('workOrders');
+        // Fix any JSON string fields that came back from Sheets as strings
+        (state.routes||[]).forEach(function(r) {
+          if (typeof r.stops === 'string') { try { r.stops = JSON.parse(r.stops); } catch(e) { r.stops = []; } }
+          if (!Array.isArray(r.stops)) r.stops = [];
+          r.stops.forEach(function(s) {
+            if (typeof s.completedServices === 'string') { try { s.completedServices = JSON.parse(s.completedServices); } catch(e) { s.completedServices = []; } }
+            if (!Array.isArray(s.completedServices)) s.completedServices = [];
+          });
+        });
+        (state.properties||[]).forEach(function(p) {
+          if (typeof p.services === 'string') { try { p.services = JSON.parse(p.services); } catch(e) { p.services = []; } }
+          if (!Array.isArray(p.services)) p.services = [];
+          if (typeof p.flagNotes === 'string') { try { p.flagNotes = JSON.parse(p.flagNotes); } catch(e) { p.flagNotes = []; } }
+          if (!Array.isArray(p.flagNotes)) p.flagNotes = [];
+          if (typeof p.serviceDays === 'string') { try { p.serviceDays = JSON.parse(p.serviceDays); } catch(e) { p.serviceDays = []; } }
+          if (!Array.isArray(p.serviceDays)) p.serviceDays = [];
+        });
+        (state.workOrders||[]).forEach(function(w) {
+          if (!w.status) w.status = 'open';
+        });
         save();
         lastSync   = new Date();
         syncOnline = true;
