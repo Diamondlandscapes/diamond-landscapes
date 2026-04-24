@@ -7040,7 +7040,10 @@ function openWOReport(community) {
         '<div style="font-size:12px;color:var(--text2);margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
         '<div style="font-size:11px;color:var(--text3);">Completed by ' + (w.completedBy || (crew ? crew.name : 'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
         (w.completedPhoto ?
-          '<img src="' + w.completedPhoto + '" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-top:8px;" onclick="openPhoto(\'' + w.completedPhoto + '\')"/>' : '') +
+          '<img src="' + w.completedPhoto + '" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-top:8px;cursor:pointer;" onclick="openPhoto(\'' + w.completedPhoto + '\')" />' +
+          '<div style="display:flex;gap:8px;margin-top:8px;">' +
+            '<button onclick="dlPhotoFromBtn(this)" data-photo="' + w.completedPhoto.slice(0,30) + '..." data-woid="' + w.id + '" style="flex:1;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">⬇ Download Photo</button>' +
+          '</div>' : '') +
       '</div>';
   });
 
@@ -7076,10 +7079,176 @@ function openWOReport(community) {
               '</div>';
           }).join('') +
         '</div>' : '') +
-      '<button class="btn btn-green" onclick="exportWOReport(\'' + community.replace(/'/g,"\\'") + '\')">⬇ Export Excel Report</button>' +
+      '<div style="display:flex;gap:8px;">' +
+        '<button class="btn btn-green" style="flex:1;" onclick="exportWOPDF(\'' + community.replace(/'/g,"\\'") + '\')">📄 Export PDF with Photos</button>' +
+        '<button class="btn" style="background:var(--bg3);color:var(--text2);" onclick="exportWOReport(\'' + community.replace(/'/g,"\\'") + '\')">📊 Excel</button>' +
+      '</div>' +
     '</div>';
 
   document.body.appendChild(sheet);
+}
+
+
+function exportWOPDF(community) {
+  var wos = (state.workOrders || []).filter(function(w) {
+    return w.community === community && w.status === 'completed';
+  });
+  var open = (state.workOrders || []).filter(function(w) {
+    return w.community === community && w.status !== 'completed' && w.status !== 'placeholder';
+  });
+
+  if (!wos.length && !open.length) { toast('No work orders to export'); return; }
+
+  toast('Generating PDF...');
+
+  // Build a printable HTML page and open it for printing/saving as PDF
+  var dateStr = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+
+  var completedRows = wos.map(function(w) {
+    var crew = (state.crew||[]).find(function(c) { return c.id === w.assignedTo; });
+    var typeIcon = w.type === 'irrigation' ? '💧 Irrigation' : '🌿 Landscaping';
+    var photoHtml = w.completedPhoto && w.completedPhoto.length > 10
+      ? '<img src="' + w.completedPhoto + '" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:300px;object-fit:cover;border-radius:8px;margin-top:10px;cursor:pointer;" title="Long press or right-click to save this photo"/>'
+      : '<div style="background:#f3f4f6;border-radius:8px;padding:16px;text-align:center;color:#9ca3af;font-size:12px;margin-top:10px;">No photo</div>';
+    // Add save instructions under photo
+    if (w.completedPhoto && w.completedPhoto.length > 10) {
+      photoHtml += '<div style="font-size:11px;color:#6b7280;text-align:center;margin-top:6px;padding:6px;background:#f9fafb;border-radius:6px;">' +
+        '📱 <strong>iPhone/iPad:</strong> Long press photo → Save to Photos &nbsp;|&nbsp; ' +
+        '💻 <strong>Desktop:</strong> Right-click photo → Save Image' +
+        '</div>';
+    }
+    return '<div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #e5e7eb;page-break-inside:avoid;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
+        '<div>' +
+          '<div style="font-size:11px;color:#6b7280;font-weight:700;letter-spacing:1px;">' + typeIcon + '</div>' +
+          '<div style="font-size:15px;font-weight:800;color:#111;">#' + (w.woNumber||'') + ' · ' + (w.ownerName||'—') + '</div>' +
+          '<div style="font-size:12px;color:#6b7280;">' + (w.address||'') + (w.village ? ' · Village ' + w.village : '') + '</div>' +
+        '</div>' +
+        '<div style="background:#dcfce7;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:800;color:#16a34a;">✓ COMPLETED</div>' +
+      '</div>' +
+      '<div style="font-size:13px;color:#374151;margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
+      '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy || (crew ? crew.name : 'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
+      (w.completedNotes ? '<div style="font-size:11px;color:#6b7280;margin-top:4px;">Notes: ' + w.completedNotes + '</div>' : '') +
+      photoHtml +
+    '</div>';
+  }).join('');
+
+  var openRows = open.map(function(w) {
+    var typeIcon = w.type === 'irrigation' ? '💧' : '🌿';
+    return '<tr style="border-bottom:1px solid #e5e7eb;">' +
+      '<td style="padding:8px;font-size:12px;">' + typeIcon + ' #' + (w.woNumber||'') + '</td>' +
+      '<td style="padding:8px;font-size:12px;">' + (w.ownerName||'') + '</td>' +
+      '<td style="padding:8px;font-size:12px;">' + (w.address||'') + '</td>' +
+      '<td style="padding:8px;font-size:12px;">' + (w.requestType||'') + '</td>' +
+      '<td style="padding:8px;font-size:12px;color:#dc2626;font-weight:700;">' + (w.status==='in_progress'?'In Progress':'Open') + '</td>' +
+    '</tr>';
+  }).join('');
+
+  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+    '<title>Work Order Report – ' + community + '</title>' +
+    '<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;padding:24px;color:#111;background:#f9fafb;}' +
+    'h1{font-size:24px;font-weight:800;margin:0 0 4px;}' +
+    'h2{font-size:16px;font-weight:800;margin:24px 0 12px;color:#374151;}' +
+    'table{width:100%;border-collapse:collapse;}' +
+    'th{background:#f3f4f6;padding:8px;font-size:11px;text-align:left;font-weight:700;letter-spacing:1px;color:#6b7280;}' +
+    '@media print{body{padding:0;}button{display:none!important;}}' +
+    '</style></head><body>' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;">' +
+      '<div>' +
+        '<div style="font-size:11px;font-weight:700;color:#6b7280;letter-spacing:1px;margin-bottom:4px;">WORK ORDER REPORT</div>' +
+        '<h1>' + community + '</h1>' +
+        '<div style="font-size:13px;color:#6b7280;">Generated ' + dateStr + ' · Diamond Landscapes</div>' +
+      '</div>' +
+      '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 20px;text-align:center;">' +
+        '<div style="font-size:28px;font-weight:800;color:#16a34a;">' + wos.length + '</div>' +
+        '<div style="font-size:11px;color:#6b7280;">Completed</div>' +
+        '<div style="font-size:28px;font-weight:800;color:#dc2626;margin-top:8px;">' + open.length + '</div>' +
+        '<div style="font-size:11px;color:#6b7280;">Remaining</div>' +
+      '</div>' +
+    '</div>' +
+
+    (wos.length ? '<h2>✓ Completed Work Orders (' + wos.length + ')</h2>' + completedRows : '') +
+
+    (open.length ?
+      '<h2 style="color:#dc2626;">⏳ Remaining Work Orders (' + open.length + ')</h2>' +
+      '<table><thead><tr>' +
+        '<th>WO #</th><th>Owner</th><th>Address</th><th>Request</th><th>Status</th>' +
+      '</tr></thead><tbody>' + openRows + '</tbody></table>' : '') +
+
+    '<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:11px;color:#9ca3af;text-align:center;">' +
+      'Diamond Landscapes · yourdiamondlawn.com · ' + dateStr +
+    '</div>' +
+
+    '<div style="text-align:center;margin-top:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">' +
+      '<button onclick="window.print()" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:15px;font-weight:700;cursor:pointer;">🖨️ Print / Save as PDF</button>' +
+      '<button onclick="saveAllPhotosFromReport()" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:15px;font-weight:700;cursor:pointer;">⬇ Save All Photos</button>' +
+    '</div>' +
+    '<div style="text-align:center;margin-top:12px;font-size:12px;color:#6b7280;">To save individual photos: <strong>long press (mobile)</strong> or <strong>right-click (desktop)</strong> any photo above</div>' +
+    '<script>' +
+    'function saveAllPhotosFromReport() {' +
+    '  var imgs = document.querySelectorAll("img[data-wo]");' +
+    '  if (!imgs.length) { alert("No photos found"); return; }' +
+    '  imgs.forEach(function(img, i) {' +
+    '    setTimeout(function() {' +
+    '      var a = document.createElement("a");' +
+    '      a.href = img.src;' +
+    '      a.download = img.dataset.wo + ".jpg";' +
+    '      document.body.appendChild(a); a.click(); document.body.removeChild(a);' +
+    '    }, i * 700);' +
+    '  });' +
+    '}' +
+    '</scr' + 'ipt>' +
+    '</body></html>';
+
+  // Open in new window for printing
+  var win = window.open('', '_blank');
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+    // Auto-trigger print dialog after images load
+    win.onload = function() { win.print(); };
+  } else {
+    toast('Please allow popups to export PDF');
+  }
+}
+
+
+
+function dlPhotoFromBtn(btn) {
+  var woId = btn ? btn.dataset.woid : null;
+  if (!woId) { toast('Could not find photo'); return; }
+  var wo = (state.workOrders||[]).find(function(w) { return w.id === woId; });
+  if (!wo || !wo.completedPhoto) { toast('No photo attached'); return; }
+  var filename = 'WO_' + (wo.woNumber||wo.id.slice(-4)) + '_' + (wo.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_');
+  var a = document.createElement('a');
+  a.href = wo.completedPhoto;
+  a.download = filename + '.jpg';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function downloadAllWOPhotos(community) {
+  var completed = (state.workOrders||[]).filter(function(w) {
+    return w.community === community && w.status === 'completed' && w.completedPhoto && w.completedPhoto.length > 10;
+  });
+
+  if (!completed.length) { toast('No photos to download'); return; }
+
+  // Download each photo one by one with a small delay
+  // (browsers block simultaneous downloads)
+  toast('Downloading ' + completed.length + ' photo' + (completed.length>1?'s':'') + '...');
+
+  completed.forEach(function(w, i) {
+    setTimeout(function() {
+      var a = document.createElement('a');
+      a.href = w.completedPhoto;
+      a.download = 'WO_' + (w.woNumber || w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/\s+/g,'_') + '.jpg';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }, i * 600); // 600ms between each download
+  });
 }
 
 function exportWOReport(community) {
