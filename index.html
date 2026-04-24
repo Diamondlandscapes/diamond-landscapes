@@ -2904,6 +2904,42 @@ function renderFieldView() {
   loadFieldView();
 }
 
+
+function buildDueWOsHTML(crewId) {
+  var todayISO = new Date().toISOString().slice(0,10);
+  var today = new Date(); today.setHours(0,0,0,0);
+  var dueWOs = (state.workOrders||[]).filter(function(w) {
+    if (w.assignedTo !== crewId) return false;
+    if (w.status === 'completed' || w.status === 'placeholder') return false;
+    if (!w.dueDate) return false;
+    return new Date(w.dueDate + 'T00:00:00') <= today;
+  });
+  if (!dueWOs.length) return '';
+
+  const rows = dueWOs.map(w =>
+    `<div style="background:var(--bg3);border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;border-left:3px solid var(--orange);"
+      onclick="openCrewWODetail('${w.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div>
+          <div style="font-weight:800;font-size:13px;">${w.type==='irrigation'?'💧':'🌿'} #${w.woNumber||''} · ${w.ownerName||''}</div>
+          <div style="font-size:11px;color:var(--text3);">${w.address||''}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:3px;">${w.requestType||''}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-size:10px;font-weight:800;color:var(--orange);">⏰ DUE</div>
+          <div style="font-size:10px;color:var(--text3);">${w.dueDate}</div>
+        </div>
+      </div>
+    </div>`
+  ).join('');
+
+  return `<div style="background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.3);border-radius:14px;padding:14px;margin-bottom:12px;">
+    <div style="font-size:11px;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:10px;">📋 WORK ORDERS DUE</div>
+    ${rows}
+  </div>`;
+}
+
+
 function loadFieldView() {
   const crewId = state.loggedInCrewId || document.getElementById('field-crew-select').value;
   const crew   = state.crew.find(c => c.id === crewId);
@@ -2948,6 +2984,7 @@ function loadFieldView() {
       <div style="margin-top:4px;font-size:12px;opacity:.7;">📅 ${route.day}</div>
       <div style="margin-top:4px;font-size:13px;opacity:.85;">${done}/${stops.length} stops done</div>
     </div>
+    ${buildDueWOsHTML(crewId)}
     ${stops.map((s,i) => {
       const prop = state.properties.find(p => p.id === s.propId);
       return `<div class="stop-card" style="margin-bottom:10px;">
@@ -7240,6 +7277,9 @@ function openCrewWOComplete(woId) {
   var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
   if (!wo) return;
 
+  // Close detail sheet so crew doesn't see it again after completing
+  crewWODetailClose();
+
   var sheet = document.createElement('div');
   sheet.id = 'crew-wo-complete-sheet';
   sheet.className = 'overlay open';
@@ -7302,12 +7342,18 @@ function submitCrewWOComplete(woId, photoData) {
   wo.completedPhoto = photoData;
   wo.completedNotes = notes;
 
-  // Save photo separately in local state, sync slim version to sheets
+  // Save to local state with photo
   save();
-  gsSave('workOrders', wo);
+  // Sync to Sheets WITHOUT the photo (photos are too large for Sheets)
+  // The photo stays in localStorage and shows up when manager refreshes
+  var woForSheets = Object.assign({}, wo, { completedPhoto: wo.completedPhoto ? '1' : '' });
+  gsSave('workOrders', woForSheets);
 
-  document.getElementById('crew-wo-complete-sheet')?.remove();
+  var completeSheet = document.getElementById('crew-wo-complete-sheet');
+  if (completeSheet) completeSheet.remove();
   renderCrewWorkOrders();
+  // Also refresh manager WO view if open
+  if (document.getElementById('wo-community-list')) renderWorkOrders();
   toast('Work order completed ✓');
 }
 
