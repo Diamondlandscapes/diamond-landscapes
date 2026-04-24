@@ -2908,10 +2908,13 @@ function renderFieldView() {
 function buildDueWOsHTML(crewId) {
   var todayISO = new Date().toISOString().slice(0,10);
   var today = new Date(); today.setHours(0,0,0,0);
+  var crew = (state.crew||[]).find(function(c) { return c.id === crewId; });
   var dueWOs = (state.workOrders||[]).filter(function(w) {
-    if (w.assignedTo !== crewId) return false;
     if (w.status === 'completed' || w.status === 'placeholder') return false;
     if (!w.dueDate) return false;
+    // Match by crew ID OR crew name (in case WO was assigned by name)
+    var assignedToMe = w.assignedTo === crewId || (crew && w.assignedTo === crew.name);
+    if (!assignedToMe) return false;
     return new Date(w.dueDate + 'T00:00:00') <= today;
   });
   if (!dueWOs.length) return '';
@@ -2966,9 +2969,11 @@ function loadFieldView() {
   // only show today's assigned route
   const route = myRoutes.find(r => r.day === today);
   if (!route) {
-    el.innerHTML = `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;padding:20px;">
-      No route assigned for today
-    </div>`;
+    const dueWOsHtml = buildDueWOsHTML(crewId);
+    el.innerHTML = dueWOsHtml +
+      `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;padding:20px;">
+        No route assigned for today
+      </div>`;
     return;
   }
 
@@ -2978,13 +2983,13 @@ function loadFieldView() {
   const stops      = instance.stops || [];
   const done       = stops.filter(s=>s.completed).length;
   el.innerHTML = `
+    ${buildDueWOsHTML(crewId)}
     <div style="background:linear-gradient(135deg,var(--green3),var(--green2));border-radius:14px;padding:14px;margin-bottom:12px;color:#fff;">
       <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:14px;font-weight:700;opacity:.8;">YOUR ROUTE</div>
       <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:22px;font-weight:800;">${route.name}</div>
       <div style="margin-top:4px;font-size:12px;opacity:.7;">📅 ${route.day}</div>
       <div style="margin-top:4px;font-size:13px;opacity:.85;">${done}/${stops.length} stops done</div>
     </div>
-    ${buildDueWOsHTML(crewId)}
     ${stops.map((s,i) => {
       const prop = state.properties.find(p => p.id === s.propId);
       return `<div class="stop-card" style="margin-bottom:10px;">
