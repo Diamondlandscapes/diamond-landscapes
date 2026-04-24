@@ -1511,7 +1511,20 @@ function load() {
   try { const s = localStorage.getItem('diamondlandscapes_v1'); if(s) Object.assign(state, JSON.parse(s)); } catch(e) {}
 }
 function save() {
-  try { localStorage.setItem('diamondlandscapes_v1', JSON.stringify(state)); } catch(e) {}
+  try {
+    localStorage.setItem('diamondlandscapes_v1', JSON.stringify(state));
+  } catch(e) {
+    // Storage quota exceeded - try saving without photos
+    console.warn('localStorage full, saving without photos:', e);
+    try {
+      var slim = JSON.parse(JSON.stringify(state));
+      (slim.workOrders||[]).forEach(function(w) {
+        if (w.completedPhoto && w.completedPhoto.length > 100) w.completedPhoto = '1';
+      });
+      localStorage.setItem('diamondlandscapes_v1', JSON.stringify(slim));
+      console.warn('Saved without photos due to storage limit');
+    } catch(e2) { console.error('Could not save at all:', e2); }
+  }
 }
 function uid() { return Date.now() + Math.random().toString(36).slice(2,7); }
 
@@ -2607,9 +2620,11 @@ function previewFlagPhoto(input) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    const img = document.getElementById('flag-photo-preview');
-    img.src = e.target.result;
-    img.style.display = 'block';
+    compressPhoto(e.target.result, 1000, 0.75, function(compressed) {
+      const img = document.getElementById('flag-photo-preview');
+      img.src = compressed;
+      img.style.display = 'block';
+    });
   };
   reader.readAsDataURL(file);
 }
@@ -7466,20 +7481,45 @@ function openCrewWOComplete(woId) {
     if (!file) return;
     var reader = new FileReader();
     reader.onload = function(e) {
-      var preview = document.getElementById('wo-photo-preview');
-      var zone = document.getElementById('wo-photo-zone');
-      var btn = document.getElementById('wo-complete-btn');
-      preview.src = e.target.result;
-      preview.style.display = 'block';
-      zone.style.display = 'none';
-      btn.disabled = false;
-      btn.style.opacity = '1';
-      btn.style.cursor = 'pointer';
-      btn.textContent = '✓ Mark Complete';
-      btn.onclick = function() { submitCrewWOComplete(woId, e.target.result); };
+      // Compress photo before storing to avoid localStorage quota issues
+      compressPhoto(e.target.result, 1000, 0.75, function(compressed) {
+        var preview = document.getElementById('wo-photo-preview');
+        var zone = document.getElementById('wo-photo-zone');
+        var btn = document.getElementById('wo-complete-btn');
+        preview.src = compressed;
+        preview.style.display = 'block';
+        zone.style.display = 'none';
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+        btn.textContent = '✓ Mark Complete';
+        btn.onclick = function() { submitCrewWOComplete(woId, compressed); };
+      });
     };
     reader.readAsDataURL(file);
   };
+}
+
+
+function compressPhoto(dataUrl, maxSize, quality, callback) {
+  var img = new Image();
+  img.onload = function() {
+    var canvas = document.createElement('canvas');
+    var w = img.width;
+    var h = img.height;
+    // Scale down if larger than maxSize
+    if (w > maxSize || h > maxSize) {
+      if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+      else        { w = Math.round(w * maxSize / h); h = maxSize; }
+    }
+    canvas.width = w;
+    canvas.height = h;
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    callback(canvas.toDataURL('image/jpeg', quality));
+  };
+  img.onerror = function() { callback(dataUrl); }; // fallback to original
+  img.src = dataUrl;
 }
 
 function submitCrewWOComplete(woId, photoData) {
