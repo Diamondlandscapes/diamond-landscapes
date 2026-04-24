@@ -7501,6 +7501,60 @@ function openCrewWOComplete(woId) {
 }
 
 
+
+// ─── GOOGLE DRIVE PHOTO UPLOAD ────────────────────────────────────────────────
+function uploadPhotoToDrive(base64Data, filename, callback) {
+  // For large payloads we can't use JSONP GET (URL too long)
+  // Use fetch POST to the Apps Script web app instead
+  var url = GS_URL;
+
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      secret: GS_SECRET,
+      action: 'uploadPhoto',
+      photo: base64Data,
+      filename: filename
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      callback(null, data.url);
+    } else {
+      console.error('Drive upload error:', data.error);
+      callback(data.error || 'Upload failed', null);
+    }
+  })
+  .catch(function(err) {
+    console.error('Drive upload fetch error:', err);
+    callback(err.toString(), null);
+  });
+}
+
+// Save photo: uploads to Drive, saves URL on WO, falls back to compressed base64
+function saveWOPhoto(woId, base64Data, onDone) {
+  var wo = (state.workOrders||[]).find(function(w) { return w.id === woId; });
+  if (!wo) { if(onDone) onDone(); return; }
+
+  var filename = 'WO_' + (wo.woNumber||wo.id.slice(-4)) + '_' + (wo.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now();
+
+  uploadPhotoToDrive(base64Data, filename, function(err, driveUrl) {
+    if (driveUrl) {
+      // Success - store Drive URL (tiny string, not base64 blob)
+      wo.completedPhoto = driveUrl;
+      wo.photoStoredIn = 'drive';
+    } else {
+      // Fallback - store compressed base64 locally
+      console.warn('Drive upload failed, storing locally:', err);
+      wo.completedPhoto = base64Data;
+      wo.photoStoredIn = 'local';
+    }
+    if (onDone) onDone();
+  });
+}
+
 function compressPhoto(dataUrl, maxSize, quality, callback) {
   var img = new Image();
   img.onload = function() {
@@ -7532,22 +7586,29 @@ function submitCrewWOComplete(woId, photoData) {
   wo.status = 'completed';
   wo.completedOn = new Date().toLocaleDateString();
   wo.completedBy = crew ? crew.name : 'Crew';
-  wo.completedPhoto = photoData;
   wo.completedNotes = notes;
-
-  // Save to local state with photo
-  save();
-  // Sync to Sheets WITHOUT the photo (photos are too large for Sheets)
-  // The photo stays in localStorage and shows up when manager refreshes
-  var woForSheets = Object.assign({}, wo, { completedPhoto: wo.completedPhoto ? '1' : '' });
-  gsSave('workOrders', woForSheets);
+  wo.completedPhoto = ''; // will be set after upload
 
   var completeSheet = document.getElementById('crew-wo-complete-sheet');
   if (completeSheet) completeSheet.remove();
-  renderCrewWorkOrders();
-  // Also refresh manager WO view if open
-  if (document.getElementById('wo-community-list')) renderWorkOrders();
-  toast('Work order completed ✓');
+
+  // Show uploading toast
+  toast('📤 Uploading photo...');
+
+  saveWOPhoto(woId, photoData, function() {
+    // Photo saved (Drive URL or local fallback)
+    save();
+    // Sync to Sheets with Drive URL (short string, safe to send)
+    var woForSheets = Object.assign({}, wo);
+    if (wo.photoStoredIn === 'local') {
+      woForSheets.completedPhoto = ''; // don't send base64 to sheets
+    }
+    gsSave('workOrders', wo);
+
+    renderCrewWorkOrders();
+    if (document.getElementById('wo-community-list')) renderWorkOrders();
+    toast('✓ Work order completed');
+  });
 }
 
 
