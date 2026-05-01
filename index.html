@@ -2643,7 +2643,7 @@ function previewFlagPhoto(input) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    compressPhoto(e.target.result, 1000, 0.75, function(compressed) {
+    compressPhoto(e.target.result, 400, 0.5, function(compressed) {
       const img = document.getElementById('flag-photo-preview');
       img.src = compressed;
       img.style.display = 'block';
@@ -2666,12 +2666,15 @@ function saveFlagPhoto(flagId, photoData) {
 
 function getFlagPhoto(flag) {
   if (!flag) return null;
+  // Check dlphotos map (full quality local)
   try {
     var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
     if (photos['flag_' + flag.id]) return photos['flag_' + flag.id];
   } catch(e) {}
+  // Check individual key
   var local = localStorage.getItem('dlphoto_flag_' + flag.id);
   if (local) return local;
+  // Check inline on flag object (thumbnail from Sheets - works cross-device)
   if (flag.photo && flag.photo.startsWith('data:')) return flag.photo;
   return null;
 }
@@ -2699,13 +2702,25 @@ function saveFlag() {
     by: document.getElementById('flag-by').value || 'Team',
     date: new Date().toLocaleDateString(), resolved: false
   };
-  state.flags.push(newFlag);
-  saveAndSync('flags', newFlag);
-  document.getElementById('flag-sheet')?.remove();
-  // show confirmation to crew member
-  showFlagConfirmation(newFlag);
-  // update dashboard if manager is viewing
-  renderDashboard();
+  function finishSaveFlag() {
+    state.flags.push(newFlag);
+    save();
+    gsSave('flags', newFlag);
+    document.getElementById('flag-sheet')?.remove();
+    showFlagConfirmation(newFlag);
+    renderDashboard();
+    renderProperties();
+  }
+
+  if (hasPhoto) {
+    compressPhoto(rawPhoto, 400, 0.5, function(compressed) {
+      saveFlagPhoto(newFlag.id, compressed);
+      newFlag.photo = 'local:flag';
+      finishSaveFlag();
+    });
+  } else {
+    finishSaveFlag();
+  }
 }
 
 
@@ -2746,6 +2761,7 @@ function openEditFlag(flagId) {
   var sheet = document.createElement('div');
   sheet.id = 'edit-flag-sheet';
   sheet.className = 'overlay open';
+  sheet.style.zIndex = '9000'; // above dash-flags-panel (z-index:400)
   document.body.appendChild(sheet);
 
   var inner = document.createElement('div');
@@ -2811,7 +2827,15 @@ function saveEditFlag(flagId) {
     f.photo = 'local:flag';
   }
   save();
-  gsSave('flags', f);
+  // Sync thumbnail to Sheets
+  if (prev && prev.src && prev.src.startsWith('data:')) {
+    compressPhoto(prev.src, 120, 0.4, function(thumbnail) {
+      var flagForSheets = Object.assign({}, f, { photo: thumbnail });
+      gsSave('flags', flagForSheets);
+    });
+  } else {
+    gsSave('flags', f);
+  }
   editFlagClose();
   // Refresh whatever panel is open
   renderDashboard();
@@ -4629,6 +4653,11 @@ function gsLoad() {
               const lf = localById[rf.id];
               // if local version is resolved but remote isn't, keep local
               if (lf && lf.resolved && !rf.resolved) return lf;
+              // preserve local photo if remote has placeholder or empty
+              if (lf && lf.photo && lf.photo.startsWith('data:') &&
+                  (!rf.photo || !rf.photo.startsWith('data:'))) {
+                rf.photo = lf.photo;
+              }
               // otherwise remote wins
               return rf;
             });
@@ -4710,7 +4739,7 @@ function gsSave(table, record) {
   // Check if record JSON is small enough for JSONP URL (~1500 chars safe limit)
   const recStr = JSON.stringify(record);
   // For workOrders, allow larger records (thumbnail photo in completedPhoto)
-  const limit = (table === 'workOrders') ? 8000 : 1500;
+  const limit = (table === 'workOrders' || table === 'flags') ? 8000 : 1500;
   if (recStr.length > limit) {
     const slim = { ...record };
     if (slim.resolvePhoto && slim.resolvePhoto.startsWith('data:')) slim.resolvePhoto = '[photo]';
