@@ -2702,80 +2702,65 @@ function previewFlagPhoto(input) {
 // Splits base64 photo into chunks, sends each via JSONP GET,
 // Apps Script reassembles and uploads to Drive, returns permanent URL.
 
-var CHUNK_SIZE = 7000; // chars per chunk - safe for Apps Script URL limit
 
-function uploadPhotoChunked(base64Data, filename, onSuccess, onError) {
-  // Strip the data URL prefix - only send raw base64 to avoid URL encoding issues
-  var prefix = '';
-  var rawBase64 = base64Data;
-  var commaIdx = base64Data.indexOf(',');
-  if (commaIdx !== -1) {
-    prefix = base64Data.slice(0, commaIdx + 1); // e.g. "data:image/jpeg;base64,"
-    rawBase64 = base64Data.slice(commaIdx + 1);
-  }
+// ─── PHOTO UPLOAD VIA POST + POLL ────────────────────────────────────────────
+// POST sends full photo to Apps Script (no CORS needed for sending)
+// Apps Script uploads to Drive and stores result in 'uploads' temp sheet
+// App polls every 2s to get the Drive URL back
 
-  // Split on multiples of 4 to avoid corrupting base64 groups
-  var safeChunkSize = Math.floor(CHUNK_SIZE / 4) * 4;
-  var chunks = [];
-  for (var i = 0; i < rawBase64.length; i += safeChunkSize) {
-    chunks.push(rawBase64.slice(i, i + safeChunkSize));
-  }
-  var uploadId = 'ul_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-  var total = chunks.length;
-  console.log('Uploading ' + Math.round(rawBase64.length/1024) + 'KB in ' + total + ' chunks, filename: ' + filename);
+function uploadPhotoViaPost(base64Data, filename, onSuccess, onError) {
+  console.log('Uploading photo via POST, size:', Math.round(base64Data.length/1024) + 'KB');
+  toast('📤 Uploading photo...');
 
-  // Send chunks sequentially
-  function sendChunk(idx) {
-    if (idx >= total) {
-      // All chunks sent - tell Apps Script to assemble
-      console.log('All chunks sent, requesting assembly...');
-      gsJSONP({
-        action: 'assemblePhoto',
-        uploadId: uploadId,
-        filename: filename,
-        totalChunks: total,
-        prefix: prefix
-      })
-      .then(function(result) {
-        if (result && result.url) {
-          console.log('Drive URL:', result.url);
-          onSuccess(result.url);
-        } else {
-          console.error('Assembly failed:', result);
-          onError('Assembly failed: ' + JSON.stringify(result));
-        }
-      })
-      .catch(function(err) {
-        console.error('Assembly error:', err);
-        onError(err.toString());
-      });
-      return;
-    }
+  var uploadId = 'up_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
 
-    if (idx % 3 === 0) toast('📤 Uploading... ' + Math.round((idx/total)*100) + '%');
-    gsJSONP({
-      action: 'uploadChunk',
+  // Send via POST - no-cors means we can't read response
+  // but Apps Script DOES receive and process it
+  fetch(GS_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({
+      secret: GS_SECRET,
+      action: 'uploadAndStore',
       uploadId: uploadId,
-      chunkIndex: idx,
-      totalChunks: total,
-      data: chunks[idx]
+      photo: base64Data,
+      filename: filename || ('photo_' + Date.now())
     })
+  }).then(function() {
+    console.log('POST sent, polling for result...');
+    // Poll for the result
+    pollForUploadResult(uploadId, 0, onSuccess, onError);
+  }).catch(function(err) {
+    console.error('POST failed:', err);
+    onError(err.toString());
+  });
+}
+
+function pollForUploadResult(uploadId, attempt, onSuccess, onError) {
+  if (attempt > 20) { // max 40 seconds
+    onError('Upload timeout after polling');
+    return;
+  }
+  setTimeout(function() {
+    gsJSONP({ action: 'getUploadResult', uploadId: uploadId })
     .then(function(result) {
-      if (result && result.ok) {
-        console.log('Chunk ' + (idx+1) + '/' + total + ' sent');
-        sendChunk(idx + 1);
+      console.log('Poll attempt', attempt+1, ':', JSON.stringify(result).slice(0,100));
+      if (result && result.url) {
+        onSuccess(result.url);
+      } else if (result && result.error) {
+        onError(result.error);
       } else {
-        console.error('Chunk failed:', result);
-        onError('Chunk ' + idx + ' failed');
+        // Still processing - poll again
+        toast('📤 Uploading... ' + Math.min(99, (attempt+1)*5) + '%');
+        pollForUploadResult(uploadId, attempt + 1, onSuccess, onError);
       }
     })
     .catch(function(err) {
-      console.error('Chunk error:', err);
-      onError(err.toString());
+      // Retry on network error
+      pollForUploadResult(uploadId, attempt + 1, onSuccess, onError);
     });
-  }
-
-  sendChunk(0);
+  }, 2000);
 }
 
 function uploadFlagPhotoToSheets(flagId, photoData) {
@@ -2896,7 +2881,7 @@ function saveFlag() {
 
     // 5. Upload to Drive via chunked JSONP
     var filename = 'flag_' + newFlag.id + '_' + Date.now();
-    uploadPhotoChunked(compressed, filename,
+    uploadPhotoViaPost(compressed, filename,
       function(driveUrl) {
         // Drive upload success - update flag with permanent URL
         console.log('Flag photo on Drive:', driveUrl);
@@ -8429,7 +8414,7 @@ function submitCrewWOComplete(woId, photoData) {
     if (photo) {
       toast('📤 Uploading photo to Drive...');
       var woFilename = 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now();
-      uploadPhotoChunked(photo, woFilename,
+      uploadPhotoViaPost(photo, woFilename,
         function(driveUrl) {
           wo.completedPhoto = driveUrl;
           try {
