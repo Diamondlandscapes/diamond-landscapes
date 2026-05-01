@@ -7993,6 +7993,14 @@ function crewWODetailClose() {
 }
 
 
+
+function crewResolveFlag(flagId, propId) {
+  // Close the crew flags sheet first
+  crewPropFlagsClose();
+  // Open the standard resolve sheet (it already handles photo + ImgBB upload)
+  resolveFlag(flagId, propId);
+}
+
 function crewPropFlagsClose() { var s=document.getElementById('crew-prop-flags-sheet'); if(s)s.remove(); }
 
 function openCrewPropFlags(propId) {
@@ -8025,7 +8033,9 @@ function openCrewPropFlags(propId) {
       '</div>' +
       '<div style="font-size:13px;color:var(--text2);margin-bottom:8px;">' + f.note + '</div>' +
       (photo ? '<img src="' + photo + '" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-bottom:8px;"/>' : '') +
-      '<div style="font-size:11px;color:var(--text4);">Reported by ' + (f.by||'Team') + '</div>' +
+      '<div style="font-size:11px;color:var(--text4);margin-bottom:10px;">Reported by ' + (f.by||'Team') + '</div>' +
+      '<button data-flagid="' + f.id + '" data-propid="' + f.propId + '" onclick="crewResolveFlag(this.dataset.flagid, this.dataset.propid)"' +
+        ' style="width:100%;padding:10px;border-radius:10px;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);font-size:13px;font-weight:700;cursor:pointer;">✓ Resolve This Flag</button>' +
     '</div>';
   }).join('');
 
