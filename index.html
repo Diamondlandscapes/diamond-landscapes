@@ -2708,6 +2708,119 @@ function saveFlag() {
   renderDashboard();
 }
 
+
+
+function deleteFlag(flagId) {
+  if (!confirm('Delete this flag? This cannot be undone.')) return;
+  state.flags = (state.flags||[]).filter(function(f) { return f.id !== flagId; });
+  // Remove photo from local storage
+  try {
+    var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+    delete photos['flag_' + flagId];
+    delete photos['flagresolve_' + flagId];
+    localStorage.setItem('dlphotos', JSON.stringify(photos));
+  } catch(e) {}
+  localStorage.removeItem('dlphoto_flag_' + flagId);
+  save();
+  gsDelete('flags', flagId);
+  // Refresh all views
+  renderDashboard();
+  renderReports();
+  renderProperties();
+  // Close any open flag panels
+  document.getElementById('dash-flags-panel')?.remove();
+  document.getElementById('report-flag-panel')?.remove();
+  toast('Flag deleted');
+}
+
+function editFlagClose() { var s=document.getElementById('edit-flag-sheet'); if(s)s.remove(); }
+
+function openEditFlag(flagId) {
+  var f = (state.flags||[]).find(function(x) { return x.id === flagId; });
+  if (!f) return;
+  var prop = (state.properties||[]).find(function(p) { return p.id === f.propId; });
+
+  var existing = document.getElementById('edit-flag-sheet');
+  if (existing) existing.remove();
+
+  var sheet = document.createElement('div');
+  sheet.id = 'edit-flag-sheet';
+  sheet.className = 'overlay open';
+  document.body.appendChild(sheet);
+
+  var inner = document.createElement('div');
+  inner.className = 'sheet';
+  sheet.appendChild(inner);
+
+  var SERVICES = ['Mow & Edge','Blow & Clean','Trim Shrubs','Weed Control','Irrigation Check','Mulch','Tree Work','Pest Control','General','Other'];
+  var PRIORITIES = ['Low','Medium','High','Urgent'];
+
+  inner.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+      '<div class="sheet-title" style="margin-bottom:0;">Edit Flag</div>' +
+      '<button onclick="editFlagClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+    '</div>' +
+    '<div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:4px;">PROPERTY</div>' +
+    '<div style="font-size:14px;font-weight:700;margin-bottom:12px;">' + (prop ? prop.name : 'Unknown') + '</div>' +
+    '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">SERVICE</div>' +
+    '<select id="ef-service" class="inp" style="margin-bottom:10px;">' +
+      SERVICES.map(function(s) { return '<option value="'+s+'"'+(f.service===s?' selected':'')+'>'+s+'</option>'; }).join('') +
+    '</select>' +
+    '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">PRIORITY</div>' +
+    '<select id="ef-priority" class="inp" style="margin-bottom:10px;">' +
+      PRIORITIES.map(function(p) { return '<option value="'+p+'"'+(f.priority===p?' selected':'')+'>'+p+'</option>'; }).join('') +
+    '</select>' +
+    '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">DESCRIPTION</div>' +
+    '<textarea id="ef-note" class="inp" rows="3" style="margin-bottom:12px;">' + (f.note||'') + '</textarea>' +
+    '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">PHOTO</div>' +
+    (getFlagPhoto(f) ? '<img src="'+getFlagPhoto(f)+'" style="width:100%;border-radius:10px;max-height:180px;object-fit:cover;margin-bottom:8px;"/>' : '') +
+    '<label style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:10px 14px;cursor:pointer;margin-bottom:12px;">' +
+      '<span style="font-size:20px;">📷</span>' +
+      '<span style="font-size:13px;font-weight:700;">'+( getFlagPhoto(f) ? 'Replace Photo' : 'Add Photo' )+'</span>' +
+      '<input type="file" accept="image/*" style="display:none;" data-flagid="' + flagId + '" onchange="editFlagPhotoPreview(this)"/>' +
+    '</label>' +
+    '<img id="ef-photo-preview" style="display:none;width:100%;border-radius:10px;max-height:180px;object-fit:cover;margin-bottom:12px;"/>' +
+    '<button class="btn btn-green" data-flagid="' + flagId + '" onclick="saveEditFlag(this.dataset.flagid)" style="margin-bottom:8px;">Save Changes</button>' +
+    '<button class="btn btn-red" data-flagid="' + flagId + '" onclick="deleteFlag(this.dataset.flagid);editFlagClose()" style="font-size:13px;">🗑 Delete Flag</button>';
+}
+
+function editFlagPhotoPreview(input) {
+  var flagId = input.dataset.flagid;
+  var file = input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    compressPhoto(e.target.result, 400, 0.5, function(compressed) {
+      var prev = document.getElementById('ef-photo-preview');
+      if (prev) { prev.src = compressed; prev.style.display = 'block'; }
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function saveEditFlag(flagId) {
+  var f = (state.flags||[]).find(function(x) { return x.id === flagId; });
+  if (!f) return;
+  f.service  = document.getElementById('ef-service')?.value || f.service;
+  f.priority = document.getElementById('ef-priority')?.value || f.priority;
+  f.note     = document.getElementById('ef-note')?.value || f.note;
+  // Save new photo if captured
+  var prev = document.getElementById('ef-photo-preview');
+  if (prev && prev.src && prev.src.startsWith('data:')) {
+    saveFlagPhoto(flagId, prev.src);
+    f.photo = 'local:flag';
+  }
+  save();
+  gsSave('flags', f);
+  editFlagClose();
+  // Refresh whatever panel is open
+  renderDashboard();
+  renderReports();
+  var propPanel = document.getElementById('prop-panel');
+  if (propPanel && propPanel.classList.contains('open')) openPropDetail(f.propId);
+  toast('Flag updated ✓');
+}
+
 function resolveFlag(flagId, propId) {
   const f = state.flags.find(x => x.id === flagId);
   if (!f) return;
@@ -5153,10 +5266,9 @@ function openDashFlags() {
             const prop = (state.properties||[]).find(p => p.id === f.propId);
             const pColor = {Urgent:'var(--red)',High:'var(--orange)',Medium:'var(--yellow)',Low:'var(--green)'}[f.priority]||'var(--yellow)';
             return `
-              <div style="background:var(--bg2);border-radius:14px;padding:14px;border:1px solid var(--border);
-                border-left:3px solid ${pColor};margin-bottom:10px;">
+              <div style="background:var(--bg2);border-radius:14px;padding:14px;border:1px solid var(--border);border-left:3px solid ${pColor};margin-bottom:10px;">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
-                  <div style="flex:1;">
+                  <div style="flex:1;min-width:0;">
                     <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap;">
                       <span class="badge badge-${PCOLORS[f.priority]||'yellow'}">${f.priority}</span>
                       <span style="font-size:12px;color:var(--blue);font-weight:700;">${f.service}</span>
@@ -5164,19 +5276,26 @@ function openDashFlags() {
                     <div style="font-weight:800;font-size:14px;">${prop?.name||'Unknown Property'}</div>
                     <div style="font-size:12px;color:var(--text3);margin-top:2px;">📍 ${prop?.address||'No address'}</div>
                   </div>
-                  ${f.photo ? `<img src="${f.photo}" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f) || f.photo}','${prop?.name||''} — ${f.service}')" style="width:60px;height:60px;border-radius:8px;object-fit:cover;margin-left:10px;flex-shrink:0;cursor:zoom-in;"/>` : ''}
+                  ${getFlagPhoto(f) ? `<img src="${getFlagPhoto(f)}" style="width:60px;height:60px;border-radius:8px;object-fit:cover;margin-left:10px;flex-shrink:0;cursor:zoom-in;" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f)}','Issue')"/>` : ''}
                 </div>
-                <div style="background:var(--bg3);border-radius:8px;padding:10px;font-size:13px;color:var(--text2);line-height:1.5;">
+                <div style="background:var(--bg3);border-radius:8px;padding:10px;font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:8px;">
                   ${f.note}
                 </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
-                  <div style="font-size:11px;color:var(--text4);">
-                    Reported by <strong style="color:var(--text3);">${f.by||'—'}</strong> · ${f.date||''}
-                  </div>
-                  <button onclick="resolveFlag('${f.id}','${f.propId}');document.getElementById('dash-flags-panel').remove();"
-                    style="font-size:11px;padding:5px 12px;border-radius:8px;background:rgba(74,222,128,.15);
-                    color:var(--green);border:1px solid rgba(74,222,128,.3);cursor:pointer;font-weight:700;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">
-                    Resolve
+                <div style="font-size:11px;color:var(--text4);margin-bottom:10px;">
+                  Reported by <strong style="color:var(--text3);">${f.by||'—'}</strong> · ${f.date||''}
+                </div>
+                <div style="display:flex;gap:8px;">
+                  <button onclick="event.stopPropagation();openEditFlag('${f.id}')"
+                    style="flex:1;font-size:12px;padding:8px;border-radius:8px;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);cursor:pointer;font-weight:700;">
+                    ✏️ Edit
+                  </button>
+                  <button onclick="event.stopPropagation();resolveFlag('${f.id}','${f.propId}')"
+                    style="flex:1;font-size:12px;padding:8px;border-radius:8px;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);cursor:pointer;font-weight:700;">
+                    ✓ Resolve
+                  </button>
+                  <button onclick="event.stopPropagation();deleteFlag('${f.id}')"
+                    style="font-size:12px;padding:8px 10px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);cursor:pointer;font-weight:700;">
+                    🗑
                   </button>
                 </div>
               </div>`;
