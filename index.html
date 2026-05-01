@@ -2745,7 +2745,8 @@ function saveFlag() {
     by: document.getElementById('flag-by').value || 'Team',
     date: new Date().toLocaleDateString(), resolved: false
   };
-  function finishSaveFlag() {
+  function finishSaveFlag(thumbPhoto) {
+    if (thumbPhoto) newFlag.photo = thumbPhoto; // tiny version goes to Sheets
     state.flags.push(newFlag);
     save();
     gsSave('flags', newFlag);
@@ -2756,13 +2757,17 @@ function saveFlag() {
   }
 
   if (hasPhoto) {
-    compressPhoto(rawPhoto, 400, 0.5, function(compressed) {
-      saveFlagPhoto(newFlag.id, compressed);
-      newFlag.photo = 'local:flag';
-      finishSaveFlag();
+    // Save full quality locally for this device
+    compressPhoto(rawPhoto, 400, 0.5, function(fullCompressed) {
+      saveFlagPhoto(newFlag.id, fullCompressed);
+      // Also create tiny thumbnail (120px) for Sheets sync - cross-device
+      compressPhoto(rawPhoto, 120, 0.4, function(thumbnail) {
+        console.log('Flag thumbnail size:', Math.round(thumbnail.length/1024) + 'KB');
+        finishSaveFlag(thumbnail);
+      });
     });
   } else {
-    finishSaveFlag();
+    finishSaveFlag(null);
   }
 }
 
@@ -2988,11 +2993,26 @@ function submitMgrResolve(flagId, propId) {
   const photo = previewEl?.src?.startsWith('data:') ? previewEl.src : null;
   const f = state.flags.find(x => x.id === flagId);
   if (f) {
-    if (photo) f.resolvePhoto = photo;
     f.resolveNote = document.getElementById('mgr-resolve-note')?.value || '';
     f.resolveDate = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     f.resolved = true;
-    gsSave('flags', f);
+    if (photo) {
+      // Store full quality locally
+      compressPhoto(photo, 400, 0.5, function(full) {
+        try {
+          var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+          photos['flagresolve_' + f.id] = full;
+          localStorage.setItem('dlphotos', JSON.stringify(photos));
+        } catch(e) {}
+        // Store thumbnail in Sheets
+        compressPhoto(photo, 120, 0.4, function(thumb) {
+          f.resolvePhoto = thumb;
+          save(); gsSave('flags', f);
+        });
+      });
+    } else {
+      gsSave('flags', f);
+    }
   }
   save(); document.getElementById('manager-resolve-sheet')?.remove();
   openPropDetail(propId); renderDashboard(); toast('Flag resolved ✓');
