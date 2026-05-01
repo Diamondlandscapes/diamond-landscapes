@@ -2636,6 +2636,30 @@ function openAddFlag(propId) {
     </div>
   </div>`;
   document.body.appendChild(sheet);
+
+  // Wire photo input AFTER DOM is ready - same pattern as WO completion
+  var flagPhotoInput = document.getElementById('flag-photo-input');
+  if (flagPhotoInput) {
+    flagPhotoInput.onchange = function() {
+      var file = this.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        compressPhoto(e.target.result, 400, 0.5, function(compressed) {
+          var preview = document.getElementById('flag-photo-preview');
+          var zone = document.getElementById('flag-photo-zone');
+          if (preview) {
+            preview.src = compressed;
+            preview.style.display = 'block';
+          }
+          if (zone) {
+            zone.style.display = 'none';
+          }
+        });
+      };
+      reader.readAsDataURL(file);
+    };
+  }
 }
 
 function previewFlagPhoto(input) {
@@ -2710,10 +2734,9 @@ function saveFlag() {
   const note = document.getElementById('flag-note').value.trim();
   if (!note) { toast('Add a description'); return; }
   const previewEl = document.getElementById('flag-photo-preview');
-  const rawPhoto = previewEl && previewEl.style.display !== 'none'
-    ? (previewEl.dataset.compressed || (previewEl.src.startsWith('data:') ? previewEl.src : ''))
-    : '';
-  const hasPhoto = rawPhoto && rawPhoto.startsWith('data:');
+  const rawPhoto = (previewEl && previewEl.style.display !== 'none' && previewEl.src && previewEl.src.startsWith('data:'))
+    ? previewEl.src : '';
+  const hasPhoto = rawPhoto.length > 0;
   const newFlag = {
     id: uid(), propId: flagTargetPropId,
     service: document.getElementById('flag-service').value,
