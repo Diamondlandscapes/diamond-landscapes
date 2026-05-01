@@ -2904,6 +2904,27 @@ function saveFlag() {
 
 
 
+
+function debugFlagPhotos() {
+  console.log('=== FLAG PHOTO DEBUG ===');
+  var dlphotos = {};
+  try { dlphotos = JSON.parse(localStorage.getItem('dlphotos') || '{}'); } catch(e) {}
+  
+  (state.flags||[]).slice(0,5).forEach(function(f) {
+    var localPhoto = dlphotos['flag_' + f.id];
+    console.log('Flag', f.id.slice(-6), '|', f.service, '|',
+      'flag.photo:', f.photo ? (f.photo.slice(0,40) + '...') : 'EMPTY',
+      '| dlphotos:', localPhoto ? (localPhoto.slice(0,40) + '...') : 'NONE',
+      '| getFlagPhoto:', getFlagPhoto(f) ? 'HAS PHOTO' : 'NULL'
+    );
+  });
+  
+  // Check ImgBB API key
+  console.log('ImgBB key set:', IMGBB_API_KEY !== 'YOUR_IMGBB_KEY_HERE');
+  console.log('=== END DEBUG ===');
+  toast('Check console for debug info');
+}
+
 function deleteFlag(flagId) {
   if (!confirm('Delete this flag? This cannot be undone.')) return;
   state.flags = (state.flags||[]).filter(function(f) { return f.id !== flagId; });
