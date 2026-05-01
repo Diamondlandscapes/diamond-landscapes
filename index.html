@@ -2700,6 +2700,37 @@ function previewFlagPhoto(input) {
 }
 
 
+
+function uploadFlagPhotoToSheets(flagId, photoData) {
+  // Send full quality photo to Apps Script via POST
+  // Apps Script stores it in the sheet cell (up to 50KB fits in a cell)
+  fetch(GS_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({
+      secret: GS_SECRET,
+      action: 'saveFlagPhoto',
+      flagId: flagId,
+      photo: photoData
+    })
+  })
+  .then(function() {
+    console.log('Flag photo sent to Sheets for:', flagId);
+    // Reload after 3s to get the updated photo from Sheets
+    setTimeout(function() {
+      gsLoad().then(function() {
+        renderDashboard();
+        renderProperties();
+        renderReports();
+      });
+    }, 3000);
+  })
+  .catch(function(err) {
+    console.warn('Flag photo upload failed:', err);
+  });
+}
+
 function saveFlagPhoto(flagId, photoData) {
   try {
     var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
@@ -8238,10 +8269,30 @@ function submitCrewWOComplete(woId, photoData) {
       gsSave('workOrders', wo);
     }
 
-    // Step 6b (disabled - CORS blocks Drive upload from browser)
+    // Step 6b: Send full quality photo to Apps Script via POST → stored in sheet cell
+    if (photo) {
+      compressPhoto(photo, 400, 0.8, function(fullQuality) {
+        fetch(GS_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ secret: GS_SECRET, action: 'saveWOPhoto', woId: wo.id, photo: fullQuality })
+        })
+        .then(function() {
+          console.log('WO photo sent to Sheets');
+          setTimeout(function() {
+            gsLoad().then(function() {
+              renderCrewWorkOrders();
+              if (document.getElementById('wo-community-list')) renderWorkOrders();
+            });
+          }, 3000);
+        })
+        .catch(function(err) { console.warn('WO photo POST failed:', err); });
+      });
+    }
     var photoDisabled = null;
     if (photoDisabled) {
-      console.log('Uploading photo for WO:', wo.id, 'size:', Math.round(photo.length/1024), 'KB');
+      console.log('disabled');
       var uploadPayload = JSON.stringify({
         secret: GS_SECRET,
         action: 'uploadWOPhoto',
@@ -8277,9 +8328,6 @@ function submitCrewWOComplete(woId, photoData) {
           toast('✓ Completed (photo upload issue: ' + JSON.stringify(result) + ')');
         }
       })
-      .catch(function(err) {
-        console.error('Photo POST failed:', err.message || err);
-      });
     } // end photoDisabled block
   });
 }
