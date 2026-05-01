@@ -1512,20 +1512,43 @@ function load() {
 }
 function save() {
   try {
-    localStorage.setItem('diamondlandscapes_v1', JSON.stringify(state));
+    // Save photos separately so main state stays small
+    var photos = {};
+    (state.workOrders||[]).forEach(function(w) {
+      if (w.completedPhoto && (w.completedPhoto.startsWith('data:') || w.completedPhoto.startsWith('http'))) {
+        photos[w.id] = w.completedPhoto;
+      }
+    });
+
+    // Save slim state (no base64 photos inline)
+    var slim = JSON.parse(JSON.stringify(state));
+    (slim.workOrders||[]).forEach(function(w) {
+      if (w.completedPhoto && w.completedPhoto.startsWith('data:')) {
+        w.completedPhoto = 'saved'; // placeholder
+      }
+    });
+
+    localStorage.setItem('diamondlandscapes_v1', JSON.stringify(slim));
+
+    // Save photos in separate key
+    if (Object.keys(photos).length > 0) {
+      try {
+        var existing = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+        Object.assign(existing, photos);
+        localStorage.setItem('dlphotos', JSON.stringify(existing));
+      } catch(pe) {
+        // Photos key full - save individually
+        Object.keys(photos).forEach(function(id) {
+          try { localStorage.setItem('dlphoto_' + id, photos[id]); } catch(e2) {}
+        });
+      }
+    }
   } catch(e) {
-    // Storage quota exceeded - try saving without photos
-    console.warn('localStorage full, saving without photos:', e);
-    try {
-      var slim = JSON.parse(JSON.stringify(state));
-      (slim.workOrders||[]).forEach(function(w) {
-        if (w.completedPhoto && w.completedPhoto.length > 100) w.completedPhoto = '1';
-      });
-      localStorage.setItem('diamondlandscapes_v1', JSON.stringify(slim));
-      console.warn('Saved without photos due to storage limit');
-    } catch(e2) { console.error('Could not save at all:', e2); }
+    console.error('save() failed:', e);
   }
 }
+
+
 function uid() { return Date.now() + Math.random().toString(36).slice(2,7); }
 
 function toast(msg='✓ Saved') {
@@ -2682,7 +2705,7 @@ function resolveFlag(flagId, propId) {
       '<div style="font-size:13px;color:var(--text3);">Tap to take or choose a photo</div>' +
       '<input type="file" id="mgr-resolve-input" accept="image/*"  style="display:none;"/>' +
     '</label>' +
-        '<img src="' + wo.completedPhoto + '" style="width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;"/>' +
+          '<img src="' + getWOPhoto(wo) + '" style="width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;"/>' +
     '<button id="mgr-resolve-submit-btn" class="btn btn-green" style="margin-bottom:8px;opacity:.4;cursor:not-allowed;">📷 Add photo to resolve</button>' +
     '<button id="mgr-resolve-cancel-btn" class="btn btn-outline">Cancel</button>';
 
@@ -4497,6 +4520,11 @@ function gsLoad() {
         });
         (state.workOrders||[]).forEach(function(w) {
           if (!w.status) w.status = 'open';
+          // Restore photo from local storage if available
+          var storedPhoto = getWOPhoto(w);
+          if (storedPhoto && !w.completedPhoto.startsWith('data:')) {
+            w.completedPhoto = storedPhoto;
+          }
         });
         save();
         lastSync   = new Date();
@@ -7101,10 +7129,10 @@ function openWOReport(community) {
         '</div>' +
         '<div style="font-size:12px;color:var(--text2);margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
         '<div style="font-size:11px;color:var(--text3);">Completed by ' + (w.completedBy || (crew ? crew.name : 'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
-        (w.completedPhoto ?
-          '<img src="' + w.completedPhoto + '" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-top:8px;cursor:pointer;" onclick="openPhoto(\'' + w.completedPhoto + '\')" />' +
+        (getWOPhoto(w) ?
+          '<img src="' + getWOPhoto(w) + '" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-top:8px;cursor:pointer;"/>' +
           '<div style="display:flex;gap:8px;margin-top:8px;">' +
-            '<button onclick="dlPhotoFromBtn(this)" data-photo="' + w.completedPhoto.slice(0,30) + '..." data-woid="' + w.id + '" style="flex:1;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">⬇ Download Photo</button>' +
+            '<button onclick="dlPhotoFromBtn(this)" data-woid="' + w.id + '" style="flex:1;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">⬇ Download Photo</button>' +
           '</div>' : '') +
       '</div>';
   });
@@ -7223,8 +7251,8 @@ function exportWOPDF(community) {
       '<div style="font-size:13px;color:#374151;margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
       '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
       (w.completedNotes ? '<div style="font-size:11px;color:#6b7280;margin-top:4px;">Notes: ' + w.completedNotes + '</div>' : '') +
-      (w.completedPhoto && w.completedPhoto.length > 10
-        ? '<img src="' + w.completedPhoto + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '"/>' +
+      (getWOPhoto(w)
+      ? '<img src="' + getWOPhoto(w) + '" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;"/>' +
           '<div style="font-size:11px;color:#6b7280;text-align:center;margin-top:4px;">📱 Long press → Save to Photos &nbsp;|&nbsp; 💻 Right-click → Save Image</div>'
         : '<div style="background:#f3f4f6;border-radius:8px;padding:16px;text-align:center;color:#9ca3af;font-size:12px;margin-top:10px;">No photo attached</div>') +
     '</div>';
@@ -7302,10 +7330,10 @@ function dlPhotoFromBtn(btn) {
   var woId = btn ? btn.dataset.woid : null;
   if (!woId) { toast('Could not find photo'); return; }
   var wo = (state.workOrders||[]).find(function(w) { return w.id === woId; });
-  if (!wo || !wo.completedPhoto) { toast('No photo attached'); return; }
+  if (!wo || !getWOPhoto(wo)) { toast('No photo attached'); return; }
   var filename = 'WO_' + (wo.woNumber||wo.id.slice(-4)) + '_' + (wo.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_');
   var a = document.createElement('a');
-  a.href = wo.completedPhoto;
+  a.href = getWOPhoto(wo);
   a.download = filename + '.jpg';
   document.body.appendChild(a);
   a.click();
@@ -7326,7 +7354,7 @@ function downloadAllWOPhotos(community) {
   completed.forEach(function(w, i) {
     setTimeout(function() {
       var a = document.createElement('a');
-      a.href = w.completedPhoto;
+    a.href = getWOPhoto(w) || '';
       a.download = 'WO_' + (w.woNumber || w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/\s+/g,'_') + '.jpg';
       document.body.appendChild(a);
       a.click();
@@ -7427,7 +7455,7 @@ function renderCrewWorkOrders() {
           '</div>' +
           '<span class="badge badge-green">✓</span>' +
         '</div>' +
-        (w.completedPhoto ? '<img src="' + w.completedPhoto + '" style="width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-top:8px;"/>' : '') +
+        (getWOPhoto(w) ? '<img src="' + getWOPhoto(w) + '" style="width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-top:8px;"/>' : '') +
       '</div>';
     });
   }
@@ -7746,15 +7774,21 @@ function clearOldPhotos() {
 
 function getWOPhoto(wo) {
   if (!wo) return null;
-  // Try local storage first
-  var local = getPhotoLocally(wo.id);
+  // Check dlphotos map first (batch storage)
+  try {
+    var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+    if (photos[wo.id]) return photos[wo.id];
+  } catch(e) {}
+  // Check individual key
+  var local = localStorage.getItem('dlphoto_' + wo.id);
   if (local) return local;
-  // Fall back to inline photo (legacy)
+  // Check inline on wo object
   if (wo.completedPhoto && (wo.completedPhoto.startsWith('data:') || wo.completedPhoto.startsWith('http'))) {
     return wo.completedPhoto;
   }
   return null;
 }
+
 
 function compressPhoto(dataUrl, maxSize, quality, callback) {
   var img = new Image();
@@ -7787,15 +7821,22 @@ function submitCrewWOComplete(woId, photoData) {
   // Step 1: compress photo to ~80KB
   compressPhoto(photoData, 800, 0.7, function(compressed) {
 
-    // Step 2: save photo to its OWN localStorage key (not inside main state)
-    var photoSaved = savePhotoLocally(woId, compressed);
+    // Step 2: store photo in state AND in dlphotos localStorage map
+    wo.completedPhoto = compressed; // keep in memory
+    try {
+      var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+      photos[woId] = compressed;
+      localStorage.setItem('dlphotos', JSON.stringify(photos));
+    } catch(pe) {
+      // dlphotos full - try individual key
+      try { localStorage.setItem('dlphoto_' + woId, compressed); } catch(e2) {}
+    }
 
-    // Step 3: update WO status - photo referenced by woId, not stored inline
+    // Step 3: update WO status
     wo.status = 'completed';
     wo.completedOn = new Date().toLocaleDateString();
     wo.completedBy = crew ? crew.name : 'Crew';
     wo.completedNotes = notes;
-    wo.completedPhoto = photoSaved ? 'local:' + woId : compressed;
 
     // Step 4: save main state (small - no base64 blob in it)
     save();
