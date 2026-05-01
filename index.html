@@ -2836,22 +2836,23 @@ function getFlagResolvePhoto(flag) {
 }
 
 function saveFlag() {
-  const note = document.getElementById('flag-note').value.trim();
+  var note = document.getElementById('flag-note').value.trim();
   if (!note) { toast('Add a description'); return; }
-  const previewEl = document.getElementById('flag-photo-preview');
-  const rawPhoto = (previewEl && previewEl.style.display !== 'none' && previewEl.src && previewEl.src.startsWith('data:'))
+  var previewEl = document.getElementById('flag-photo-preview');
+  var rawPhoto = (previewEl && previewEl.style.display !== 'none' && previewEl.src && previewEl.src.startsWith('data:'))
     ? previewEl.src : '';
-  const hasPhoto = rawPhoto.length > 0;
-  const newFlag = {
+  var hasPhoto = rawPhoto.length > 0;
+  var newFlag = {
     id: uid(), propId: flagTargetPropId,
     service: document.getElementById('flag-service').value,
     priority: document.getElementById('flag-priority').value,
-    note, photo: hasPhoto ? 'local:flag' : '',
+    note: note, photo: '',
     by: document.getElementById('flag-by').value || 'Team',
     date: new Date().toLocaleDateString(), resolved: false
   };
-  function finishSaveFlag(thumbPhoto) {
-    if (thumbPhoto) newFlag.photo = thumbPhoto; // tiny version goes to Sheets
+
+  if (!hasPhoto) {
+    // No photo - just save and go
     state.flags.push(newFlag);
     save();
     gsSave('flags', newFlag);
@@ -2859,21 +2860,61 @@ function saveFlag() {
     showFlagConfirmation(newFlag);
     renderDashboard();
     renderProperties();
+    return;
   }
 
-  if (hasPhoto) {
-    // Save full quality locally for this device
-    compressPhoto(rawPhoto, 400, 0.5, function(fullCompressed) {
-      saveFlagPhoto(newFlag.id, fullCompressed);
-      // Create thumbnail for Sheets sync (cross-device) - 200px for better quality
-      compressPhoto(rawPhoto, 200, 0.65, function(thumbnail) {
-        console.log('Flag thumbnail size:', Math.round(thumbnail.length/1024) + 'KB');
-        finishSaveFlag(thumbnail);
-      });
-    });
-  } else {
-    finishSaveFlag(null);
-  }
+  // Has photo - compress, save locally, upload to Drive via chunks
+  compressPhoto(rawPhoto, 400, 0.85, function(compressed) {
+    // 1. Save full quality locally for immediate display on this device
+    saveFlagPhoto(newFlag.id, compressed);
+    newFlag.photo = compressed;
+
+    // 2. Save flag to state + close sheet immediately
+    state.flags.push(newFlag);
+    save();
+
+    // 3. Save to Sheets with placeholder while upload runs
+    var flagForSheets = Object.assign({}, newFlag, { photo: '[uploading]' });
+    gsSave('flags', flagForSheets);
+
+    // 4. Close sheet and show UI
+    document.getElementById('flag-sheet')?.remove();
+    showFlagConfirmation(newFlag);
+    renderDashboard();
+    renderProperties();
+    toast('📤 Uploading photo to Drive...');
+
+    // 5. Upload to Drive via chunked JSONP
+    var filename = 'flag_' + newFlag.id + '_' + Date.now();
+    uploadPhotoChunked(compressed, filename,
+      function(driveUrl) {
+        // Drive upload success - update flag with permanent URL
+        console.log('Flag photo on Drive:', driveUrl);
+        newFlag.photo = driveUrl;
+        // Update dlphotos with Drive URL
+        try {
+          var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+          photos['flag_' + newFlag.id] = driveUrl;
+          localStorage.setItem('dlphotos', JSON.stringify(photos));
+        } catch(e) {}
+        save();
+        gsSave('flags', newFlag);
+        renderDashboard();
+        renderProperties();
+        toast('✓ Flag + photo saved to Drive');
+      },
+      function(err) {
+        // Drive upload failed - fall back to 150px thumbnail in Sheets
+        console.warn('Chunked upload failed, using thumbnail fallback:', err);
+        compressPhoto(rawPhoto, 150, 0.7, function(thumb) {
+          newFlag.photo = thumb;
+          save();
+          gsSave('flags', newFlag);
+        });
+        toast('Photo saved locally (upload failed)');
+      }
+    );
+  });
 }
 
 
