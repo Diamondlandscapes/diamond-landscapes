@@ -2872,19 +2872,21 @@ function saveFlag() {
     uploadPhotoViaPost(compressed, filename,
       function(driveUrl) {
         // Drive upload success - update flag with permanent URL
-        console.log('Flag photo on Drive:', driveUrl);
+        console.log('Flag photo URL:', driveUrl);
         newFlag.photo = driveUrl;
-        // Update dlphotos with Drive URL
+        // Update dlphotos with ImgBB URL
         try {
           var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
           photos['flag_' + newFlag.id] = driveUrl;
           localStorage.setItem('dlphotos', JSON.stringify(photos));
         } catch(e) {}
         save();
+        // Save URL to Sheets - ImgBB URL is short so fits in JSONP easily
+        console.log('Saving ImgBB URL to Sheets:', driveUrl.slice(0,50));
         gsSave('flags', newFlag);
         renderDashboard();
         renderProperties();
-        toast('✓ Flag + photo saved to Drive');
+        toast('✓ Photo uploaded — visible on all devices');
       },
       function(err) {
         // Drive upload failed - fall back to 150px thumbnail in Sheets
@@ -4867,7 +4869,27 @@ function gsLoad() {
         merge('properties');
         merge('routes');
         merge('inventory');
-        merge('flags');
+        // Smart merge for flags - preserve photo URLs
+        if (Array.isArray(remote['flags']) && remote['flags'].length > 0) {
+          var localFlagsById = {};
+          (state.flags||[]).forEach(function(f) { localFlagsById[f.id] = f; });
+          state.flags = remote['flags'].map(function(rf) {
+            var lf = localFlagsById[rf.id];
+            if (!lf) return rf;
+            // If remote has real URL (http) use it - it's the canonical version
+            var remoteHasUrl = rf.photo && rf.photo.startsWith('http');
+            var localHasUrl  = lf.photo && (lf.photo.startsWith('http') || lf.photo.startsWith('data:'));
+            if (remoteHasUrl) return rf; // remote has Drive/ImgBB URL - use it
+            if (localHasUrl) { rf.photo = lf.photo; } // keep local photo if remote is placeholder
+            return rf;
+          });
+          // Add local flags not yet in remote
+          (state.flags||[]).forEach(function(lf) {
+            if (!remote['flags'].find(function(rf) { return rf.id === lf.id; })) {
+              state.flags.push(lf);
+            }
+          });
+        }
         merge('equipment');
         merge('workOrders');
         // Fix any JSON string fields that came back from Sheets as strings
