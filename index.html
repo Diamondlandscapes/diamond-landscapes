@@ -2738,29 +2738,30 @@ function uploadPhotoViaPost(base64Data, filename, onSuccess, onError) {
 }
 
 function pollForUploadResult(uploadId, attempt, onSuccess, onError) {
-  if (attempt > 20) { // max 40 seconds
-    onError('Upload timeout after polling');
+  if (attempt > 30) { // max 60 seconds
+    onError('Upload timeout - photo saved locally');
     return;
   }
+  var delay = attempt < 5 ? 2000 : 3000; // faster polling at start
   setTimeout(function() {
     gsJSONP({ action: 'getUploadResult', uploadId: uploadId })
     .then(function(result) {
-      console.log('Poll attempt', attempt+1, ':', JSON.stringify(result).slice(0,100));
+      console.log('Poll', attempt+1, ':', JSON.stringify(result).slice(0,80));
       if (result && result.url) {
         onSuccess(result.url);
-      } else if (result && result.error) {
+      } else if (result && result.error && result.error !== 'pending') {
         onError(result.error);
       } else {
-        // Still processing - poll again
-        toast('📤 Uploading... ' + Math.min(99, (attempt+1)*5) + '%');
+        // pending or no result yet - keep polling
+        if (attempt % 3 === 0) toast('📤 Processing photo... ' + Math.min(95, (attempt+1)*3) + '%');
         pollForUploadResult(uploadId, attempt + 1, onSuccess, onError);
       }
     })
     .catch(function(err) {
-      // Retry on network error
+      console.warn('Poll error:', err, '- retrying');
       pollForUploadResult(uploadId, attempt + 1, onSuccess, onError);
     });
-  }, 2000);
+  }, delay);
 }
 
 function uploadFlagPhotoToSheets(flagId, photoData) {
