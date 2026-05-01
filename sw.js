@@ -1,5 +1,5 @@
 // Diamond Landscapes Service Worker
-const CACHE = 'diamond-v5';
+const CACHE = 'diamond-v6';
 const ASSETS = [
   './',
   './index.html',
