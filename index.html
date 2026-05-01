@@ -2649,21 +2649,18 @@ function openAddFlag(propId) {
     flagPhotoInput.onchange = function() {
       var file = this.files[0];
       if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function(e) {
-        compressPhoto(e.target.result, 400, 0.5, function(compressed) {
-          var preview = document.getElementById('flag-photo-preview');
-          var zone = document.getElementById('flag-photo-zone');
-          if (preview) {
-            preview.src = compressed;
-            preview.style.display = 'block';
-          }
-          if (zone) {
-            zone.style.display = 'none';
-          }
+      readFileAsDataUrl(file, function(dataUrl) {
+        if (!dataUrl) { toast('Could not read photo'); return; }
+        // Show preview immediately at screen size
+        var preview = document.getElementById('flag-photo-preview');
+        var zone = document.getElementById('flag-photo-zone');
+        if (preview) { preview.src = dataUrl; preview.style.display = 'block'; }
+        if (zone) { zone.style.display = 'none'; }
+        // Store compressed version for saving (but keep high quality)
+        compressPhoto(dataUrl, 1200, 0.9, function(compressed) {
+          if (preview) preview.dataset.compressed = compressed;
         });
-      };
-      reader.readAsDataURL(file);
+      });
     };
   }
 }
@@ -2705,7 +2702,7 @@ function previewFlagPhoto(input) {
 // Splits base64 photo into chunks, sends each via JSONP GET,
 // Apps Script reassembles and uploads to Drive, returns permanent URL.
 
-var CHUNK_SIZE = 1500; // chars per chunk - safe for JSONP URL
+var CHUNK_SIZE = 7000; // chars per chunk - safe for Apps Script URL limit
 
 function uploadPhotoChunked(base64Data, filename, onSuccess, onError) {
   // Split into chunks
@@ -2839,8 +2836,9 @@ function saveFlag() {
   var note = document.getElementById('flag-note').value.trim();
   if (!note) { toast('Add a description'); return; }
   var previewEl = document.getElementById('flag-photo-preview');
-  var rawPhoto = (previewEl && previewEl.style.display !== 'none' && previewEl.src && previewEl.src.startsWith('data:'))
-    ? previewEl.src : '';
+  var rawPhoto = (previewEl && previewEl.style.display !== 'none')
+    ? (previewEl.dataset.compressed || (previewEl.src && previewEl.src.startsWith('data:') ? previewEl.src : ''))
+    : '';
   var hasPhoto = rawPhoto.length > 0;
   var newFlag = {
     id: uid(), propId: flagTargetPropId,
@@ -2864,7 +2862,7 @@ function saveFlag() {
   }
 
   // Has photo - compress, save locally, upload to Drive via chunks
-  compressPhoto(rawPhoto, 400, 0.85, function(compressed) {
+  compressPhoto(rawPhoto, 1200, 0.9, function(compressed) {
     // 1. Save full quality locally for immediate display on this device
     saveFlagPhoto(newFlag.id, compressed);
     newFlag.photo = compressed;
@@ -8126,9 +8124,9 @@ function openCrewWOComplete(woId) {
     var file = this.files[0];
     if (!file) return;
     var reader = new FileReader();
-    reader.onload = function(e) {
-      // Compress photo before storing to avoid localStorage quota issues
-      compressPhoto(e.target.result, 1000, 0.75, function(compressed) {
+    readFileAsDataUrl(file, function(dataUrl) {
+      if (!dataUrl) { toast('Could not read photo'); return; }
+      compressPhoto(dataUrl, 1200, 0.9, function(compressed) {
         var preview = document.getElementById('wo-photo-preview');
         var zone = document.getElementById('wo-photo-zone');
         var btn = document.getElementById('wo-complete-btn');
@@ -8141,8 +8139,7 @@ function openCrewWOComplete(woId) {
         btn.textContent = '✓ Mark Complete';
         btn.onclick = function() { submitCrewWOComplete(woId, compressed); };
       });
-    };
-    reader.readAsDataURL(file);
+    });
   };
 }
 
@@ -8301,10 +8298,12 @@ function getWOPhoto(wo) {
 
 function compressPhoto(dataUrl, maxSize, quality, callback) {
   var img = new Image();
+  // Allow cross-origin for HEIC and other formats
   img.onload = function() {
     var canvas = document.createElement('canvas');
     var w = img.width;
     var h = img.height;
+    if (w === 0 || h === 0) { callback(dataUrl); return; }
     // Scale down if larger than maxSize
     if (w > maxSize || h > maxSize) {
       if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
@@ -8313,11 +8312,48 @@ function compressPhoto(dataUrl, maxSize, quality, callback) {
     canvas.width = w;
     canvas.height = h;
     var ctx = canvas.getContext('2d');
+    // White background for transparency handling
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, w, h);
     ctx.drawImage(img, 0, 0, w, h);
-    callback(canvas.toDataURL('image/jpeg', quality));
+    // Always output as JPEG regardless of input format (handles HEIC, PNG, WebP etc)
+    var result = canvas.toDataURL('image/jpeg', quality);
+    callback(result);
   };
-  img.onerror = function() { callback(dataUrl); }; // fallback to original
+  img.onerror = function() {
+    console.warn('Image load failed, trying blob URL approach');
+    callback(dataUrl); // fallback
+  };
+  // Set src - browser handles HEIC natively on iOS Safari
   img.src = dataUrl;
+}
+
+// Handle file input including HEIC - converts any format to usable dataUrl
+function readFileAsDataUrl(file, callback) {
+  // For HEIC on iOS - the browser can display it but FileReader gives raw bytes
+  // Use createObjectURL which lets the browser decode natively
+  var objectUrl = URL.createObjectURL(file);
+  var img = new Image();
+  img.onload = function() {
+    var canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+    URL.revokeObjectURL(objectUrl);
+    callback(canvas.toDataURL('image/jpeg', 0.92));
+  };
+  img.onerror = function() {
+    // Fallback: use FileReader directly
+    URL.revokeObjectURL(objectUrl);
+    var reader = new FileReader();
+    reader.onload = function(e) { callback(e.target.result); };
+    reader.onerror = function() { callback(null); };
+    reader.readAsDataURL(file);
+  };
+  img.src = objectUrl;
 }
 
 function submitCrewWOComplete(woId, photoData) {
