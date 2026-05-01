@@ -4430,8 +4430,9 @@ function gsLoad() {
               if (!lw) return rw;
               // Keep local photo if it's real data and remote only has placeholder
               const remoteHasRealPhoto = rw.completedPhoto && (rw.completedPhoto.startsWith('data:') || rw.completedPhoto.startsWith('http'));
-              const localHasRealPhoto  = lw.completedPhoto && (lw.completedPhoto.startsWith('data:') || lw.completedPhoto.startsWith('http'));
-              if (!remoteHasRealPhoto && localHasRealPhoto) {
+              const localHasRealPhoto  = lw.completedPhoto && (lw.completedPhoto.startsWith('data:') || lw.completedPhoto.startsWith('http') || lw.completedPhoto.startsWith('local:'));
+              const hasLocalStoredPhoto = lw.completedPhoto && lw.completedPhoto.startsWith('local:') && getPhotoLocally(lw.id);
+              if (!remoteHasRealPhoto && (localHasRealPhoto || hasLocalStoredPhoto)) {
                 rw.completedPhoto = lw.completedPhoto;
               }
               // Keep local completed status if local says completed but remote doesn't yet
@@ -7027,10 +7028,10 @@ function openWODetail(woId) {
       '</div>' +
 
 
-      (wo.completedPhoto ?
+      (getWOPhoto(wo) ?
         '<div style="margin-bottom:14px;">' +
           '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">COMPLETION PHOTO</div>' +
-          '<img src="' + wo.completedPhoto + '" style="width:100%;border-radius:10px;max-height:200px;object-fit:cover;margin-top:8px;"/>' +
+          '<img src="' + getWOPhoto(wo) + '" style="width:100%;border-radius:10px;max-height:200px;object-fit:cover;margin-top:8px;"/>' +
           (wo.completedBy ? '<div style="font-size:11px;color:var(--text3);margin-top:6px;">Completed by ' + wo.completedBy + (wo.completedOn ? ' on ' + wo.completedOn : '') + '</div>' : '') +
         '</div>' : '') +
 
@@ -7150,6 +7151,41 @@ function openWOReport(community) {
 }
 
 
+
+function exportWOPDFDownload() {
+  // Get the report content from the overlay
+  var overlay = document.getElementById('pdf-print-overlay');
+  if (!overlay) return;
+
+  // Build a complete standalone HTML file
+  var reportContent = overlay.querySelector('div[style*="max-width:720px"]');
+  if (!reportContent) return;
+
+  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<title>Work Order Report</title>' +
+    '<style>' +
+    'body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;padding:20px;background:#f9fafb;color:#111;}' +
+    'img{max-width:100%;height:auto;}' +
+    '@media print{body{padding:0;}}' +
+    '</style></head><body>' +
+    reportContent.outerHTML +
+    '<div style="text-align:center;margin-top:20px;">' +
+    '<button onclick="window.print()" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:15px;font-weight:700;cursor:pointer;">🖨️ Print / Save as PDF</button>' +
+    '</div>' +
+    '</body></html>';
+
+  var blob = new Blob([html], { type: 'text/html' });
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href = url;
+  a.download = 'WorkOrder_Report_' + Date.now() + '.html';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
+  toast('Report downloaded — open the file to print/save as PDF');
+}
+
 function pdfClose() { var o=document.getElementById('pdf-print-overlay'); if(o)o.remove(); }
 
 function exportWOPDF(community) {
@@ -7210,9 +7246,14 @@ function exportWOPDF(community) {
   overlay.innerHTML =
     // Buttons (hidden on print)
     '<div id="pdf-btns" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:24px;">' +
-      '<button onclick="window.print()" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">🖨️ Print / Save as PDF</button>' +
+      '<button onclick="exportWOPDFDownload()" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">⬇ Download Report</button>' +
       '<button onclick="pdfSaveAllPhotos()" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">⬇ Save All Photos</button>' +
       '<button onclick="pdfClose()" style="background:#6b7280;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">✕ Close</button>' +
+    '</div>' +
+    '<div style="text-align:center;margin-top:8px;font-size:12px;color:#6b7280;">' +
+      '📱 iPhone: tap Share (↑) → Print to save as PDF' +
+    '</div>' +
+    '<div style="display:none;"><!-- dummy -->' +
     '</div>' +
     // Report header
     '<div style="max-width:720px;margin:0 auto;">' +
@@ -7447,8 +7488,8 @@ function openCrewWODetail(woId) {
         '</div>' : '') +
 
       // Completion photo if exists
-      (isCompleted && wo.completedPhoto && wo.completedPhoto.length > 10 ?
-        '<img src="' + wo.completedPhoto + '" style="width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;"/>' : '') +
+      (isCompleted && getWOPhoto(wo) ?
+        '<img src="' + getWOPhoto(wo) + '" style="width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;"/>' : '') +
 
       // Translate button
       '<div id="wo-translate-status" style="display:none;text-align:center;font-size:12px;color:var(--text3);padding:8px;"></div>' +
@@ -7664,6 +7705,57 @@ function saveWOPhoto(woId, base64Data, onDone) {
   if (onDone) onDone();
 }
 
+
+// ─── PHOTO STORAGE (separate from main state to avoid quota issues) ──────────
+function savePhotoLocally(woId, photoData) {
+  try {
+    localStorage.setItem('dlphoto_' + woId, photoData);
+    return true;
+  } catch(e) {
+    console.warn('Photo storage full for', woId, e);
+    // Try clearing old photos to make space
+    clearOldPhotos();
+    try {
+      localStorage.setItem('dlphoto_' + woId, photoData);
+      return true;
+    } catch(e2) {
+      console.error('Cannot store photo even after cleanup:', e2);
+      return false;
+    }
+  }
+}
+
+function getPhotoLocally(woId) {
+  return localStorage.getItem('dlphoto_' + woId) || null;
+}
+
+function clearOldPhotos() {
+  // Remove photos for completed WOs older than 30 days
+  var cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
+  var toDelete = [];
+  for (var i = 0; i < localStorage.length; i++) {
+    var key = localStorage.key(i);
+    if (key && key.startsWith('dlphoto_')) {
+      var woId = key.replace('dlphoto_', '');
+      var wo = (state.workOrders||[]).find(function(w) { return w.id === woId; });
+      if (!wo) toDelete.push(key); // WO no longer exists
+    }
+  }
+  toDelete.forEach(function(k) { localStorage.removeItem(k); });
+}
+
+function getWOPhoto(wo) {
+  if (!wo) return null;
+  // Try local storage first
+  var local = getPhotoLocally(wo.id);
+  if (local) return local;
+  // Fall back to inline photo (legacy)
+  if (wo.completedPhoto && (wo.completedPhoto.startsWith('data:') || wo.completedPhoto.startsWith('http'))) {
+    return wo.completedPhoto;
+  }
+  return null;
+}
+
 function compressPhoto(dataUrl, maxSize, quality, callback) {
   var img = new Image();
   img.onload = function() {
@@ -7692,30 +7784,32 @@ function submitCrewWOComplete(woId, photoData) {
   var crew = state.loggedInCrewId ? (state.crew || []).find(function(c) { return c.id === state.loggedInCrewId; }) : null;
   var notes = document.getElementById('wo-complete-notes')?.value || '';
 
-  // Step 1: compress photo first
+  // Step 1: compress photo to ~80KB
   compressPhoto(photoData, 800, 0.7, function(compressed) {
 
-    // Step 2: update WO status + photo immediately
+    // Step 2: save photo to its OWN localStorage key (not inside main state)
+    var photoSaved = savePhotoLocally(woId, compressed);
+
+    // Step 3: update WO status - photo referenced by woId, not stored inline
     wo.status = 'completed';
     wo.completedOn = new Date().toLocaleDateString();
     wo.completedBy = crew ? crew.name : 'Crew';
     wo.completedNotes = notes;
-    wo.completedPhoto = compressed; // store locally right away
+    wo.completedPhoto = photoSaved ? 'local:' + woId : compressed;
 
-    // Step 3: save to localStorage immediately so status persists
+    // Step 4: save main state (small - no base64 blob in it)
     save();
 
-    // Step 4: close sheet and update UI
+    // Step 5: close sheet and update UI
     var completeSheet = document.getElementById('crew-wo-complete-sheet');
     if (completeSheet) completeSheet.remove();
     renderCrewWorkOrders();
     if (document.getElementById('wo-community-list')) renderWorkOrders();
     toast('✓ Work order completed');
 
-    // Step 5: sync to Sheets (without base64 photo - too large)
+    // Step 6: sync status to Sheets (no photo data)
     var woSlim = Object.assign({}, wo, { completedPhoto: '[photo attached]' });
     gsSave('workOrders', woSlim);
-
   });
 }
 
