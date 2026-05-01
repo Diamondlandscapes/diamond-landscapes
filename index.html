@@ -2639,20 +2639,30 @@ function openAddFlag(propId) {
 }
 
 function previewFlagPhoto(input) {
-  const file = input.files && input.files[0];
+  var file = input.files && input.files[0];
   if (!file) return;
-  const reader = new FileReader();
+
+  // Show raw image immediately so user sees it right away
+  var url = URL.createObjectURL(file);
+  var img = document.getElementById('flag-photo-preview');
+  if (img) {
+    img.src = url;
+    img.style.display = 'block';
+    img.onload = function() { URL.revokeObjectURL(url); };
+  }
+  var zone = document.getElementById('flag-photo-zone');
+  if (zone) {
+    zone.innerHTML = '<div style="font-size:12px;color:var(--green);font-weight:700;">✓ Photo attached</div>' +
+      '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Tap to retake</div>';
+  }
+
+  // Compress in background and store on img as data URL for saving
+  var reader = new FileReader();
   reader.onload = function(e) {
     compressPhoto(e.target.result, 400, 0.5, function(compressed) {
-      const img = document.getElementById('flag-photo-preview');
-      if (!img) return;
-      img.src = compressed;
-      img.style.display = 'block';
-      // Hide the tap zone and show retake option
-      const zone = document.getElementById('flag-photo-zone');
-      if (zone) {
-        zone.innerHTML = '<div style="font-size:12px;color:var(--green);font-weight:700;">✓ Photo attached</div>' +
-          '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Tap to retake</div>';
+      var img2 = document.getElementById('flag-photo-preview');
+      if (img2) {
+        img2.dataset.compressed = compressed; // store for saveFlag to use
       }
     });
   };
@@ -2700,7 +2710,9 @@ function saveFlag() {
   const note = document.getElementById('flag-note').value.trim();
   if (!note) { toast('Add a description'); return; }
   const previewEl = document.getElementById('flag-photo-preview');
-  const rawPhoto = previewEl && previewEl.style.display !== 'none' ? previewEl.src : '';
+  const rawPhoto = previewEl && previewEl.style.display !== 'none'
+    ? (previewEl.dataset.compressed || (previewEl.src.startsWith('data:') ? previewEl.src : ''))
+    : '';
   const hasPhoto = rawPhoto && rawPhoto.startsWith('data:');
   const newFlag = {
     id: uid(), propId: flagTargetPropId,
