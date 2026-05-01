@@ -2478,7 +2478,7 @@ function openPropDetail(id) {
               </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;margin-left:8px;">
-              ${getFlagPhoto(f)?`<img src="${getFlagPhoto(f)}" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f) || f.photo}','Issue')" style="width:48px;height:48px;border-radius:8px;object-fit:cover;cursor:zoom-in;"/>`:'' }
+              ${getFlagPhoto(f)?`<img src="${getFlagPhoto(f)}" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f)}','Issue')" style="width:60px;height:60px;border-radius:8px;object-fit:cover;cursor:zoom-in;border:2px solid var(--border2);"/>`:'' }
               ${!f.resolved?`
                 <div style="display:flex;gap:4px;margin-top:4px;">
                   <button onclick="event.stopPropagation();openEditFlag('${f.id}')"
@@ -2982,7 +2982,7 @@ function openEditFlag(flagId) {
     '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">DESCRIPTION</div>' +
     '<textarea id="ef-note" class="inp" rows="3" style="margin-bottom:12px;">' + (f.note||'') + '</textarea>' +
     '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">PHOTO</div>' +
-    (getFlagPhoto(f) ? '<img src="'+getFlagPhoto(f)+'" style="width:100%;border-radius:10px;max-height:180px;object-fit:cover;margin-bottom:8px;"/>' : '') +
+    (getFlagPhoto(f) ? '<img src="'+getFlagPhoto(f)+'" style="width:100%;border-radius:10px;object-fit:contain;max-height:300px;margin-bottom:8px;cursor:zoom-in;" onclick="openPhoto(\''+getFlagPhoto(f)+'\',\'Flag Photo\')" />' : '') +
     '<label style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:10px 14px;cursor:pointer;margin-bottom:12px;">' +
       '<span style="font-size:20px;">📷</span>' +
       '<span style="font-size:13px;font-weight:700;">'+( getFlagPhoto(f) ? 'Replace Photo' : 'Add Photo' )+'</span>' +
@@ -5512,7 +5512,7 @@ function openDashFlags() {
                     <div style="font-weight:800;font-size:14px;">${prop?.name||'Unknown Property'}</div>
                     <div style="font-size:12px;color:var(--text3);margin-top:2px;">📍 ${prop?.address||'No address'}</div>
                   </div>
-                  ${getFlagPhoto(f) ? `<img src="${getFlagPhoto(f)}" style="width:60px;height:60px;border-radius:8px;object-fit:cover;margin-left:10px;flex-shrink:0;cursor:zoom-in;" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f)}','Issue')"/>` : ''}
+                  ${getFlagPhoto(f) ? `<img src="${getFlagPhoto(f)}" style="width:70px;height:70px;border-radius:8px;object-fit:cover;margin-left:10px;flex-shrink:0;cursor:zoom-in;border:2px solid var(--border2);" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f)}','Issue')"/>` : ''}
                 </div>
                 <div style="background:var(--bg3);border-radius:8px;padding:10px;font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:8px;">
                   ${f.note}
@@ -6011,7 +6011,7 @@ function openReportOutstanding(routeId, propId) {
 
 // ─── FULL SIZE PHOTO VIEWER ───────────────────────────────────────────────
 function openPhoto(src, caption) {
-  if (!src || !src.startsWith('data:')) return;
+  if (!src || (!src.startsWith('data:') && !src.startsWith('http'))) return;
   const viewer  = document.getElementById('photo-viewer');
   const img     = document.getElementById('photo-viewer-img');
   const cap     = document.getElementById('photo-viewer-caption');
