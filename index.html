@@ -7723,6 +7723,57 @@ function uploadPhotoToDrive(base64Data, filename, callback) {
 }
 
 // Save photo: uploads to Drive, saves URL on WO, falls back to compressed base64
+
+// ─── SYNC WO WITH PHOTO TO SHEETS VIA POST ───────────────────────────────────
+function syncWOWithPhoto(wo, callback) {
+  // Send the WO including photo to Apps Script via POST
+  // Apps Script will upload photo to Drive and return the URL
+  var photoData = getWOPhoto(wo);
+  if (!photoData) {
+    // No photo - just use regular gsSave
+    var slim = Object.assign({}, wo, { completedPhoto: wo.completedPhoto || '' });
+    gsSave('workOrders', slim);
+    if (callback) callback(null);
+    return;
+  }
+
+  // Send via POST with the photo
+  fetch(GS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      secret: GS_SECRET,
+      action: 'saveWOWithPhoto',
+      table: 'workOrders',
+      data: wo,
+      photo: photoData,
+      filename: 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName || 'photo').replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now()
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(result) {
+    if (result.photoUrl) {
+      // Update wo with Drive URL so everyone can see it
+      wo.completedPhoto = result.photoUrl;
+      save();
+      // Also update dlphotos cache
+      try {
+        var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+        photos[wo.id] = result.photoUrl;
+        localStorage.setItem('dlphotos', JSON.stringify(photos));
+      } catch(e) {}
+    }
+    if (callback) callback(result.photoUrl || null);
+  })
+  .catch(function(err) {
+    console.warn('syncWOWithPhoto failed, photo stays local:', err);
+    // Fallback: save WO without photo to sheets
+    var slim = Object.assign({}, wo, { completedPhoto: '[photo local only]' });
+    gsSave('workOrders', slim);
+    if (callback) callback(null);
+  });
+}
+
 function saveWOPhoto(woId, base64Data, onDone) {
   // Photo is already stored on wo.completedPhoto before this is called
   // This function is kept for the crewWOAddPhoto flow
@@ -7848,9 +7899,14 @@ function submitCrewWOComplete(woId, photoData) {
     if (document.getElementById('wo-community-list')) renderWorkOrders();
     toast('✓ Work order completed');
 
-    // Step 6: sync status to Sheets (no photo data)
-    var woSlim = Object.assign({}, wo, { completedPhoto: '[photo attached]' });
-    gsSave('workOrders', woSlim);
+    // Step 6: sync to Sheets WITH photo via POST → uploads to Drive → returns URL
+    syncWOWithPhoto(wo, function(driveUrl) {
+      if (driveUrl) {
+        // Photo is now on Drive - update UI to show Drive URL
+        renderCrewWorkOrders();
+        if (document.getElementById('wo-community-list')) renderWorkOrders();
+      }
+    });
   });
 }
 
