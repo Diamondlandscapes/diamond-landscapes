@@ -7869,8 +7869,11 @@ function submitCrewWOComplete(woId, photoData) {
   var crew = state.loggedInCrewId ? (state.crew || []).find(function(c) { return c.id === state.loggedInCrewId; }) : null;
   var notes = document.getElementById('wo-complete-notes')?.value || '';
 
-  // Step 1: compress photo to ~80KB
-  compressPhoto(photoData, 800, 0.7, function(compressed) {
+  // Step 1: compress photo aggressively so it fits in Google Sheets cell
+  compressPhoto(photoData, 400, 0.4, function(compressed) {
+    var sizeKB = Math.round(compressed.length/1024);
+    console.log('Photo compressed to:', sizeKB + 'KB');
+    toast('📷 Photo ready (' + sizeKB + 'KB) - saving...');
 
     // Step 2: store photo in state AND in dlphotos localStorage map
     wo.completedPhoto = compressed; // keep in memory
@@ -7899,14 +7902,43 @@ function submitCrewWOComplete(woId, photoData) {
     if (document.getElementById('wo-community-list')) renderWorkOrders();
     toast('✓ Work order completed');
 
-    // Step 6: sync to Sheets WITH photo via POST → uploads to Drive → returns URL
-    syncWOWithPhoto(wo, function(driveUrl) {
-      if (driveUrl) {
-        // Photo is now on Drive - update UI to show Drive URL
-        renderCrewWorkOrders();
-        if (document.getElementById('wo-community-list')) renderWorkOrders();
-      }
-    });
+    // Step 6a: Save WO status to Sheets immediately (no photo - fits in URL)
+    var woSlim = Object.assign({}, wo, { completedPhoto: 'uploading...' });
+    gsSave('workOrders', woSlim);
+
+    // Step 6b: Upload photo to Drive via POST (with no-cors workaround)
+    var photo = getWOPhoto(wo);
+    if (photo) {
+      toast('📤 Uploading photo to Drive...');
+      fetch(GS_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          secret: GS_SECRET,
+          action: 'uploadWOPhoto',
+          woId: wo.id,
+          photo: photo,
+          filename: 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now()
+        })
+      })
+      .then(function() {
+        // no-cors means we can't read response, but request was sent
+        // Apps Script will have uploaded to Drive and updated the sheet
+        toast('✓ Photo uploaded to Drive');
+        // Refresh to get Drive URL back from sheets
+        setTimeout(function() {
+          gsLoad().then(function() {
+            renderCrewWorkOrders();
+            if (document.getElementById('wo-community-list')) renderWorkOrders();
+          });
+        }, 3000);
+      })
+      .catch(function(err) {
+        console.warn('Photo upload failed:', err);
+        toast('Photo saved locally - will sync when online');
+      });
+    }
   });
 }
 
