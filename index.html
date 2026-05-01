@@ -3078,7 +3078,7 @@ function resolveFlag(flagId, propId) {
       '<div style="font-size:13px;color:var(--text3);">Tap to take or choose a photo</div>' +
       '<input type="file" id="mgr-resolve-input" accept="image/*"  style="display:none;"/>' +
     '</label>' +
-          '<img src="' + getWOPhoto(wo) + '" style="width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;"/>' +
+
     '<button id="mgr-resolve-submit-btn" class="btn btn-green" style="margin-bottom:8px;opacity:.4;cursor:not-allowed;">📷 Add photo to resolve</button>' +
     '<button id="mgr-resolve-cancel-btn" class="btn btn-outline">Cancel</button>';
 
@@ -3089,34 +3089,42 @@ function resolveFlag(flagId, propId) {
   document.getElementById('mgr-resolve-close').onclick   = () => sheet.remove();
   document.getElementById('mgr-resolve-cancel-btn').onclick = () => sheet.remove();
 
-  // File input change
+  // Add preview img to sheet
+  var resolvePreviewImg = document.createElement('img');
+  resolvePreviewImg.id = 'mgr-resolve-preview';
+  resolvePreviewImg.style.cssText = 'display:none;width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;';
+  var resolveBtn = document.getElementById('mgr-resolve-submit-btn');
+  sheetDiv.insertBefore(resolvePreviewImg, resolveBtn);
+
+  // File input change - use readFileAsDataUrl for HEIC support
   document.getElementById('mgr-resolve-input').onchange = function() {
     const file = this.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      const preview = document.getElementById('mgr-resolve-preview');
-      const zone    = document.getElementById('mgr-resolve-zone');
-      const btn     = document.getElementById('mgr-resolve-submit-btn');
-      if (preview) { preview.src = e.target.result; preview.style.display = 'block'; }
-      if (zone)    zone.style.display = 'none';
-      if (btn)     { btn.textContent = '✓ Mark Resolved'; btn.style.opacity = '1'; btn.style.cursor = 'pointer'; }
-    };
-    reader.readAsDataURL(file);
+    readFileAsDataUrl(file, function(dataUrl) {
+      if (!dataUrl) { toast('Could not read photo'); return; }
+      compressPhoto(dataUrl, 800, 0.82, function(compressed) {
+        const preview = document.getElementById('mgr-resolve-preview');
+        const zone    = document.getElementById('mgr-resolve-zone');
+        const btn     = document.getElementById('mgr-resolve-submit-btn');
+        if (preview) { preview.src = compressed; preview.dataset.compressed = compressed; preview.style.display = 'block'; }
+        if (zone)    zone.style.display = 'none';
+        if (btn)     { btn.textContent = '✓ Mark Resolved'; btn.style.opacity = '1'; btn.style.cursor = 'pointer'; }
+      });
+    });
   };
 
   // Submit button
   document.getElementById('mgr-resolve-submit-btn').onclick = function() {
     const preview = document.getElementById('mgr-resolve-preview');
-    if (!preview || !preview.src || !preview.src.startsWith('data:')) {
-      toast('Please attach a photo first');
-      return;
-    }
-    f.resolvePhoto = preview.src;
-    f.resolveNote  = document.getElementById('mgr-resolve-note')?.value || '';
-    f.resolveDate  = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-    f.resolved     = true;
-    gsSave('flags', f);
+    const photo   = preview && preview.dataset.compressed;
+    if (!photo) { toast('Please attach a photo first'); return; }
+
+    f.resolveNote = document.getElementById('mgr-resolve-note')?.value || '';
+    f.resolveDate = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    f.resolved    = true;
+    f.resolvePhoto = photo; // local copy immediately
+
+    // Save locally and close sheet right away
     save();
     sheet.remove();
     document.getElementById('report-flag-panel')?.remove();
@@ -3124,7 +3132,32 @@ function resolveFlag(flagId, propId) {
     if (propId) openPropDetail(propId);
     renderDashboard();
     renderReports();
-    toast('Flag resolved ✓');
+    toast('📤 Uploading resolve photo...');
+
+    // Upload to ImgBB for cross-device access
+    var filename = 'resolve_' + f.id + '_' + Date.now();
+    uploadPhotoViaPost(photo, filename,
+      function(url) {
+        f.resolvePhoto = url;
+        // Store in dlphotos
+        try {
+          var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+          photos['flagresolve_' + f.id] = url;
+          localStorage.setItem('dlphotos', JSON.stringify(photos));
+        } catch(e) {}
+        save();
+        gsSave('flags', f);
+        renderDashboard();
+        renderReports();
+        toast('Flag resolved ✓');
+      },
+      function(err) {
+        // Fallback - save compressed locally
+        console.warn('Resolve photo upload failed:', err);
+        gsSave('flags', f);
+        toast('Flag resolved (photo local only)');
+      }
+    );
   };
 }
 
@@ -7951,6 +7984,53 @@ function renderCrewWorkOrders() {
 function crewWODetailClose() {
   var s = document.getElementById('crew-wo-detail-sheet');
   if (s) s.remove();
+}
+
+
+function crewPropFlagsClose() { var s=document.getElementById('crew-prop-flags-sheet'); if(s)s.remove(); }
+
+function openCrewPropFlags(propId) {
+  var prop  = (state.properties||[]).find(function(p) { return p.id === propId; });
+  var flags = (state.flags||[]).filter(function(f) { return f.propId === propId && !f.resolved; });
+  if (!flags.length) { toast('No open flags'); return; }
+
+  var existing = document.getElementById('crew-prop-flags-sheet');
+  if (existing) existing.remove();
+
+  var sheet = document.createElement('div');
+  sheet.id = 'crew-prop-flags-sheet';
+  sheet.className = 'overlay open';
+  document.body.appendChild(sheet);
+
+  var inner = document.createElement('div');
+  inner.className = 'sheet';
+  sheet.appendChild(inner);
+
+  var rows = flags.map(function(f) {
+    var photo = getFlagPhoto(f);
+    return '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px;border-left:3px solid var(--red);">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+        '<div>' +
+          '<span class="badge badge-red" style="margin-right:6px;">' + f.priority + '</span>' +
+          '<span style="font-size:12px;color:var(--blue);font-weight:700;">' + f.service + '</span>' +
+        '</div>' +
+        '<div style="font-size:11px;color:var(--text4);">' + (f.date||'') + '</div>' +
+      '</div>' +
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:8px;">' + f.note + '</div>' +
+      (photo ? '<img src="' + photo + '" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-bottom:8px;"/>' : '') +
+      '<div style="font-size:11px;color:var(--text4);">Reported by ' + (f.by||'Team') + '</div>' +
+    '</div>';
+  }).join('');
+
+  inner.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+      '<div>' +
+        '<div class="sheet-title" style="margin-bottom:2px;">⚑ Open Flags</div>' +
+        '<div style="font-size:12px;color:var(--text3);">' + (prop ? prop.name : '') + '</div>' +
+      '<button onclick="crewPropFlagsClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+      '<button onclick="crewPropFlagsClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+    '</div>' +
+    rows;
 }
 
 function openCrewWODetail(woId) {
