@@ -7035,7 +7035,12 @@ function openWODetail(woId) {
 
       '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:14px;border:1px solid var(--border);">' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' +
-          '<div><div style="font-size:10px;color:var(--text4);font-weight:700;letter-spacing:1px;">TYPE</div><div style="font-size:13px;font-weight:700;">' + typeLabel + '</div></div>' +
+          '<div><div style="font-size:10px;color:var(--text4);font-weight:700;letter-spacing:1px;">TYPE</div>' +
+            '<select id="wo-type-sel" style="background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:4px 8px;color:var(--text);font-size:13px;font-weight:700;margin-top:2px;">' +
+              '<option value="landscape"' + (wo.type==='landscape'?' selected':'') + '>🌿 Landscaping</option>' +
+              '<option value="irrigation"' + (wo.type==='irrigation'?' selected':'') + '>💧 Irrigation</option>' +
+            '</select>' +
+          '</div>' +
           '<div><div style="font-size:10px;color:var(--text4);font-weight:700;letter-spacing:1px;">DATE</div><div style="font-size:13px;">' + (wo.date||'—') + '</div></div>' +
           '<div><div style="font-size:10px;color:var(--text4);font-weight:700;letter-spacing:1px;">OWNER</div><div style="font-size:13px;font-weight:700;">' + (wo.ownerName||'—') + '</div></div>' +
           '<div><div style="font-size:10px;color:var(--text4);font-weight:700;letter-spacing:1px;">ADDRESS</div><div style="font-size:12px;">' + (wo.address||'—') + '</div></div>' +
@@ -7090,6 +7095,7 @@ function saveWODetail(woId) {
   if (!wo) return;
   wo.assignedTo = document.getElementById('wo-assign-crew').value;
   wo.status = document.getElementById('wo-status-sel').value;
+  wo.type = document.getElementById('wo-type-sel')?.value || wo.type;
   wo.dueDate = document.getElementById('wo-due-date')?.value || wo.dueDate || '';
   if (wo.status === 'completed' && !wo.completedOn) {
     wo.completedOn = new Date().toLocaleDateString();
