@@ -2701,6 +2701,74 @@ function previewFlagPhoto(input) {
 
 
 
+// ─── CHUNKED PHOTO UPLOAD TO DRIVE VIA APPS SCRIPT ──────────────────────────
+// Splits base64 photo into chunks, sends each via JSONP GET,
+// Apps Script reassembles and uploads to Drive, returns permanent URL.
+
+var CHUNK_SIZE = 1500; // chars per chunk - safe for JSONP URL
+
+function uploadPhotoChunked(base64Data, filename, onSuccess, onError) {
+  // Split into chunks
+  var chunks = [];
+  for (var i = 0; i < base64Data.length; i += CHUNK_SIZE) {
+    chunks.push(base64Data.slice(i, i + CHUNK_SIZE));
+  }
+  var uploadId = 'ul_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  var total = chunks.length;
+  console.log('Uploading photo in ' + total + ' chunks, filename: ' + filename);
+
+  // Send chunks sequentially
+  function sendChunk(idx) {
+    if (idx >= total) {
+      // All chunks sent - tell Apps Script to assemble
+      console.log('All chunks sent, requesting assembly...');
+      gsJSONP({
+        action: 'assemblePhoto',
+        uploadId: uploadId,
+        filename: filename,
+        totalChunks: total
+      })
+      .then(function(result) {
+        if (result && result.url) {
+          console.log('Drive URL:', result.url);
+          onSuccess(result.url);
+        } else {
+          console.error('Assembly failed:', result);
+          onError('Assembly failed: ' + JSON.stringify(result));
+        }
+      })
+      .catch(function(err) {
+        console.error('Assembly error:', err);
+        onError(err.toString());
+      });
+      return;
+    }
+
+    gsJSONP({
+      action: 'uploadChunk',
+      uploadId: uploadId,
+      chunkIndex: idx,
+      totalChunks: total,
+      data: chunks[idx]
+    })
+    .then(function(result) {
+      if (result && result.ok) {
+        console.log('Chunk ' + (idx+1) + '/' + total + ' sent');
+        sendChunk(idx + 1);
+      } else {
+        console.error('Chunk failed:', result);
+        onError('Chunk ' + idx + ' failed');
+      }
+    })
+    .catch(function(err) {
+      console.error('Chunk error:', err);
+      onError(err.toString());
+    });
+  }
+
+  sendChunk(0);
+}
+
 function uploadFlagPhotoToSheets(flagId, photoData) {
   // Send full quality photo to Apps Script via POST
   // Apps Script stores it in the sheet cell (up to 50KB fits in a cell)
@@ -8268,15 +8336,35 @@ function submitCrewWOComplete(woId, photoData) {
       gsSave('workOrders', wo);
     }
 
-    // Step 6b: sync thumbnail to Sheets for cross-device display
+    // Step 6b: upload to Drive via chunks for cross-device full quality
     if (photo) {
-      compressPhoto(photo, 150, 0.7, function(thumb) {
-        var woWithThumb = Object.assign({}, wo, { completedPhoto: thumb });
-        gsSave('workOrders', woWithThumb);
-        // Restore full quality in memory
-        wo.completedPhoto = photo;
-        save();
-      });
+      toast('📤 Uploading photo to Drive...');
+      var woFilename = 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now();
+      uploadPhotoChunked(photo, woFilename,
+        function(driveUrl) {
+          wo.completedPhoto = driveUrl;
+          try {
+            var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+            photos[wo.id] = driveUrl;
+            localStorage.setItem('dlphotos', JSON.stringify(photos));
+          } catch(e) {}
+          save();
+          gsSave('workOrders', wo);
+          renderCrewWorkOrders();
+          if (document.getElementById('wo-community-list')) renderWorkOrders();
+          toast('✓ Photo uploaded to Drive');
+        },
+        function(err) {
+          console.warn('WO chunked upload failed:', err);
+          compressPhoto(photo, 150, 0.7, function(thumb) {
+            var woWithThumb = Object.assign({}, wo, { completedPhoto: thumb });
+            gsSave('workOrders', woWithThumb);
+            wo.completedPhoto = photo;
+            save();
+          });
+          toast('Photo saved locally');
+        }
+      );
     }
     var photoDisabled = null;
     if (photoDisabled) {
