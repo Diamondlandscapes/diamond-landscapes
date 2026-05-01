@@ -2639,14 +2639,21 @@ function openAddFlag(propId) {
 }
 
 function previewFlagPhoto(input) {
-  const file = input.files[0];
+  const file = input.files && input.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = function(e) {
     compressPhoto(e.target.result, 400, 0.5, function(compressed) {
       const img = document.getElementById('flag-photo-preview');
+      if (!img) return;
       img.src = compressed;
       img.style.display = 'block';
+      // Hide the tap zone and show retake option
+      const zone = document.getElementById('flag-photo-zone');
+      if (zone) {
+        zone.innerHTML = '<div style="font-size:12px;color:var(--green);font-weight:700;">✓ Photo attached</div>' +
+          '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Tap to retake</div>';
+      }
     });
   };
   reader.readAsDataURL(file);
@@ -2692,7 +2699,8 @@ function getFlagResolvePhoto(flag) {
 function saveFlag() {
   const note = document.getElementById('flag-note').value.trim();
   if (!note) { toast('Add a description'); return; }
-  const rawPhoto = document.getElementById('flag-photo-preview').src;
+  const previewEl = document.getElementById('flag-photo-preview');
+  const rawPhoto = previewEl && previewEl.style.display !== 'none' ? previewEl.src : '';
   const hasPhoto = rawPhoto && rawPhoto.startsWith('data:');
   const newFlag = {
     id: uid(), propId: flagTargetPropId,
