@@ -4839,13 +4839,12 @@ function gsSave(table, record) {
   // Check if record JSON is small enough for JSONP URL (~1500 chars safe limit)
   const recStr = JSON.stringify(record);
   // For workOrders, allow larger records (thumbnail photo in completedPhoto)
-  const limit = (table === 'workOrders' || table === 'flags') ? 16000 : 1500;
+  const limit = (table === 'workOrders' || table === 'flags') ? 10000 : 1500;
   if (recStr.length > limit) {
     const slim = { ...record };
-    if (slim.resolvePhoto && slim.resolvePhoto.startsWith('data:')) slim.resolvePhoto = '[photo]';
-    if (slim.photo && slim.photo.startsWith('data:')) slim.photo = '[photo]';
-    // For workOrders, also strip completedPhoto if still too large
-    if (slim.completedPhoto && slim.completedPhoto.startsWith('data:') && JSON.stringify(slim).length > 8000) {
+    if (slim.resolvePhoto && slim.resolvePhoto.startsWith('data:') && JSON.stringify(slim).length > 10000) slim.resolvePhoto = '[photo]';
+    if (slim.photo && slim.photo.startsWith('data:') && JSON.stringify(slim).length > 10000) slim.photo = '[photo]';
+    if (slim.completedPhoto && slim.completedPhoto.startsWith('data:') && JSON.stringify(slim).length > 10000) {
       slim.completedPhoto = '[photo local only]';
     }
     gsJSONP({ action: 'set', table, id: slim.id, record: slim })
@@ -8269,25 +8268,14 @@ function submitCrewWOComplete(woId, photoData) {
       gsSave('workOrders', wo);
     }
 
-    // Step 6b: Send full quality photo to Apps Script via POST → stored in sheet cell
+    // Step 6b: sync thumbnail to Sheets for cross-device display
     if (photo) {
-      compressPhoto(photo, 400, 0.8, function(fullQuality) {
-        fetch(GS_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ secret: GS_SECRET, action: 'saveWOPhoto', woId: wo.id, photo: fullQuality })
-        })
-        .then(function() {
-          console.log('WO photo sent to Sheets');
-          setTimeout(function() {
-            gsLoad().then(function() {
-              renderCrewWorkOrders();
-              if (document.getElementById('wo-community-list')) renderWorkOrders();
-            });
-          }, 3000);
-        })
-        .catch(function(err) { console.warn('WO photo POST failed:', err); });
+      compressPhoto(photo, 150, 0.7, function(thumb) {
+        var woWithThumb = Object.assign({}, wo, { completedPhoto: thumb });
+        gsSave('workOrders', woWithThumb);
+        // Restore full quality in memory
+        wo.completedPhoto = photo;
+        save();
       });
     }
     var photoDisabled = null;
