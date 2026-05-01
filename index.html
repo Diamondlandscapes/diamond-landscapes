@@ -2703,66 +2703,53 @@ function previewFlagPhoto(input) {
 // Apps Script reassembles and uploads to Drive, returns permanent URL.
 
 
-// ─── PHOTO UPLOAD VIA POST + POLL ────────────────────────────────────────────
-// POST sends full photo to Apps Script (no CORS needed for sending)
-// Apps Script uploads to Drive and stores result in 'uploads' temp sheet
-// App polls every 2s to get the Drive URL back
+
+// ─── PHOTO UPLOAD VIA IMGBB (free, fast, CORS-enabled) ──────────────────────
+// Sign up at imgbb.com to get your free API key (takes 30 seconds)
+// Replace the key below with yours
+var IMGBB_API_KEY = '4c9fe12ddc83e08b69eccabaf1f3080d';
 
 function uploadPhotoViaPost(base64Data, filename, onSuccess, onError) {
-  console.log('Uploading photo via POST, size:', Math.round(base64Data.length/1024) + 'KB');
   toast('📤 Uploading photo...');
+  console.log('Uploading to ImgBB, size:', Math.round(base64Data.length/1024) + 'KB');
 
-  var uploadId = 'up_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+  // Strip data URL prefix - ImgBB wants raw base64
+  var raw = base64Data;
+  var comma = base64Data.indexOf(',');
+  if (comma !== -1) raw = base64Data.slice(comma + 1);
 
-  // Send via POST - no-cors means we can't read response
-  // but Apps Script DOES receive and process it
-  fetch(GS_URL, {
+  var form = new FormData();
+  form.append('image', raw);
+  form.append('name', filename || ('photo_' + Date.now()));
+
+  fetch('https://api.imgbb.com/1/upload?key=' + IMGBB_API_KEY, {
     method: 'POST',
-    mode: 'no-cors',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({
-      secret: GS_SECRET,
-      action: 'uploadAndStore',
-      uploadId: uploadId,
-      photo: base64Data,
-      filename: filename || ('photo_' + Date.now())
-    })
-  }).then(function() {
-    console.log('POST sent, polling for result...');
-    // Poll for the result
-    pollForUploadResult(uploadId, 0, onSuccess, onError);
-  }).catch(function(err) {
-    console.error('POST failed:', err);
+    body: form
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    console.log('ImgBB response:', JSON.stringify(data).slice(0,200));
+    if (data && data.success && data.data && data.data.url) {
+      var url = data.data.url;
+      console.log('Photo URL:', url);
+      onSuccess(url);
+    } else {
+      var err = (data && data.error && data.error.message) || 'Upload failed';
+      console.error('ImgBB error:', err);
+      onError(err);
+    }
+  })
+  .catch(function(err) {
+    console.error('ImgBB fetch error:', err);
     onError(err.toString());
   });
 }
 
+// Keep for compatibility
 function pollForUploadResult(uploadId, attempt, onSuccess, onError) {
-  if (attempt > 30) { // max 60 seconds
-    onError('Upload timeout - photo saved locally');
-    return;
-  }
-  var delay = attempt < 5 ? 2000 : 3000; // faster polling at start
-  setTimeout(function() {
-    gsJSONP({ action: 'getUploadResult', uploadId: uploadId })
-    .then(function(result) {
-      console.log('Poll', attempt+1, ':', JSON.stringify(result).slice(0,80));
-      if (result && result.url) {
-        onSuccess(result.url);
-      } else if (result && result.error && result.error !== 'pending') {
-        onError(result.error);
-      } else {
-        // pending or no result yet - keep polling
-        if (attempt % 3 === 0) toast('📤 Processing photo... ' + Math.min(95, (attempt+1)*3) + '%');
-        pollForUploadResult(uploadId, attempt + 1, onSuccess, onError);
-      }
-    })
-    .catch(function(err) {
-      console.warn('Poll error:', err, '- retrying');
-      pollForUploadResult(uploadId, attempt + 1, onSuccess, onError);
-    });
-  }, delay);
+  onError('Polling not used with ImgBB');
 }
+
 
 function uploadFlagPhotoToSheets(flagId, photoData) {
   // Send full quality photo to Apps Script via POST
