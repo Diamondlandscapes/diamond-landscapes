@@ -3050,9 +3050,15 @@ function resolveFlag(flagId, propId) {
   const f = state.flags.find(x => x.id === flagId);
   if (!f) return;
 
+  // Close any existing flag panels so resolve sheet appears on top
+  document.getElementById('dash-flags-panel')?.remove();
+  document.getElementById('report-flag-panel')?.remove();
+  document.getElementById('crew-prop-flags-sheet')?.remove();
+
   const sheet = document.createElement('div');
   sheet.id = 'manager-resolve-sheet';
   sheet.className = 'overlay open';
+  sheet.style.zIndex = '600';
 
   // Build sheet using DOM to avoid template literal escaping issues
   const sheetDiv = document.createElement('div');
