@@ -8405,19 +8405,17 @@ function clearOldPhotos() {
 
 function getWOPhoto(wo) {
   if (!wo) return null;
-  function isRealPhoto(s) {
-    return s && typeof s === 'string' && (s.startsWith('data:image') || s.startsWith('https://drive.google.com') || s.startsWith('https://lh3') || s.startsWith('blob:'));
-  }
-  // Check dlphotos map first
+  // Check dlphotos localStorage first (full quality on originating device)
   try {
     var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-    if (isRealPhoto(photos[wo.id])) return photos[wo.id];
+    var lp = photos[wo.id];
+    if (lp && lp.length > 5) return lp;
   } catch(e) {}
-  // Check individual key
   var local = localStorage.getItem('dlphoto_' + wo.id);
-  if (isRealPhoto(local)) return local;
-  // Check inline on wo object
-  if (isRealPhoto(wo.completedPhoto)) return wo.completedPhoto;
+  if (local && local.length > 5) return local;
+  // Return completedPhoto from Sheets (ImgBB URL or data:)
+  if (wo.completedPhoto && wo.completedPhoto.length > 5 &&
+      !wo.completedPhoto.startsWith('[')) return wo.completedPhoto;
   return null;
 }
 
@@ -8489,20 +8487,16 @@ function submitCrewWOComplete(woId, photoData) {
   var crew = state.loggedInCrewId ? (state.crew || []).find(function(c) { return c.id === state.loggedInCrewId; }) : null;
   var notes = document.getElementById('wo-complete-notes')?.value || '';
 
-  // Step 1: compress photo aggressively so it fits in Google Sheets cell
-  compressPhoto(photoData, 400, 0.4, function(compressed) {
-    var sizeKB = Math.round(compressed.length/1024);
-    console.log('Photo compressed to:', sizeKB + 'KB');
-    toast('📷 Photo ready (' + sizeKB + 'KB) - saving...');
+  // Step 1: compress to good quality (matches flag photo pipeline)
+  compressPhoto(photoData, 800, 0.82, function(compressed) {
+    toast('📷 Photo ready - saving...');
 
-    // Step 2: store full photo locally, create tiny thumbnail for Sheets
-    wo.completedPhoto = compressed; // full quality in memory
-    console.log('Saving photo to dlphotos, woId:', woId, 'size:', Math.round(compressed.length/1024) + 'KB');
+    // Step 2: save locally for immediate display
+    wo.completedPhoto = compressed;
     try {
       var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
       photos[woId] = compressed;
       localStorage.setItem('dlphotos', JSON.stringify(photos));
-      console.log('Photo saved to dlphotos ✓');
     } catch(pe) {
       try { localStorage.setItem('dlphoto_' + woId, compressed); } catch(e2) {}
     }
@@ -8513,62 +8507,42 @@ function submitCrewWOComplete(woId, photoData) {
     wo.completedBy = crew ? crew.name : 'Crew';
     wo.completedNotes = notes;
 
-    // Step 4: save main state (small - no base64 blob in it)
+    // Step 4: save state and close sheet
     save();
-
-    // Step 5: close sheet and update UI
     var completeSheet = document.getElementById('crew-wo-complete-sheet');
     if (completeSheet) completeSheet.remove();
     renderCrewWorkOrders();
     if (document.getElementById('wo-community-list')) renderWorkOrders();
     toast('✓ Work order completed');
 
-    // Step 6a: Create tiny thumbnail (fits in JSONP URL) and save with WO
-    var photo = getWOPhoto(wo);
-    if (photo) {
-      toast('📤 Saving photo...');
-      compressPhoto(photo, 120, 0.4, function(thumbnail) {
-        console.log('Thumbnail size:', Math.round(thumbnail.length/1024) + 'KB');
-        var woWithThumb = Object.assign({}, wo, { completedPhoto: thumbnail });
-        gsSave('workOrders', woWithThumb);
-        toast('✓ Work order + photo synced');
+    // Step 5: save WO to Sheets with placeholder while upload runs
+    var woForSheets = Object.assign({}, wo, { completedPhoto: '[uploading]' });
+    gsSave('workOrders', woForSheets);
+
+    // Step 6: upload to ImgBB - same as flag photos
+    toast('📤 Uploading photo...');
+    var woFilename = 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now();
+    uploadPhotoViaPost(compressed, woFilename,
+      function(imgbbUrl) {
+        wo.completedPhoto = imgbbUrl;
+        try {
+          var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+          photos[wo.id] = imgbbUrl;
+          localStorage.setItem('dlphotos', JSON.stringify(photos));
+        } catch(e) {}
+        save();
+        gsSave('workOrders', wo);
         renderCrewWorkOrders();
         if (document.getElementById('wo-community-list')) renderWorkOrders();
-      });
-    } else {
-      gsSave('workOrders', wo);
-    }
-
-    // Step 6b: upload to Drive via chunks for cross-device full quality
-    if (photo) {
-      toast('📤 Uploading photo to Drive...');
-      var woFilename = 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now();
-      uploadPhotoViaPost(photo, woFilename,
-        function(driveUrl) {
-          wo.completedPhoto = driveUrl;
-          try {
-            var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-            photos[wo.id] = driveUrl;
-            localStorage.setItem('dlphotos', JSON.stringify(photos));
-          } catch(e) {}
-          save();
-          gsSave('workOrders', wo);
-          renderCrewWorkOrders();
-          if (document.getElementById('wo-community-list')) renderWorkOrders();
-          toast('✓ Photo uploaded to Drive');
-        },
-        function(err) {
-          console.warn('WO chunked upload failed:', err);
-          compressPhoto(photo, 150, 0.7, function(thumb) {
-            var woWithThumb = Object.assign({}, wo, { completedPhoto: thumb });
-            gsSave('workOrders', woWithThumb);
-            wo.completedPhoto = photo;
-            save();
-          });
-          toast('Photo saved locally');
-        }
-      );
-    }
+        toast('✓ Photo uploaded — visible on all devices');
+      },
+      function(err) {
+        console.warn('WO photo upload failed:', err);
+        // Fallback: save compressed locally, sync without photo
+        gsSave('workOrders', wo);
+        toast('Photo saved locally');
+      }
+    );
     var photoDisabled = null;
     if (photoDisabled) {
       console.log('disabled');
