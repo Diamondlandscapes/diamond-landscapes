@@ -2479,9 +2479,15 @@ function openPropDetail(id) {
             </div>
             <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;margin-left:8px;">
               ${getFlagPhoto(f)?`<img src="${getFlagPhoto(f)}" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f) || f.photo}','Issue')" style="width:48px;height:48px;border-radius:8px;object-fit:cover;cursor:zoom-in;"/>`:'' }
-              ${!f.resolved?`<button onclick="event.stopPropagation();resolveFlag('${f.id}','${id}')"
-                class="btn-sm" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">
-                Resolve</button>`:''}
+              ${!f.resolved?`
+                <div style="display:flex;gap:4px;margin-top:4px;">
+                  <button onclick="event.stopPropagation();openEditFlag('${f.id}')"
+                    class="btn-sm" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);font-size:11px;padding:4px 8px;">✏️</button>
+                  <button onclick="event.stopPropagation();resolveFlag('${f.id}','${id}')"
+                    class="btn-sm" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);font-size:11px;padding:4px 8px;">✓</button>
+                  <button onclick="event.stopPropagation();deleteFlag('${f.id}')"
+                    class="btn-sm" style="background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);font-size:11px;padding:4px 8px;">🗑</button>
+                </div>`:''}
             </div>
           </div>
         </div>`).join('')
@@ -2760,8 +2766,8 @@ function saveFlag() {
     // Save full quality locally for this device
     compressPhoto(rawPhoto, 400, 0.5, function(fullCompressed) {
       saveFlagPhoto(newFlag.id, fullCompressed);
-      // Also create tiny thumbnail (120px) for Sheets sync - cross-device
-      compressPhoto(rawPhoto, 120, 0.4, function(thumbnail) {
+      // Create thumbnail for Sheets sync (cross-device) - 200px for better quality
+      compressPhoto(rawPhoto, 200, 0.65, function(thumbnail) {
         console.log('Flag thumbnail size:', Math.round(thumbnail.length/1024) + 'KB');
         finishSaveFlag(thumbnail);
       });
@@ -4802,7 +4808,7 @@ function gsSave(table, record) {
   // Check if record JSON is small enough for JSONP URL (~1500 chars safe limit)
   const recStr = JSON.stringify(record);
   // For workOrders, allow larger records (thumbnail photo in completedPhoto)
-  const limit = (table === 'workOrders' || table === 'flags') ? 8000 : 1500;
+  const limit = (table === 'workOrders' || table === 'flags') ? 16000 : 1500;
   if (recStr.length > limit) {
     const slim = { ...record };
     if (slim.resolvePhoto && slim.resolvePhoto.startsWith('data:')) slim.resolvePhoto = '[photo]';
