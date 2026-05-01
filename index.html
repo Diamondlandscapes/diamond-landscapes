@@ -7910,33 +7910,47 @@ function submitCrewWOComplete(woId, photoData) {
     var photo = getWOPhoto(wo);
     if (photo) {
       toast('📤 Uploading photo to Drive...');
+      var uploadPayload = JSON.stringify({
+        secret: GS_SECRET,
+        action: 'uploadWOPhoto',
+        woId: wo.id,
+        photo: photo,
+        filename: 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now()
+      });
+
+      // Try regular POST first (works if CORS configured)
       fetch(GS_URL, {
         method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
-          secret: GS_SECRET,
-          action: 'uploadWOPhoto',
-          woId: wo.id,
-          photo: photo,
-          filename: 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now()
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: uploadPayload
       })
-      .then(function() {
-        // no-cors means we can't read response, but request was sent
-        // Apps Script will have uploaded to Drive and updated the sheet
-        toast('✓ Photo uploaded to Drive');
-        // Refresh to get Drive URL back from sheets
-        setTimeout(function() {
-          gsLoad().then(function() {
-            renderCrewWorkOrders();
-            if (document.getElementById('wo-community-list')) renderWorkOrders();
-          });
-        }, 3000);
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(result) {
+        console.log('Photo upload result:', result);
+        if (result && result.photoUrl) {
+          wo.completedPhoto = result.photoUrl;
+          try {
+            var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+            photos[wo.id] = result.photoUrl;
+            localStorage.setItem('dlphotos', JSON.stringify(photos));
+          } catch(e) {}
+          save();
+          toast('✓ Photo uploaded to Drive');
+          renderCrewWorkOrders();
+          if (document.getElementById('wo-community-list')) renderWorkOrders();
+        } else {
+          toast('✓ Completed (photo upload issue: ' + JSON.stringify(result) + ')');
+        }
       })
       .catch(function(err) {
-        console.warn('Photo upload failed:', err);
-        toast('Photo saved locally - will sync when online');
+        console.warn('Photo POST failed:', err);
+        // Fallback: try no-cors so at least Apps Script receives it
+        fetch(GS_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: uploadPayload })
+          .catch(function() {});
+        toast('Photo saved locally');
       });
     }
   });
