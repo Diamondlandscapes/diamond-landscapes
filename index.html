@@ -2794,16 +2794,16 @@ function saveFlagPhoto(flagId, photoData) {
 
 function getFlagPhoto(flag) {
   if (!flag) return null;
-  // Check dlphotos map (full quality local)
+  // Check dlphotos localStorage first (full quality on originating device)
   try {
     var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-    if (photos['flag_' + flag.id]) return photos['flag_' + flag.id];
+    var lp = photos['flag_' + flag.id];
+    if (lp) return lp;
   } catch(e) {}
-  // Check individual key
   var local = localStorage.getItem('dlphoto_flag_' + flag.id);
   if (local) return local;
-  // Check inline on flag object (thumbnail from Sheets - works cross-device)
-  if (flag.photo && flag.photo.startsWith('data:')) return flag.photo;
+  // Return flag.photo from Sheets - handles BOTH data: AND https:// URLs
+  if (flag.photo && flag.photo.length > 5) return flag.photo;
   return null;
 }
 
@@ -2811,9 +2811,10 @@ function getFlagResolvePhoto(flag) {
   if (!flag) return null;
   try {
     var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-    if (photos['flagresolve_' + flag.id]) return photos['flagresolve_' + flag.id];
+    var rp = photos['flagresolve_' + flag.id];
+    if (rp) return rp;
   } catch(e) {}
-  if (flag.resolvePhoto && flag.resolvePhoto.startsWith('data:')) return flag.resolvePhoto;
+  if (flag.resolvePhoto && flag.resolvePhoto.length > 5) return flag.resolvePhoto;
   return null;
 }
 
