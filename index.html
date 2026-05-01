@@ -6766,13 +6766,23 @@ function openCommunityWO(community) {
         '<button class="btn-sm" onclick="openUploadWO(\'' + community.replace(/'/g,"\\'") + '\')" style="margin-left:auto;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">⬆ Upload List</button>' +
         '<button class="btn-sm" onclick="openWOReport(\'' + community.replace(/'/g,"\\'") + '\')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">📄 Report</button>' +
       '</div>' +
-      '<div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">' +
-        '<div style="font-size:12px;font-weight:700;color:var(--text3);white-space:nowrap;">Village #</div>' +
-        '<input id="wo-village-filter" type="number" placeholder="All" min="1" value="' + (window._woVillage||'') + '"' +
-          ' oninput="woFilterVillage(this.value)"' +
-          ' style="width:80px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;font-weight:700;"/>' +
-        (window._woVillage ? '<button onclick="woFilterVillage(\'\')" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 10px;font-size:12px;color:var(--text3);cursor:pointer;">✕ Clear</button>' : '') +
-        '<div style="font-size:11px;color:var(--text4);">' + (window._woVillage ? filtered.length + ' result' + (filtered.length!==1?'s':'') : wos.length + ' total') + '</div>' +
+      (function() {
+        var villages = [];
+        wos.forEach(function(w) {
+          var v = (w.village||'').toString().trim();
+          if (v && !villages.includes(v)) villages.push(v);
+        });
+        villages.sort(function(a,b) { return (parseInt(a)||0) - (parseInt(b)||0); });
+        var opts = '<option value="">All Villages</option>';
+        villages.forEach(function(v) { opts += '<option value="' + v + '"' + (window._woVillage===v?' selected':'') + '>Village ' + v + '</option>'; });
+        return '<div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">' +
+          '<div style="font-size:12px;font-weight:700;color:var(--text3);white-space:nowrap;">🏘 Village</div>' +
+          '<select id="wo-village-filter" onchange="woFilterVillage(this.value)"' +
+            ' style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;font-weight:700;">' +
+            opts +
+          '</select>' +
+          '<div style="font-size:11px;color:var(--text4);white-space:nowrap;">' + (window._woVillage ? filtered.length + ' result' + (filtered.length!==1?'s':'') : wos.length + ' total') + '</div>';
+      })() +
       '</div>' +
       '<div style="flex:1;overflow-y:auto;padding:14px;" id="wo-comm-body">' +
         (filtered.length ? woRows : '<div style="text-align:center;color:var(--text4);font-size:13px;padding:32px;">No work orders yet.<br><button class="btn btn-green" style="margin-top:12px;" onclick="openUploadWO(\'' + community.replace(/'/g,"\\'") + '\')">⬆ Upload List</button></div>') +
@@ -6791,10 +6801,10 @@ function openCommunityWO(community) {
   window.woFilterVillage = function(v) {
     window._woVillage = v.toString().trim();
     buildPanel(window._woType || 'all', window._woVillage);
-    // Re-focus the input after re-render
+    // Re-select the option after re-render
     setTimeout(function() {
-      var inp = document.getElementById('wo-village-filter');
-      if (inp) { inp.value = window._woVillage; inp.focus(); }
+      var sel = document.getElementById('wo-village-filter');
+      if (sel) sel.value = window._woVillage || '';
     }, 10);
   };
 }
