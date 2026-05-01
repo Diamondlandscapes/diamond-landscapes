@@ -2478,7 +2478,7 @@ function openPropDetail(id) {
               </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;margin-left:8px;">
-              ${f.photo?`<img src="${f.photo}" onclick="event.stopPropagation();openPhoto('${f.photo}','Issue')" style="width:48px;height:48px;border-radius:8px;object-fit:cover;cursor:zoom-in;"/>`:'' }
+              ${getFlagPhoto(f)?`<img src="${getFlagPhoto(f)}" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f) || f.photo}','Issue')" style="width:48px;height:48px;border-radius:8px;object-fit:cover;cursor:zoom-in;"/>`:'' }
               ${!f.resolved?`<button onclick="event.stopPropagation();resolveFlag('${f.id}','${id}')"
                 class="btn-sm" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">
                 Resolve</button>`:''}
@@ -2652,15 +2652,50 @@ function previewFlagPhoto(input) {
   reader.readAsDataURL(file);
 }
 
+
+function saveFlagPhoto(flagId, photoData) {
+  try {
+    var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+    photos['flag_' + flagId] = photoData;
+    localStorage.setItem('dlphotos', JSON.stringify(photos));
+    return true;
+  } catch(e) {
+    try { localStorage.setItem('dlphoto_flag_' + flagId, photoData); return true; } catch(e2) { return false; }
+  }
+}
+
+function getFlagPhoto(flag) {
+  if (!flag) return null;
+  try {
+    var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+    if (photos['flag_' + flag.id]) return photos['flag_' + flag.id];
+  } catch(e) {}
+  var local = localStorage.getItem('dlphoto_flag_' + flag.id);
+  if (local) return local;
+  if (flag.photo && flag.photo.startsWith('data:')) return flag.photo;
+  return null;
+}
+
+function getFlagResolvePhoto(flag) {
+  if (!flag) return null;
+  try {
+    var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+    if (photos['flagresolve_' + flag.id]) return photos['flagresolve_' + flag.id];
+  } catch(e) {}
+  if (flag.resolvePhoto && flag.resolvePhoto.startsWith('data:')) return flag.resolvePhoto;
+  return null;
+}
+
 function saveFlag() {
   const note = document.getElementById('flag-note').value.trim();
   if (!note) { toast('Add a description'); return; }
-  const photo = document.getElementById('flag-photo-preview').src;
+  const rawPhoto = document.getElementById('flag-photo-preview').src;
+  const hasPhoto = rawPhoto && rawPhoto.startsWith('data:');
   const newFlag = {
     id: uid(), propId: flagTargetPropId,
     service: document.getElementById('flag-service').value,
     priority: document.getElementById('flag-priority').value,
-    note, photo: photo?.startsWith('data:')?photo:'',
+    note, photo: hasPhoto ? 'local:flag' : '',
     by: document.getElementById('flag-by').value || 'Team',
     date: new Date().toLocaleDateString(), resolved: false
   };
@@ -4520,11 +4555,15 @@ function gsLoad() {
         });
         (state.workOrders||[]).forEach(function(w) {
           if (!w.status) w.status = 'open';
-          // Restore real photo from local storage if available
           var storedPhoto = getWOPhoto(w);
-          if (storedPhoto) {
-            w.completedPhoto = storedPhoto;
-          }
+          if (storedPhoto) w.completedPhoto = storedPhoto;
+        });
+        // Restore flag photos from local storage
+        (state.flags||[]).forEach(function(f) {
+          var fp = getFlagPhoto(f);
+          if (fp) f.photo = fp;
+          var rp = getFlagResolvePhoto(f);
+          if (rp) f.resolvePhoto = rp;
         });
         save();
         lastSync   = new Date();
@@ -4773,7 +4812,7 @@ function renderReports() {
           +'<div style="font-size:12px;color:var(--text3);margin-top:2px;">'+f.note+'</div>'
           +'<div style="font-size:11px;color:var(--text4);margin-top:3px;">Reported by '+(f.by||'—')+' · '+(f.date||'')+'</div>'
           +'</div>'
-          +(f.photo?'<img src="'+f.photo+'" onclick="event.stopPropagation();openPhoto(\'' + f.photo + '\')" style="width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0;"/>':'')
+          +(getFlagPhoto(f)?'<img src="'+getFlagPhoto(f)+'" style="width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0;"/>':'')+
           +'</div>';
       }).join('');
     }
@@ -4801,8 +4840,8 @@ function renderReports() {
           +'<div style="font-size:11px;color:var(--text4);margin-top:3px;">Resolved '+(f.resolveDate||'')+'</div>'
           +'</div>'
           +'<div style="display:flex;gap:4px;">'
-          +(f.photo?'<img src="'+f.photo+'" style="width:48px;height:48px;border-radius:6px;object-fit:cover;"/>':'')
-          +(f.resolvePhoto?'<img src="'+f.resolvePhoto+'" style="width:48px;height:48px;border-radius:6px;object-fit:cover;border:2px solid var(--green);"/>':'')
+          +(getFlagPhoto(f)?'<img src="'+getFlagPhoto(f)+'" style="width:48px;height:48px;border-radius:6px;object-fit:cover;"/>':'')
+          +(getFlagResolvePhoto(f)?'<img src="'+getFlagResolvePhoto(f)+'" style="width:48px;height:48px;border-radius:6px;object-fit:cover;border:2px solid var(--green);"/>':'')+
           +'</div></div>';
       }).join('');
     }
@@ -5125,7 +5164,7 @@ function openDashFlags() {
                     <div style="font-weight:800;font-size:14px;">${prop?.name||'Unknown Property'}</div>
                     <div style="font-size:12px;color:var(--text3);margin-top:2px;">📍 ${prop?.address||'No address'}</div>
                   </div>
-                  ${f.photo ? `<img src="${f.photo}" onclick="event.stopPropagation();openPhoto('${f.photo}','${prop?.name||''} — ${f.service}')" style="width:60px;height:60px;border-radius:8px;object-fit:cover;margin-left:10px;flex-shrink:0;cursor:zoom-in;"/>` : ''}
+                  ${f.photo ? `<img src="${f.photo}" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f) || f.photo}','${prop?.name||''} — ${f.service}')" style="width:60px;height:60px;border-radius:8px;object-fit:cover;margin-left:10px;flex-shrink:0;cursor:zoom-in;"/>` : ''}
                 </div>
                 <div style="background:var(--bg3);border-radius:8px;padding:10px;font-size:13px;color:var(--text2);line-height:1.5;">
                   ${f.note}
@@ -5553,7 +5592,7 @@ function openReportFlag(flagId) {
           <span>Reported by <strong style="color:var(--text3);">${f.by||'—'}</strong> · ${f.date||''}</span>
           <button onclick="translateFlagPanelNote('${f.note.replace(/'/g,"\\'")}')" id="flag-panel-translate-btn" style="background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;color:var(--blue);cursor:pointer;">🇲🇽 Español</button>
         </div>
-        ${f.photo ? `<img src="${f.photo}" onclick="openPhoto('${f.photo}','Issue Photo — ${f.service}')" style="width:100%;border-radius:10px;margin-top:10px;max-height:200px;object-fit:cover;cursor:zoom-in;"/>` : ''}
+        ${f.photo ? `<img src="${f.photo}" onclick="openPhoto('${getFlagPhoto(f) || f.photo}','Issue Photo — ${f.service}')" style="width:100%;border-radius:10px;margin-top:10px;max-height:200px;object-fit:cover;cursor:zoom-in;"/>` : ''}
       </div>
 
 
