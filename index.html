@@ -4520,9 +4520,9 @@ function gsLoad() {
         });
         (state.workOrders||[]).forEach(function(w) {
           if (!w.status) w.status = 'open';
-          // Restore photo from local storage if available
+          // Restore real photo from local storage if available
           var storedPhoto = getWOPhoto(w);
-          if (storedPhoto && !w.completedPhoto.startsWith('data:')) {
+          if (storedPhoto) {
             w.completedPhoto = storedPhoto;
           }
         });
@@ -7825,18 +7825,19 @@ function clearOldPhotos() {
 
 function getWOPhoto(wo) {
   if (!wo) return null;
-  // Check dlphotos map first (batch storage)
+  function isRealPhoto(s) {
+    return s && typeof s === 'string' && (s.startsWith('data:image') || s.startsWith('https://drive.google.com') || s.startsWith('https://lh3') || s.startsWith('blob:'));
+  }
+  // Check dlphotos map first
   try {
     var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-    if (photos[wo.id]) return photos[wo.id];
+    if (isRealPhoto(photos[wo.id])) return photos[wo.id];
   } catch(e) {}
   // Check individual key
   var local = localStorage.getItem('dlphoto_' + wo.id);
-  if (local) return local;
+  if (isRealPhoto(local)) return local;
   // Check inline on wo object
-  if (wo.completedPhoto && (wo.completedPhoto.startsWith('data:') || wo.completedPhoto.startsWith('http'))) {
-    return wo.completedPhoto;
-  }
+  if (isRealPhoto(wo.completedPhoto)) return wo.completedPhoto;
   return null;
 }
 
@@ -7875,15 +7876,19 @@ function submitCrewWOComplete(woId, photoData) {
     console.log('Photo compressed to:', sizeKB + 'KB');
     toast('📷 Photo ready (' + sizeKB + 'KB) - saving...');
 
-    // Step 2: store photo in state AND in dlphotos localStorage map
-    wo.completedPhoto = compressed; // keep in memory
+    // Step 2: store photo in dlphotos localStorage map
+    wo.completedPhoto = compressed; // keep in memory for immediate display
+    console.log('Saving photo to dlphotos, woId:', woId, 'size:', Math.round(compressed.length/1024) + 'KB');
     try {
       var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
       photos[woId] = compressed;
       localStorage.setItem('dlphotos', JSON.stringify(photos));
+      console.log('Photo saved to dlphotos ✓');
     } catch(pe) {
-      // dlphotos full - try individual key
-      try { localStorage.setItem('dlphoto_' + woId, compressed); } catch(e2) {}
+      console.error('dlphotos save failed:', pe);
+      try { localStorage.setItem('dlphoto_' + woId, compressed); } catch(e2) {
+        console.error('Individual photo save also failed:', e2);
+      }
     }
 
     // Step 3: update WO status
@@ -7909,7 +7914,8 @@ function submitCrewWOComplete(woId, photoData) {
     // Step 6b: Upload photo to Drive via POST (with no-cors workaround)
     var photo = getWOPhoto(wo);
     if (photo) {
-      toast('📤 Uploading photo to Drive...');
+      toast('📤 Uploading photo (' + Math.round(photo.length/1024) + 'KB) to Drive...');
+      console.log('Uploading photo for WO:', wo.id, 'size:', Math.round(photo.length/1024), 'KB');
       var uploadPayload = JSON.stringify({
         secret: GS_SECRET,
         action: 'uploadWOPhoto',
@@ -7946,11 +7952,8 @@ function submitCrewWOComplete(woId, photoData) {
         }
       })
       .catch(function(err) {
-        console.warn('Photo POST failed:', err);
-        // Fallback: try no-cors so at least Apps Script receives it
-        fetch(GS_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: uploadPayload })
-          .catch(function() {});
-        toast('Photo saved locally');
+        console.error('Photo POST failed:', err.message || err);
+        toast('⚠ Photo upload error: ' + (err.message || 'network error'));
       });
     }
   });
