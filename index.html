@@ -2479,6 +2479,2494 @@ function openPropDetail(id) {
             </div>
             <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;margin-left:8px;">
               ${getFlagPhoto(f)?`<img src="${getFlagPhoto(f)}" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f)}','Issue')" style="width:60px;height:60px;border-radius:8px;object-fit:cover;cursor:zoom-in;border:2px solid var(--border2);"/>`:'' }
+              ${state.role==='manager' ? `
+              <div style="display:flex;gap:4px;margin-top:4px;">
+                  ${!f.resolved?`
+                    <button onclick="event.stopPropagation();openEditFlag('${f.id}')"
+                      class="btn-sm" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);font-size:11px;padding:4px 8px;">✏️</button>
+                    <button onclick="event.stopPropagation();resolveFlag('${f.id}','${id}')"
+                      class="btn-sm" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);font-size:11px;padding:4px 8px;">✓</button>
+                  `:''}
+                  <button onclick="event.stopPropagation();deleteFlag('${f.id}')"
+                    class="btn-sm" style="background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);font-size:11px;padding:4px 8px;">🗑</button>
+                </div>` : ''}charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Diamond"/>
+<meta name="theme-color" content="#052e16"/>
+<title>Diamond Landscapes</title>
+<link rel="manifest" href="manifest.json"/>
+<link rel="apple-touch-icon" href="data:image/png;base64,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"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="application-name" content="Diamond Landscapes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+button,a{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
+:root{
+  --bg:#0a0f0a; --bg2:#111811; --bg3:#182018; --bg4:#1f281f;
+  --border:#243024; --border2:#2e3d2e;
+  --green:#4ade80; --green2:#22c55e; --green3:#16a34a;
+  --lime:#a3e635; --yellow:#facc15; --orange:#fb923c;
+  --red:#f87171; --blue:#60a5fa; --teal:#2dd4bf;
+  --text:#f0fdf0; --text2:#bbf7d0; --text3:#6b8f6b; --text4:#3d5c3d;
+  --safe-top:env(safe-area-inset-top,0px); --safe-bottom:env(safe-area-inset-bottom,0px);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);}
+body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;color:var(--text);}
+input,textarea,select,button{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;outline:none;-webkit-appearance:none;font-size:16px;}
+input[type="date"]{cursor:pointer;pointer-events:all;position:relative;z-index:5;-webkit-appearance:none;background:var(--bg4);color:var(--text);}
+::-webkit-scrollbar{display:none;}
+
+#app{width:100%;height:100%;max-width:480px;margin:0 auto;display:flex;flex-direction:column;position:relative;overflow:hidden;}
+
+/* header */
+#topbar{background:var(--bg2);border-bottom:1px solid var(--border);
+  padding:calc(10px + var(--safe-top)) 16px 10px;
+  display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
+.topbar-title{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;
+  background:linear-gradient(135deg,var(--green),var(--lime));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.topbar-role{font-size:11px;font-weight:700;letter-spacing:1px;padding:3px 10px;border-radius:20px;
+  background:var(--bg4);color:var(--green);border:1px solid var(--border2);}
+
+/* screens */
+#screens{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
+  padding-bottom:16px;}
+.screen{display:none;padding:14px 14px 0;animation:fadeUp .2s ease;}
+.screen.active{display:block;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* nav */
+#nav{display:none;}
+.nb{display:flex;flex-direction:column;align-items:center;gap:2px;
+  background:none;border:none;cursor:pointer;padding:4px 8px;min-width:52px;}
+.nb .ni{font-size:20px;filter:grayscale(1) opacity(.35);transition:filter .15s;}
+.nb .nl{font-size:9px;font-weight:800;letter-spacing:.6px;color:var(--text4);
+  transition:color .15s;text-transform:uppercase;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;}
+.nb.active .ni{filter:none;}
+.nb.active .nl{color:var(--green);}
+
+/* cards */
+.card{background:var(--bg2);border-radius:16px;padding:16px;border:1px solid var(--border);margin-bottom:12px;}
+.card-flat{background:var(--bg3);border-radius:12px;padding:12px 14px;border:1px solid var(--border);margin-bottom:8px;}
+.sec-title{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:1.5px;
+  color:var(--text3);text-transform:uppercase;margin-bottom:10px;}
+
+/* inputs */
+.inp{background:var(--bg4);border:1px solid var(--border2);border-radius:10px;
+  padding:11px 14px;color:var(--text);font-size:14px;width:100%;transition:border .2s;}
+.inp:focus{border-color:var(--green);}
+.inp::placeholder{color:var(--text4);}
+textarea.inp{resize:vertical;}
+select.inp{cursor:pointer;}
+
+/* buttons */
+.btn{border:none;border-radius:11px;padding:13px;font-size:14px;font-weight:800;
+  cursor:pointer;width:100%;transition:opacity .15s;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:.5px;}
+.btn:active{opacity:.75;}
+.btn-green{background:linear-gradient(135deg,var(--green3),var(--green2));color:#fff;}
+.btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text2);}
+.btn-red{background:linear-gradient(135deg,#dc2626,var(--red));color:#fff;}
+.btn-sm{padding:6px 14px;font-size:12px;border-radius:8px;border:none;cursor:pointer;
+  font-weight:700;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:.3px;}
+
+/* status badges */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;
+  font-size:11px;font-weight:700;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:.5px;}
+.badge-green{background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);}
+.badge-yellow{background:rgba(250,204,21,.12);color:var(--yellow);border:1px solid rgba(250,204,21,.25);}
+.badge-red{background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.25);}
+.badge-blue{background:rgba(96,165,250,.12);color:var(--blue);border:1px solid rgba(96,165,250,.25);}
+.badge-orange{background:rgba(251,146,60,.12);color:var(--orange);border:1px solid rgba(251,146,60,.25);}
+
+/* pills */
+.pills{display:flex;gap:7px;overflow-x:auto;padding-bottom:2px;margin-bottom:12px;}
+.pill{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:none;
+  cursor:pointer;white-space:nowrap;background:var(--bg4);color:var(--text3);transition:all .2s;
+  font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:.3px;}
+.pill.active{background:linear-gradient(135deg,var(--green3),var(--green2));color:#fff;}
+
+/* panels */
+.panel{position:fixed;inset:0;z-index:200;display:none;flex-direction:column;
+  background:var(--bg);max-width:480px;margin:0 auto;}
+.panel.open{display:flex;}
+.panel-head{background:var(--bg2);padding:calc(14px + var(--safe-top)) 16px 14px;
+  border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
+.panel-title{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:18px;font-weight:800;}
+.close-btn{background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;padding:2px 6px;}
+
+/* overlay sheet */
+.overlay{position:fixed;inset:0;z-index:300;background:linear-gradient(to bottom,rgba(0,0,0,0) 0%,rgba(0,0,0,.6) 40%);display:none;align-items:flex-end;justify-content:center;}
+.overlay.open{display:flex;}
+.sheet{width:100%;max-width:480px;background:var(--bg2);border-radius:24px 24px 0 0;padding:20px 16px calc(20px + var(--safe-bottom));max-height:85vh;overflow-y:auto;box-shadow:0 -4px 32px rgba(0,0,0,.5);}
+.sheet-title{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:17px;font-weight:800;margin-bottom:16px;}
+
+/* toast */
+#toast{position:fixed;top:calc(16px + var(--safe-top));left:50%;
+  transform:translateX(-50%) translateY(-70px);
+  background:var(--green2);color:#fff;font-weight:800;font-size:13px;
+  padding:10px 20px;border-radius:20px;z-index:999;
+  transition:transform .3s ease;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;}
+#toast.show{transform:translateX(-50%) translateY(0);}
+
+/* priority dot */
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.dot-red{background:var(--red);}
+.dot-yellow{background:var(--yellow);}
+.dot-green{background:var(--green);}
+
+/* route stop */
+.stop-card{background:var(--bg2);border-radius:14px;border:1px solid var(--border);
+  margin-bottom:10px;overflow:visible;}
+.stop-head{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;}
+.stop-body{padding:0 14px 14px;border-top:1px solid var(--border);display:none;overflow:visible;}
+.stop-body.open{display:block;overflow:visible;}
+
+/* property service item */
+.svc-item{display:flex;justify-content:space-between;align-items:center;
+  padding:9px 12px;background:var(--bg3);border-radius:9px;margin-bottom:6px;}
+
+/* photo upload area */
+.photo-zone{border:2px dashed var(--border2);border-radius:12px;padding:20px;
+  text-align:center;cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:10px;
+  outline:none;display:block;-webkit-tap-highlight-color:transparent;}
+.photo-zone:hover,.photo-zone:focus{border-color:var(--green);background:rgba(74,222,128,.04);outline:none;}
+.photo-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;}
+.photo-thumb{aspect-ratio:1;border-radius:8px;object-fit:cover;width:100%;background:var(--bg4);}
+
+/* stat card */
+.stat-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
+.stat-c{background:var(--bg2);border-radius:18px;padding:24px 14px 20px;border:1px solid var(--border);text-align:center;transition:background .15s,border .15s;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:120px;}
+.stat-c:active{background:var(--bg3);border-color:var(--border2);}
+.stat-v{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:44px;font-weight:700;line-height:1;margin-bottom:8px;}
+.stat-l{font-size:11px;color:var(--text3);letter-spacing:.6px;font-weight:700;text-transform:uppercase;}
+
+/* crew member card */
+.crew-card{background:var(--bg2);border-radius:14px;padding:14px;border:1px solid var(--border);
+  margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;}
+.crew-avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--green3),var(--teal));
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#fff;flex-shrink:0;}
+
+/* notification dot */
+.notif-dot{width:8px;height:8px;border-radius:50%;background:var(--red);
+  position:absolute;top:2px;right:2px;}
+
+/* timeline */
+.tl-item{display:flex;gap:12px;margin-bottom:14px;}
+.tl-dot{width:10px;height:10px;border-radius:50%;background:var(--green);flex-shrink:0;margin-top:4px;}
+.tl-line{width:1px;background:var(--border2);margin:0 4px;}
+
+
+/* login screen keys */
+.ls-key{padding:16px;font-size:22px;font-weight:800;background:#1f281f;border:1px solid #2e3d2e;border-radius:12px;color:white;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;transition:background .1s;}
+.ls-key:active{background:#243024;}
+/* pin dots */
+.pin-dot{width:14px;height:14px;border-radius:50%;background:var(--bg4);border:2px solid var(--border2);transition:background .15s,border .15s;}
+.pin-dot.filled{background:var(--green);border-color:var(--green);}
+
+/* inventory bar */
+.inv-bar{background:var(--bg4);border-radius:6px;height:6px;overflow:hidden;margin-top:6px;}
+.inv-fill{height:100%;border-radius:6px;transition:width .5s;}
+
+/* ── DESKTOP LAYOUT (768px+) ───────────────────────────────────────────── */
+@media (min-width: 768px) {
+
+  html, body { overflow: hidden; height: 100vh; background: #060c06; }
+
+  #app {
+    max-width: 100% !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+    display: grid !important;
+    grid-template-rows: auto auto 1fr;
+    grid-template-columns: 220px 1fr;
+    grid-template-areas:
+      "topbar  topbar"
+      "syncbar syncbar"
+      "sidenav content";
+  }
+
+  #topbar { grid-area: topbar; }
+  #sync-bar { grid-area: syncbar; }
+
+  #screens {
+    grid-area: content;
+    overflow-y: auto !important;
+    min-height: 0;
+    height: 100%;
+    padding-bottom: 80px !important;
+  }
+
+
+
+  /* topbar spans full width */
+  #topbar {
+    padding: 14px 32px !important;
+  }
+  #topbar svg { width: 30px !important; height: 30px !important; }
+
+  /* sync bar */
+
+  /* hide hamburger on desktop — sidebar handles nav */
+  #hamburger-btn { display: none !important; }
+
+  /* side nav sidebar */
+  #nav {
+    grid-area: sidenav;
+    display: flex !important;
+    width: 220px;
+    flex-shrink: 0;
+    flex-direction: column;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    overflow-y: auto;
+    padding: 16px 10px 16px;
+    gap: 2px;
+    box-sizing: border-box;
+  }
+  #nav-tabs-wrap { display: contents; }
+  #nav-utils-inner {
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .nb {
+    flex-direction: row !important;
+    justify-content: flex-start !important;
+    gap: 12px !important;
+    padding: 11px 14px !important;
+    border-radius: 10px !important;
+    width: 100% !important;
+    min-width: unset !important;
+    text-align: left !important;
+    transition: background .15s;
+  }
+  .nb:hover { background: var(--bg3); }
+  .nb.active { background: var(--bg3) !important; }
+  .nb .ni { font-size: 18px !important; opacity: .8; }
+  .nb.active .ni { opacity: 1; }
+  .nb .nl {
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    color: var(--text3) !important;
+    text-transform: none !important;
+    letter-spacing: .2px !important;
+  }
+  .nb.active .nl { color: var(--green) !important; }
+
+  /* nb styles only used for sidebar which is removed */
+
+
+  .screen { padding: 28px 32px 0 !important; max-width: 1100px; }
+
+  /* wider cards */
+  .card { border-radius: 18px !important; padding: 22px !important; }
+  .card-flat { border-radius: 12px !important; }
+
+  /* dashboard — 4 col stat grid */
+  .stat-row {
+    grid-template-columns: 1fr 1fr 1fr 1fr !important;
+  }
+
+  /* properties and crew — 2 col grid */
+  #properties-list, #crew-list, #equipment-list, #inventory-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  #properties-list .card,
+  #crew-list .crew-card,
+  #equipment-list .card,
+  #inventory-list .card { margin-bottom: 0 !important; }
+
+  /* routes — 2 col */
+  #routes-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  #routes-list .card { margin-bottom: 0 !important; }
+
+  /* panels become right-side drawers */
+  .panel {
+    left: auto !important;
+    right: 0 !important;
+    width: 480px !important;
+    max-width: 480px !important;
+    margin: 0 !important;
+    box-shadow: -4px 0 40px rgba(0,0,0,.5);
+    border-left: 1px solid var(--border);
+  }
+
+  /* overlays center on screen */
+  .overlay {
+    align-items: center !important;
+    justify-content: center !important;
+    max-width: 100% !important;
+  }
+  .sheet {
+    width: 520px !important;
+    border-radius: 20px !important;
+    max-height: 85vh;
+  }
+
+  /* login screen */
+  #login-screen {
+    max-width: 100% !important;
+  }
+  #login-screen > div:last-child,
+  #login-screen > div {
+    max-width: 420px;
+    width: 100%;
+  }
+
+  /* inputs larger on desktop */
+  .inp { font-size: 15px !important; padding: 13px 16px !important; }
+  .btn { font-size: 15px !important; padding: 15px !important; }
+
+  /* nav label for desktop — show full text */
+  .nb .nl::after { content: ''; }
+
+
+
+  /* wider form grids */
+  #np-services { grid-template-columns: 1fr 1fr 1fr !important; }
+}
+
+@media (min-width: 1200px) {
+  #properties-list,
+  #equipment-list { grid-template-columns: 1fr 1fr 1fr !important; }
+}
+
+
+/* ── MOBILE PORTRAIT FIXES (max 767px) ─────────────────────────────────── */
+@media (max-width: 767px) {
+
+  /* app container — full height, no overflow */
+  #app { max-width: 100% !important; }
+
+  /* topbar — tighter on small screens */
+  #topbar { padding: calc(8px + var(--safe-top)) 12px 8px !important; }
+  #topbar svg { width: 22px !important; height: 23px !important; }
+
+  /* bottom nav — scale down for 7 items */
+  #nav {
+    padding: 4px 0 calc(4px + var(--safe-bottom)) !important;
+  }
+  .nb {
+    padding: 3px 4px !important;
+    min-width: 40px !important;
+    gap: 1px !important;
+  }
+  .nb .ni { font-size: 17px !important; }
+  .nb .nl { font-size: 8px !important; letter-spacing: 0 !important; }
+
+  /* screens — tighter padding */
+  .screen { padding: 10px 10px 0 !important; }
+
+  /* stat row — 2 cols on mobile, smaller */
+  .stat-row {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+    margin-bottom: 10px !important;
+  }
+  .stat-v { font-size: 22px !important; }
+  .stat-c { padding: 10px 8px !important; border-radius: 12px !important; }
+
+  /* cards — tighter */
+  .card { padding: 12px !important; border-radius: 14px !important; margin-bottom: 10px !important; }
+  .card-flat { padding: 10px 12px !important; border-radius: 10px !important; }
+
+  /* report stats — 2 col on mobile */
+  #report-stats { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+
+  /* crew performance table — stack on mobile */
+  #report-crew-table > div:first-child { display: none !important; } /* hide header */
+  #report-crew-table > div + div > div:first-child { grid-column: span 4; }
+
+  /* inputs — good touch target */
+  .inp { padding: 12px 12px !important; font-size: 14px !important; }
+
+  /* buttons — easy to tap */
+  .btn { padding: 13px !important; font-size: 14px !important; }
+  .btn-sm { padding: 7px 12px !important; font-size: 11px !important; }
+
+  /* sheets — taller on mobile */
+  .sheet { max-height: 92vh !important; padding: 16px 14px calc(16px + var(--safe-bottom)) !important; }
+
+  /* panels — full screen on mobile */
+  .panel { max-width: 100% !important; }
+  .panel-head { padding: calc(12px + var(--safe-top)) 14px 12px !important; }
+
+  /* login screen — better spacing */
+  #login-screen { padding: 24px 20px !important; }
+  .ls-key { padding: 14px !important; font-size: 20px !important; }
+  .pin-dot { width: 13px !important; height: 13px !important; }
+
+  /* stop cards */
+  .stop-head { padding: 10px 12px !important; }
+  .stop-body { padding: 0 12px 12px !important; }
+
+  /* pills — scrollable, compact */
+  .pill { padding: 5px 12px !important; font-size: 11px !important; }
+
+  /* badges */
+  .badge { font-size: 10px !important; padding: 2px 8px !important; }
+
+  /* topbar role badge — smaller */
+  .topbar-role { font-size: 10px !important; padding: 3px 8px !important; }
+
+  /* reports screen — hide header row labels on mobile */
+  #report-crew-table .crew-header { display: none !important; }
+
+  /* route list single col */
+  #routes-list { grid-template-columns: 1fr !important; }
+
+  /* section title */
+  .sec-title { font-size: 10px !important; letter-spacing: 1px !important; margin-bottom: 8px !important; }
+
+  /* dashboard route cards */
+  #dash-routes .card-flat { padding: 10px 12px !important; }
+
+  /* field view crew header */
+  #field-crew-avatar { width: 38px !important; height: 38px !important; font-size: 17px !important; }
+
+  /* overlay full width on mobile */
+  .overlay { max-width: 100% !important; }
+
+  /* import sheet column mapping */
+  #import-mapping > div { flex-wrap: wrap !important; gap: 6px !important; }
+  #import-mapping select { max-width: 100% !important; width: 100% !important; }
+
+  /* svc item */
+  .svc-item { padding: 8px 10px !important; }
+
+  /* photo zone */
+  .photo-zone { padding: 16px !important; }
+
+  /* timeline bars */
+  #report-timeline { height: 80px !important; }
+
+  /* crew name list on login */
+  #ls-crew-name-list { max-height: 48vh !important; }
+}
+
+/* ── SMALL PHONES (max 390px, e.g. iPhone SE) ───────────────────────────── */
+@media (max-width: 390px) {
+  .nb .ni { font-size: 15px !important; }
+  .nb .nl { font-size: 7px !important; }
+  .nb { min-width: 36px !important; padding: 3px 3px !important; }
+  .stat-v { font-size: 20px !important; }
+  #topbar svg { width: 20px !important; height: 21px !important; }
+  #topbar .topbar-role { display: none; } /* hide role badge on tiny screens */
+}
+
+
+/* ── HAMBURGER MENU ─────────────────────────────────────────────────────── */
+#hamburger-btn {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 38px;
+  height: 38px;
+  background: var(--bg4);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  cursor: pointer;
+  padding: 8px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+#hamburger-btn span {
+  display: block;
+  height: 2px;
+  background: var(--text);
+  border-radius: 2px;
+  transition: all .25s ease;
+}
+#hamburger-btn.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+#hamburger-btn.open span:nth-child(2) { opacity: 0; }
+#hamburger-btn.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+/* drawer overlay */
+#nav-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  z-index: 9999;
+  display: none;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+#nav-drawer-overlay.open { display: block; }
+
+/* side drawer */
+#nav-drawer {
+  position: fixed;
+  top: 0;
+  left: -300px;
+  width: 280px;
+  height: 100%;
+  height: 100dvh;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  transition: left .28s cubic-bezier(.4,0,.2,1);
+  padding-top: var(--safe-top);
+}
+#nav-drawer.open { left: 0; }
+
+.drawer-header {
+  flex-shrink: 0;
+  padding: 20px 18px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.drawer-items {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+}
+
+.drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 14px;
+  border-radius: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background .15s;
+  color: var(--text);
+}
+.drawer-item:active { background: var(--bg3); }
+.drawer-item.active { background: var(--bg3); }
+.drawer-item .d-icon { font-size: 20px; width: 28px; text-align: center; flex-shrink: 0; }
+.drawer-item .d-label {
+  font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text2);
+  transition: color .15s;
+}
+.drawer-item.active .d-label { color: var(--green); }
+.drawer-item .d-badge {
+  margin-left: auto;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 20px;
+  font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;
+}
+
+.drawer-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 8px 14px;
+}
+
+.drawer-footer {
+  padding: 10px 10px calc(10px + var(--safe-bottom));
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* hide old bottom nav and sync/date bars on mobile */
+@media (max-width: 767px) {
+  #nav { display: none !important; }
+  #screens { padding-bottom: calc(16px + var(--safe-bottom)) !important; }
+  #sync-bar { display: none !important; }
+  #topbar-date-bar { display: none !important; }
+}
+
+
+/* ── FULL SIZE PHOTO VIEWER ──────────────────────────────────────────────── */
+#photo-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: rgba(0,0,0,.95);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  max-width: 100%;
+  cursor: zoom-out;
+}
+#photo-viewer.open { display: flex; }
+#photo-viewer img {
+  max-width: 100%;
+  max-height: 85vh;
+  border-radius: 12px;
+  object-fit: contain;
+  box-shadow: 0 0 60px rgba(0,0,0,.8);
+}
+#photo-viewer-caption {
+  margin-top: 14px;
+  font-size: 13px;
+  color: rgba(255,255,255,.7);
+  text-align: center;
+  font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;
+}
+#photo-viewer-close {
+  position: absolute;
+  top: calc(16px + var(--safe-top));
+  right: 16px;
+  background: rgba(255,255,255,.15);
+  border: none;
+  color: #fff;
+  font-size: 22px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+
+/* ── Crew mobile bottom nav ─────────────────────────────────────────── */
+#crew-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: calc(56px + var(--safe-bottom, 0px));
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  z-index: 100;
+  padding-bottom: var(--safe-bottom, 0px);
+}
+@media (max-width: 767px) {
+  #crew-bottom-nav.visible {
+    display: flex;
+  }
+  #screens {
+    padding-bottom: calc(60px + var(--safe-bottom, 0px)) !important;
+  }
+}
+.cbn-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 4px;
+  color: var(--text4);
+  transition: color 0.15s;
+}
+.cbn-btn.active { color: var(--green); }
+.cbn-icon { font-size: 20px; line-height: 1; }
+.cbn-label { font-size: 9px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
+
+
+@media print {
+  #pdf-print-overlay #pdf-btns { display: none !important; }
+  body > *:not(#pdf-print-overlay) { display: none !important; }
+  #pdf-print-overlay { position:static !important; padding:0 !important; }
+}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+</head>
+<body>
+<div id="app">
+
+  <div id="login-screen" style="position:fixed;inset:0;z-index:9999;background:#0a0f0a;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;max-width:480px;margin:0 auto;">
+
+
+    <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:36px;">
+      <img src="data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAC+AaIDASIAAhEBAxEB/8QAHQABAAICAwEBAAAAAAAAAAAAAAcIBQYBBAkDAv/EAEoQAAEDAwMCBAIHAwkFBgcAAAEAAgMEBREGBxIhMQgTIkFRYRQVIzJScYFCYpEWGENWgpWh0/AlM3JzohckNFNjZoOSo7Gz0fH/xAAWAQEBAQAAAAAAAAAAAAAAAAAAAQL/xAAWEQEBAQAAAAAAAAAAAAAAAAAAEQH/2gAMAwEAAhEDEQA/AKyoiI2IiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiIOVx8x/h1/wBd1z7D/R/T4KyXhS2n2y3G0rX1d/dc6290NUY6yibVvhihjcSYi3hgua4Nd1JPUOGOiCtiL0CqvDTs9PTthZpiamLf6SC4zsefzPP2+CgjfHwy12krRWak0Xcqi72ykjdNVUVS1oqoGAZL2uaAJWgZy0gOAGRyPRBXT3x75xj5/BcggjIIx8fip68KGzdj3Kob1etUNrX2mm40dC2nqHRB0xHJ7+TT+y0tGOoPIZ7KLd2tI/yC3Jvek4qs3KOhqGNgmaMPlEjGPY12OnMB4ace6DV8Hvg4xnPthP8A9Z/1/wDZXe2t8NWh6fbyij1pZfrDUNXC2asqDNJG+mkcM8IuJHDgCBn3IyVUTdHTQ0ZuNf8ATHmSPjtlY6OF8uA50RAfE5x9z5bm5Pv1KDW/9fkn+v1Vl/CRstp/WulbxqjWtrNbR1Ev0O1xukfHxawDzZgWkHPI8A7ORwcFGW/O28Ohd3W6O00a+6Mq4YJKGB/rnLpXOb5OQByPIdCR2PXsSgjVB1zjr0yrt6T8L2jhtnFZ9RxPk1PKwTVN4glPmQTEfcYD6XRt7YcCHdSeuMU3NlrZNUyabtkct3rhXyUUDadh51T2SOYCBkkcuOep6DPXAygxv+unVcK621Xhf0hadONqtxIGXy7zM5Txec+OlpcgHg0NI5kduTv0A9438TXh8pNF2N+sdFvq32iEtbX0EzzK+kaTgTMkPqMecBzXZIBznAIAVxRSz4W9t7ZuTuPU0F/hmfZ7dRPqalsT3Rl7nFrI4+bSC0HL39ME8Pgsr4mtkYNr2UF6st0qq+y19SafyqpgM1LJxLm5kGObSARkgEY6koIROR36J74/1/8A35Kxvho2EtG4OhLhqjU8tfTx1Uj6W0fRpTHwDCA6c5BEnrBaA4Y9L8gkgj5+HzY3RGtrlfhedaG6G0XKajbQW130d8sUbuLZ3l2Xhj+4DegOfWerQFdkV/Lh4eNlIKVkFTYG0b5nhjJzdJo5Xv8AYBxf1J+Crn4ldiX7Y00OobFcKq4adlm8mX6SAZqN7vuBzgAJGHqOWMg4BznKCD0REBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERByrqeAjTJtu2931NLGWyXq4eXC7PR0FODGCP8A4rpx+gVKZCWxGTGQ0En459u3uT0Xpps/px+j9ptN6cEbG1NDbImzAnAM5bykJ/ORzj+qJqlXio1dW3Pfu81NHdK6misnG307oZ3RGIsaDLxc05ALjk4x2+Ssn4T59fy7a1V13GutTPbagCS2fWJH0ltMGeuV7+h8t3dvLLsDOcELD7V+G+02i8T6w3IrKa/3eWokrDSMH/cKdznl5LuXWUjIwX4aPgcArC7vbuU+5OtrVtBoapkmtN0uUNHe7rA/iKin5ZmhhcOpZ5bX8njo7GBlpJREreHixQaH2E07S1vGAi3/AFjXSOaQWulzM/l75aHcf7IVYvDpp+bdrxB3PWt1hbLa6Kufd6nPVjpHyOFNFg9wOPPHbEfzCsb4ttUjSuxd5dBP5FRcmtttNx7jzOjiB74YHnC7Phr0LFtvtBRU9eyKluNY03K6Pf6BE5zQRG4nsI4w1h9stcfdCtns2tKO5bnX7RNMxpks1vpaqeQE/wC8mdJlmO3RrY3Z/f8AkqV+K6gq7l4lb1arXEJa6ukoaemZ25SyQxsYP/mIV0dB3fb+83C9XDRU1iq6kztF2qrbEzlLLg8TJI0faHqepJ91Cdk0y3U3js1FdqhgfS6cpqepOR0851MyOIY/J0js/FgQxP8AofTlFo/R9q0zbf8Aw1upmQNeRgvIHqe795zsuPzJWFqNurTU7xx7kVgFRXU1qjt9FE5npgcHyOfL36vLZA0H2APxWO1pq+am3y0DoiirfL+mxV1fcImuwXxMhc2Jp+ReXO/OJfvxF64O3+0V7v0D+NxfD9EtzQfU6ok9LSPjxHJ+PgwoN0pLxbaizvu9NWRVFAxkjnTxnk0iMkPx8cFpH6Kunge26jpdOP3RvMPmXW7h7aDI/wBzAXet4H4nvB69+LRjuc7rqeCDQXg+raIOMJpNJ/Q2kkNcJ5YfLB/MySD8ys/ubcI9rNgLrPanui+pLKykontb1jeGthidj5OLXfxQVx8Z+7br7e6jb2zTu+pLW8/Wr43YFXUNHWL/AII+ufi//hCspQ0ktT4dIaLWUxdLJpRrLrJMevI0v2pcfjnOVUXwubPV24OpaS/XqlkOlaCYS1M8ucXCZpyImHu8cvU93bHTuek4eNzcmHT2hjoW3PLrrfIuVW1jseTRg+oH5ylvlgfh8w+3Uuut4AbCaPbe76nnZie8VrYmvPcxU7OP/wCR0y3jxYaNuuudq2Wax07prh9b0j4QB0bl/lue790NeSfkCu5pHyNqfDVSy1LmcrJp81U3JuOc5jMhbg+7nux8yVldgNWVGt9odPagr5RNXzUgirndATPGSyQkDoCS3lgfiRGI3WuFv2i8PlZDZR9HbbLay22sE+t0rgIozkd3ZJcT8QSVX/wDaZdW68vWqpMmK1ULaRjnA5fNO4uJB+TIySP/AFGrJ+PrVrai9WDQ1M/LKSJ1zrQCMF78xwtPzAEriD+Jpypb8HWmXac2Ltk08Lo6m8Sy3SZrh1xIeMec/wDpMjP5kotiC/HfqP663Ks+kII/pLLVTcnwhhcX1NRjDWtHVzuAZgDJy7opc1ba7nZvBVW2zXs8k1yp7BxqjJJ5j2ScwYWOd7ubmNpPxaep7rebRtponTWrr1uLdBHWXurmfVTXK4vbwoo+mGxA+mJrWt+997vl2Oiqn4ot7v8AtErG6b006RmlqObzHSvbxdcZm/ckwerYm92g9XH1OHYIINRERRERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERBKPhp1Lt/pfcB9w3AtLamDyWmgrX0zqltFM12S4xNyTkdngEtI7AZKszrTxT7Z2emIsElfqWscMtZSU74YQfYvllDenzYHn5Kivtj55XKCS92t7ddbjedQ3GsbbLHI45tdC4tY9vsJX/el9jg4bnrxHZY3YrWtt2+3JotV3S01FzgpKedkUdO9oe2RzOAc0u9JAaXjGQfVnqtFT3J9zjJ/JBMVdu3FuDvXYNR7julotKWyq86C20rHVEcDW9WcgMOkc54YXODezcYA6LffFFv5p3V2if5HaFrKurgrpGyXOsfSyQN8hpDhEwPDXkudwJOMcQR7nFYT8z8lyG9/nn/FBY3wkbraH250nqSDVtxlo6uqr4p4I4qSWYzR+SG5bwaR0LXZyQtp25392ztuttwtS3I3GknvNwhlowKB8kk9PFTsiaMtBDDya92Hlow4fNRdsx4fNTbj6XOo23igstukldHS+fBJNJMWZa52GuaAM5AOTnHy67v/ADPL/wD17tH92S/5qJEQbobnXnVe79VuDaJ66yzxOjjtgbL9rTQsZxAOOnqLnvI6j7QjJWJv2tr/AK01Laq/Xl+uN1p6Wqic5jiOMUfmNMhjjGGtJa3qR1P+CnX+Z5f/AOvdo/uyX/NT+Z5qD+vlo/uuX/NQjo+KDfqx670nNorSlPdGUzrgx9XWzxtjiqYYyHMDG5L+r+LvW1uOA6HOFnNvvFBpyv0rFpndTTtRWyMhjimqoYW1UFYG4w+WJx5Bx4gnAeCevTsuifB5qE99d2j+65P81P5neocY/l3acfD6sl6f/VQbHrnxZaZoLK6g2+07WVdSGiOGWup2wUkLcEA+W13mPxj7mGZ/EFVS6X66XnVcmpb9PJdrhNVtqqkzOOJuLmuDPT91uGhoDRgDGArEDwdah/r5av7tl/zV8bj4PtUNopZKTWNmqaljSY4ZKKWJsh78S/m7j2HXicd0Rp29niF1BuZp06cis1PYbVLJHJVMjqzUSzljuTWl3FoDcgHHHJIHVfvYXf6s2r0rXadl0z9dU8lWaqlcK36OY3vb62O9DyRlod07ZKhmtp56WqmpaqF0VRTSvhmjcMFj2OLXNx8iCF80VNuhdV7f7gbyXPV29s4pm1PlGhpWMk+gej0NbKW5dxa0AnkQwlzy7ocKxuv/ABHbYaSoPJs1zg1LXBg8mks72vjHTpzmH2bG9AD1Lh7NKoN759/ihJPck/mUEgbvbv603Pl8u+VjKO0MeHxWqjJbBn2dJnrIfm7Lc5wAo+REBERFEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQF3LLaq6+XugsdtaZK641LKamH77zgH8hnP6Lpqw3ga0V9d7i1+r6yHNHp+Hy6fkOhq5gRntg8Wcsj2LmkIm6sXqjVukdjNGaRslwL46B08NqhMeOUbGs+0qHDuWNxl2Mn1qK/FJrLd3bzUNPedOatlGlLthtPmippG0s+MmLkYyS1zRyYSfxDrgKKfGNrI6s3gqLXTvL7bp6M0MYGcOmJzM7+OGdPwBSF4bdS2zdTbK5bK63mc+qgpD9V1DzmQwNxwLCevmQOxj4tx7AoiLv5xO8/wDXQ/3ZSn/Dy+qsRsFrPXDNtbvuluvqiU2JsJdQU7qSCPMLXdZvQwOcXu9DBnqOuPU1V7202Pv163qq9BX+nMVJZJhJeqiPPB9OSTHwJ7mYEY9wC8nq1bF4wdzKa/XmHbrTUsbNO6fe1lQIOjJqpg4iMY/o4h0x7u5fhCNJx2o3VuW82gdQ0FkuUel9Z0RL4SyJsrWsc4uhfxkDg5uB5cnfDgSMZaq4XTfzfS1XWstV01W+krqOd8FRA+20mY5GnDm/7r49vl7nutB221fdtBa3oNV2Z7nT0ryJIScNqYn/AH4nDtxd2HwcGu9lPfim0hadcaQt++Oi/tqWemYLsMAPMWQ1szmjtJE70PHsAD+yjLUNGbz796w1ZbdM2TVjpK+vlEbP9mUmI293Sv8As/uMaCT8R074VsJ9xLHp3cLTO19fdJLnfK+ic6ark4tIe1uWGQNAaHS8XkAduI6epqhTZTT9t2L2ZuG6+rqU/X90p2toaN/pkYxwzDT4/Ze93rf+FvTpxKrJcNT6grNaSa0nrJJL+6ubcPpHwmY4Oa0fBowGtHTACCVvGho3+TG7b71TQllv1JF9La7HpFSzDZhn4kcH4/eUIq8e/ttpd3vDRT6vssYkq6amZeqMN6OwGYnj+OQzzOnu5jVRuM8mghFcoiIoiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICvp4KZLA7YqigtMsRrm1U77u1rvtG1DnnBd7geUIg0/hDfcFULW47RbhXrbbWUOoLUTPC7EddRufxbVw56sJ9nDu046H4gnI1aHWujfCtpzUVVbdVinorvz86oZUXWv5ky5fyJEmDnJK6Vhk8ItgvtFfLJeaKguVDI2anqILlX8mEZGMciC0gkFpBBBI91tm52jNLeITa+i1HpesgbdGRF9qrXtLXNP7dLUAHIBIwR3a4Bwz1Bo1erbc7Nc6q13iimorhRyuiqqaXo+OQAZGB0Pxa4HBBBBwjL0qfq/RFZoip1pHfqMWCaHy5rpBKWhrORYMyNw5pDnEexaT7KBXaf8HD3Evu9qcSTknUNcTnPX+l+awfgyr6XVGjdcbV3UtdBVwuqoGObyBZMzypT39nCN2PiSVWi4UNZa7jVWq5NeytoZn01Sx56tkjJa4EfmM/r80Fsv5PeDXr/ALWtXT/3BXf5qlXZSTZ6O13DS+2lzpLhQnM9XRCvmq2ND/QciVzsB3uPf3C88VafYOWTbbwuas3Jma+K4XXn9BcQCfR9hBgHv9o5zsfmgkTdbVXhy1fcoqDXWp7fXT2qWSJkIr6lkcUnQPP2JDS7pjkc46j3K0s23wYkE/T7b169LrcP8xVGZzaxrPw/w746fxVnfCLsk67y0e4usKUi3NIks1BKOtS8HIqJAf2ARljT94jkenHkFnNC2HSejdFx0Om4W0Gnwx9W1s88rmRtfl73F0ziWtOS7B6DJK82tUfUzdT3ZumnSSWUV0/1cXgtP0fzHcOh6448cZ6qe/FtvZ/KStqdBaTrM2KncWXSrid0rpAesTSO8TT3P7ZGPujJrgiiIiKIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgk3w+7tXDazVHmymaq07XPDbnRt6kDoBPGO3No9unIDB7NIsl4i9rLVu3pCn15oWanqr3HSiWnlgcPLutPgkRuP4x14k9jlpxnLaQKbfC5vQ7bm8t0/f5nnSNdJ6j1P1dKenmtH/AJZ6cwO33x15ZJGpeHzUrtFbz2G41DXU0Jqvq6vZM0tcyOU+W4OBwQWv4Eg9iCtp8Zmlv5Ob2VNfBHxo7/TtuDOLSGiUYjmGfclzQ8/8YUreLbZWLUVDNuPoiISVxiE1zpqUhwrIsf8AiYsd5WjBOPvtAx1Hqxm+rmbm+E/SW5cYElxtPlvrXe+HYp6kY+HmtY/8mZRFWqOjqrlXU1toYfOq6yeOmp4wMl8kjgxoHzy5WZ8ZVZT6V0Donai1yZipoBU1B4BvJkDRGxx+bnue/wDMLR/BvpQal3ro6+aLnQ2CnfcJeQy0y54Qj8+Ti8f8lbfU6Kr/ABAeIzUlzlkkh0bZqttunq2jBlZT+nyIj+J7zI4u7Na8HuWhFa94WdlJdf3VuptS07maVoZcRxOGDcZW/wBH/wApvZx/aPpH7WJB8XG9n1ZDNttoqrbFUBnlXmsp3YFM3oBTRkdnkdHEfcHTuTx2LxK7tW7a3TVPt9oUQUl7dSNjYKcDha6bjhrsD9sgekf2j7ZpO5z3uLnvke45JdI7k5xPVxJ9yT1J+KDhERFEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERBZXwi71jT9TBoHVtZxs8zgLXXSu9NE8nHkvPYROP3D2aTjsRizUW3lig09qvT1Ix0do1I6Z81GMeXBJNEGS+V+FrsB/H2cXEd8DzQIBGCARxxg/lj+GD2Vu/CFvg64tptu9X1ua1rRHZq6Z+TUtA6QPcf6QD7pP3gMdT3JG0eDnQFdpbby+VF0dNSXe63CWndK1uJGR0/KFjgHgjq/wA2QZBB5juuzu7rjTvh+2xt+k9JU0Zu0lOWW2ldhxYM+uqm+PqJOT995x8cbtvdubZ9r9HvvNxxU19QTDbaEP4vqpcf9LG93O7AY9yAfPHV2obvqzUVZqC/VTqq41r/ADJpSMAfha0fssaMBrfYD45KEdGuqqqvrqmur6qSsrKqV0tTNI7k6SQnqSffqvl88kp7D29gnv8Ar3RXCIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiDsW6hrrnXwW+2UNVXVk7i2KnpoXSyyEAk8WNBJ6AnoOwJX4qqeopaqakq6eamqYHlksE8ZjkjcO4c09Wn5FWg8A2j46i5X7XdZEHGjDbZQkjPF7miSdw+fExNB+BcPdYjx53S01G4Nks1HSQfWNDRGauqmtAkcJHYiic73ADXOA9uXzQVxX7himnLxBBNMY4zJIIoy/gwd3uwPS0e7j0C/DiGtc53YAn5/ovRDwybet2+2xoqerpmx3y4tbWXV/d3mEemIn4RtIbjtnke7iSTdedzXBzQ5pyCMjquA9hmEPNokPZmfV/BTN4y9P0Wmt7KyeipoqenutBFcSyJuGmTL2SHA93FmT8yVZ3Y/a/TbNg7Fp7Uun7bchXUorq1lRTtcXSzDly6jLXhrmtyMEY6FFrz+XDXNcXBrg4t6EA9j8D8FKN02skn8SdXtXamzR0v1rhr+Rc6ChLGTklx6ktieGgnqTj3U3eM+zbcaa0Vpaibp2GnuDapsNC234gkZQx4NQ3kBgggtaOWcOkDvZyCnxkYXNZ5jOR7Nzg/w7rnzY/MMYezm3uM9R/FelOyEWgajQduve39iprTa6+HMfGkEUzuJLSJT95zgQepJz3yVrr9VbN7vajuegq+Cju1yoXyxeXV0bo3P8t3GR1PMQCeJ78CDjJGRkolefWR16jocLsW6krq6vhobdS1dVXSnlBBSxPkmcQOWWtYC7IAzkDpjKkG67Oang3uqNrbW01NU2TnT1cv+7FEeraiU46YacOA6l4IHsriaH0Xt7sTome4TVNNTPbGPrO91vSapcTkj3IBIHGJvwHc9UVQXUN6vl9uBn1BeLnc62Fgp+dfO+WWJrevD7T1NwepHuepySSsd74W/eIDXNm3D3FqNR2GyfVNL5Ih5yYEta5pP20rW9Gux6QMl2G9TnoJF8OXh6l1nFBqvW8c9Fp15D6OgYSya4N78nkdWRH2x6n5JHEYJCveR1wQemQuPh/D8/yVrfFPFsPZ9IVul7NbbNQ6xow11Ky0UTWvheC301EjABgt7h55dcjqq2aM03cNYavtml7Yxzaq51TYA7ifsmHrI92BkBrA4n8kGJ4P+jGp8qTyA/yvP4Hy+fsOXbPyzlfNeo9l0pYLTo6n0jTWyndZYKX6KKWSNrmPjxghwxg8upPTqSV5v1ukJDuzU6AoHua46gfZqd4By0fSTC13v2Z6v0RKwU1vuENqgu01vrIrfO4tirHwPbTvIOCBKRwJB6YB/Pr0XVBBZya4H8sFel+vr7ZdrNqKu6R21rrZY6NkNNQxvDA4DjHHECc4ByBnr+RUHt0Xtf4g9DXK96LsEelNWUT+EpZT+VH5/HkI5eADJWO/EPW3oen3SVUBc/w+P3gpZ8Ne1jNebq1Vk1TSTst1iY+W7U3MtL5GvMbYC4YIBcHkkYyIyOmQVcmu0Ds5ZWM+sNE6DoGubhr6m20kecfNzclE3Xm4Ovbr+S/cLHTTwwQsfLLM8RxMiYXukcTgBoaCXE/AZPyVoPEHqDZ282ZuhdsNHafvuqrnUMhpKmz0EUbaWTPcTMA5O6dgS0Aku6DrLGx+0+mdmdK1Oob7V0D746n53O6zENipIx1MURd92MHueheep6BrWiqF11LU0FZNRV1NUUlVAcTU88To5Y/+JjgHD9Qvgpc8UO5Vg3K1nT1dgtIp6W2sdALlMxzZq1uc5Lf2Y2+rjn1HPXHZRGOnT4IoiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgLhzg1jnu+60Fx/Id1yszoixu1Nrax6bb0FzuENM4/Bjnev/pDkF+fDZYIdFbDWKO4eXSvko3XOue84DHS5lcXH91paPyaqGbg6mm1nrm9aqn5tN0rH1Ecb+8cXaJn6Rhn65Xo5uHpZ+qdvrnpKiuUlmjr6cUpqIIw90cOQHtDT09TAWf2lW3cTwx6P0ft/eNSVOtL5/syilqMyRU4bI4Ny1nRmRydho6+6Mox8J+hhrbdmlmqoPMtVj43CrBGWve0/Yxn83jkR8GFXeqLxf8A/tRpbBT2WqNhFmlqqq5OYBF9JM0bYomuz1cGNlJGP22H2K0DwwaPg202XZdL6xtJX3CF13uspb1hZwy1jvf0RgZH4i5fTZrfm07pa6uGn7Fp64U1BSUBrGV9TKwGT1sYG+U3PHPIkEu7N7dUIiTxZaek1b4n9CaZZ5nG5W+nhlLPvNi+lSulcPyY15Vuw6NjmRBzWuI9DcgEgfAKIrhYmXHxg2y7yxFzbNox0jX+zZZaqSNv8WGb+C0zfvcqKw+Jjbq1sqWfRbVNzuWHYEZrP+7t5H91jjIR8APiglWx7e09v3q1JuNK+nkmudBS0lPG0euHgCJHHI7uDYgMezTlU08VOqanW2+V0ht7jLDbHMs1ux2L2uIeenQkzPdg/haFe7Xl6j03ou9X6R4Y230E1Vk9ssYSB/HCon4UNG3PWW8Npuj6OWS22ep+sbjU8fsmTYL2R57Oc6Qj0/h69hglxbvVdZTbOeHWqlpXsjOn7M2npXEcg6pLRHGT8jK4Z/MqCPBltHfTqag3Kv0E1FQUkDzao5QRLVPkjdGZS09WsDXv79XF2R0AJtfqLT9m1DSwUt7t8FfBT1LKqOKdvKPzWZ4uLezsZzg5GcH2Ve/ER4kqCyQVemNvayOuu5Do6m6R4dBRHsQw9pJfh+w3uSSC1EZe8by6A0t4ktQ0t6c6IMs1HbpbnFA6ZsE8Uk8r4ncAXAETxgkDAcwh2MDGw7g6S248QFha63avFbPbgTT1NquImZSyPaQDJBniT3+8A4gEAhVm0H4cNyNa2um1BO+12ujrnCdklyqZTUSMcSTNwY0l3LORye0nOT3yrUbZaF0hsZt/cKuoubGt4CovF4qwGGXgMNHEfda3kQyMZOXHu4nIVf2P2Qr7zvXc9N6rp2Pt2lpWyXZrc8KonPkRt9y2TjzP7oc09SCpo8WW8k+hLfHorSUzae/VkHKaeMAfQKY5A4ewkdg8fwgE/Bb14eNQ0OtbRqTXFJAITd77K3jxw9sUDI4Yg/8AeLGNcepA59PionpfDLftXa8u+q9y9SQwtuNc+oNHaHF8j2cvQx0r2gMDWBrRxaTgDqCi1VGy226326MttppKu6XGVrpBBBG6SR/Ql0jh3HuS4kDr1yrT+BDQPGK57jXCE8peVttXIfsNI8+UZ+LgIwR24P8AYredV1m3+21mk2v25pLbDq6/N+gUtHTZknY+VvH6RUydSGsaXPw85djoO5G53696U2P2mt4q/OFqtcUNvpYoWNM1S/HEBoJAL3Yc9xJ7BxRN1ndDXe+Xet1G67Wee2UlJdn0ts86IsdU07I4/tsE5Ic8vwemQB0VWdodPfXXjb1LUPj5wWW6XK4SdOgeXmOPP6yud/ZCsfsXuM3dDRk2pY7NJaYm10tIyKSoEznhnH1khoAyTjHXt3WjeGuwNj3L3b1a6M5rNUT2+FxP7ML3Of8A9T/8EMb9vDoGPcjTdLp6uu09utrK6KqrPo8YdLOyPJEbXE4Z6uJ5Frvu9hnI6GoL7t5sZt/FSiKmttDA1wobbAeVRVye4YHHk9xJ9T3HpnLiAoj8V+9GstC6/ptNaQr6GliFqZPUySUrZpPNlfI1uC7o0tawEA9Dz65VTdQXq8X64VF4vdxq7pcpvvz1UvmPeR91oz0DQezQMDPQILveD2Ka8WbVu5FfSRU9dqy+TTcYiS1sMXoa0E98PMnX3W7692i281vfW37VunzdaqOJsLHy1szWRMaScBgeGjuSenVd3afT8mkNorBYaWEvqqC1Mb5bsDlMWc3D9Xkqt102H3a1bTVWot1Nxbbao2xGaVlVVSTwwdMkFrXRwxMHyLh07lBhtD6x2u2w8TupaqjpeOlPJFBQ1UAfVCjeGx+a9mS57mF4kblucNxjIKsLqak2t3904LPS6uZco6ZwqAy13MslhdkYkfDkg47DzGEAk4wSqraL8O2tdXU01x03W2U6fE7mUNyrHSUwrmNJb50UTWPcGEg45cc+2R1VoNktpdNbL2G5Xq5XaCpuU0Obhdaloghghbl3lsyTwjBOSSSXEAnsACqU7saHuW3muq7TFzlFR5JEtNUtbxbUQP6sfx9j3BGTggrVFJfiR3Epdy9zHXi2wOjtVBTChoXvbxfMwOLzI4e2XOOB3AxnqSBGiGCIiKIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgLvWC63CxX2hvlqqBT19BUNqaaUsDgx7exIPQjv0XRRBPzfFluYaBsDbdpgVH7VR9Dl5Y/5fm4z/a/RR7rDd3cHV9TA7Ut+fcaKGpjn+rHRNjopSxwcGSRM4+ZGSOoeXFaGiCbN1vEdqvXujZNMTWa3WmmqsCtkpZ5JHTxjr5fUDg0n72Mkjp8VqOx+5ldtZqG43ehtVPc5K2i+imOeZ0TGkSNcHktaeWMHp0+93WgogkfUG9u4l11rVasp7ybJXVNE2hcy2MDI2wNcXNZiTnkhznHn0d1OMA4Ue1889fUzVddVVNTU1LzJNPNKXyyOd3e556l3zJXyRBu+sd2dx9W2X6kv+ra6qthjbHJTNayJsrR/5hY0OfkgfeJ/xUobQeJZmidDw6aqtCUs30NmKeS2zCnbM73fM12fUe5cC4uPUgKvCIJP3U3z19uG2airrg212aQFpttByZHI09CJXk8penscNP4VGIDQAA1oHw+K4REiXdB+Ijc3SFnhtFPXW+7UVNGIqdlzpjI+JgGA0SMc1xGAO/I9lq26G6Gtdxp43aou/nUsT/MgoaaLyqaN2COQjycuAJw55cevTHZaWiEbXt9uLrTQEkr9J6gqrdHO4PmpuDJoZHAcQ5zHgjOAAXDBOB16BbjqbxF7s321vtkl+gtkMjeMktrpPo8zx/zC5zmfmzifmojRCNq2q1vX7e65ptWUFBRXCrhjliLax7+JEg9T+QyeXTv1zkrPb3bxai3UrKA3Olp7bb6AOdDQ00jntMjscnucQOTiPSOnpGcfeKjdEImDabf3UO2+3z9KWWx2uqd9LlqY6urleeHmYPHy2jqQQe7lkds/EnqfRtruFDNYLVd3Vtyqbi+d8z4HCWd5fJkNa4OHMkjsQCB7KDkQjNa31Pd9Z6tuOpb5Ix9fXSc3+W3DGNADWsZ7hrWhoGepxlYmGR0M0M7A0vhlZK0OGWktcHAEfDIXzRCLPTeMO+ml40+hLbHUFg9clykcwOx1PEMBIz7ZHTplQluVubrXcSoa/VF4dPTMfzioIR5dJGQehEWcOPcZfzPU4IWnIhEn7X78bhaAtENmtlwpLhaoRxho7jT+aIBnOGOa5rgOvYlw+S6G6+72t9ymsptR18UdtjcHMttFGYqfkCMOcMlz3dB1ccDrgDJUfohBERFEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREH//Z" alt="Diamond Landscapes" style="width:280px;height:auto;margin-bottom:6px;"/>
+    </div>
+
+
+    <div id="ls-who" style="width:100%;display:flex;flex-direction:column;gap:14px;">
+      <button onclick="ls_showManager()" style="width:100%;padding:18px;background:linear-gradient(135deg,#16a34a,#22c55e);border:none;border-radius:14px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;font-weight:800;color:white;cursor:pointer;letter-spacing:1px;">
+        👔  Manager Login
+      </button>
+      <button onclick="ls_showCrew()" style="width:100%;padding:18px;background:linear-gradient(135deg,#1d4ed8,#3b82f6);border:none;border-radius:14px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;font-weight:800;color:white;cursor:pointer;letter-spacing:1px;">
+        👷  Crew Login
+      </button>
+    </div>
+
+
+    <div id="ls-manager" style="width:100%;display:none;flex-direction:column;align-items:center;gap:12px;">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;color:#6b8f6b;letter-spacing:2px;text-transform:uppercase;">Manager PIN</div>
+      <div style="display:flex;gap:16px;margin:4px 0;" id="ls-pin-dots">
+        <div class="pin-dot" id="lpd1"></div>
+        <div class="pin-dot" id="lpd2"></div>
+        <div class="pin-dot" id="lpd3"></div>
+        <div class="pin-dot" id="lpd4"></div>
+      </div>
+      <div id="ls-pin-error" style="font-size:13px;color:#f87171;min-height:18px;font-weight:700;"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;width:100%;max-width:300px;margin:0 auto;">
+        <button onclick="ls_pinKey('1')" class="ls-key">1</button>
+        <button onclick="ls_pinKey('2')" class="ls-key">2</button>
+        <button onclick="ls_pinKey('3')" class="ls-key">3</button>
+        <button onclick="ls_pinKey('4')" class="ls-key">4</button>
+        <button onclick="ls_pinKey('5')" class="ls-key">5</button>
+        <button onclick="ls_pinKey('6')" class="ls-key">6</button>
+        <button onclick="ls_pinKey('7')" class="ls-key">7</button>
+        <button onclick="ls_pinKey('8')" class="ls-key">8</button>
+        <button onclick="ls_pinKey('9')" class="ls-key">9</button>
+        <div></div>
+        <button onclick="ls_pinKey('0')" class="ls-key">0</button>
+        <button onclick="ls_pinKey('⌫')" class="ls-key" style="font-size:20px;">⌫</button>
+      </div>
+      <button onclick="ls_showWho()" style="background:none;border:none;color:#6b8f6b;font-size:13px;cursor:pointer;margin-top:4px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">← Back</button>
+    </div>
+
+
+    <div id="ls-crew" style="width:100%;display:none;flex-direction:column;gap:12px;">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;color:#6b8f6b;letter-spacing:2px;text-transform:uppercase;text-align:center;">Crew PIN</div>
+      <div style="display:flex;gap:16px;justify-content:center;margin:4px 0;" id="ls-crew-dots">
+        <div class="pin-dot" id="lcd1"></div>
+        <div class="pin-dot" id="lcd2"></div>
+        <div class="pin-dot" id="lcd3"></div>
+        <div class="pin-dot" id="lcd4"></div>
+      </div>
+      <div id="ls-crew-error" style="font-size:13px;color:#f87171;min-height:18px;font-weight:700;text-align:center;"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;width:100%;max-width:300px;margin:0 auto;">
+        <button onclick="ls_crewPinKey('1')" class="ls-key">1</button>
+        <button onclick="ls_crewPinKey('2')" class="ls-key">2</button>
+        <button onclick="ls_crewPinKey('3')" class="ls-key">3</button>
+        <button onclick="ls_crewPinKey('4')" class="ls-key">4</button>
+        <button onclick="ls_crewPinKey('5')" class="ls-key">5</button>
+        <button onclick="ls_crewPinKey('6')" class="ls-key">6</button>
+        <button onclick="ls_crewPinKey('7')" class="ls-key">7</button>
+        <button onclick="ls_crewPinKey('8')" class="ls-key">8</button>
+        <button onclick="ls_crewPinKey('9')" class="ls-key">9</button>
+        <div></div>
+        <button onclick="ls_crewPinKey('0')" class="ls-key">0</button>
+        <button onclick="ls_crewPinKey('⌫')" class="ls-key" style="font-size:20px;">⌫</button>
+      </div>
+      <button onclick="ls_showWho()" style="background:none;border:none;color:#6b8f6b;font-size:13px;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">← Back</button>
+    </div>
+
+
+    <div id="ls-crew-names" style="width:100%;display:none;flex-direction:column;gap:10px;">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;color:#6b8f6b;letter-spacing:2px;text-transform:uppercase;text-align:center;margin-bottom:4px;">Select Your Name</div>
+      <div id="ls-crew-name-list" style="max-height:55vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;"></div>
+      <button onclick="ls_showWho()" style="background:none;border:none;color:#6b8f6b;font-size:13px;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;margin-top:4px;">← Back</button>
+    </div>
+
+  </div>
+
+
+  <div id="toast">✓ Saved</div>
+
+
+  <div id="topbar" style="padding:calc(10px + var(--safe-top)) 14px 10px;background:#111;border-bottom:1px solid #1e1e1e;">
+    <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
+      <div onclick="if(state.role==='manager')switchTab('dashboard')" style="cursor:pointer;display:flex;align-items:center;"><img src="data:image/png;base64,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znHn0d1OMA4Ue1889fUzVddVVNTU1LzJNPNKXyyOd3e556l3zJXyRBu+sd2dx9W2X6kv+ra6qthjbHJTNayJsrR/5hY0OfkgfeJ/xUobQeJZmidDw6aqtCUs30NmKeS2zCnbM73fM12fUe5cC4uPUgKvCIJP3U3z19uG2airrg212aQFpttByZHI09CJXk8penscNP4VGIDQAA1oHw+K4REiXdB+Ijc3SFnhtFPXW+7UVNGIqdlzpjI+JgGA0SMc1xGAO/I9lq26G6Gtdxp43aou/nUsT/MgoaaLyqaN2COQjycuAJw55cevTHZaWiEbXt9uLrTQEkr9J6gqrdHO4PmpuDJoZHAcQ5zHgjOAAXDBOB16BbjqbxF7s321vtkl+gtkMjeMktrpPo8zx/zC5zmfmzifmojRCNq2q1vX7e65ptWUFBRXCrhjliLax7+JEg9T+QyeXTv1zkrPb3bxai3UrKA3Olp7bb6AOdDQ00jntMjscnucQOTiPSOnpGcfeKjdEImDabf3UO2+3z9KWWx2uqd9LlqY6urleeHmYPHy2jqQQe7lkds/EnqfRtruFDNYLVd3Vtyqbi+d8z4HCWd5fJkNa4OHMkjsQCB7KDkQjNa31Pd9Z6tuOpb5Ix9fXSc3+W3DGNADWsZ7hrWhoGepxlYmGR0M0M7A0vhlZK0OGWktcHAEfDIXzRCLPTeMO+ml40+hLbHUFg9clykcwOx1PEMBIz7ZHTplQluVubrXcSoa/VF4dPTMfzioIR5dJGQehEWcOPcZfzPU4IWnIhEn7X78bhaAtENmtlwpLhaoRxho7jT+aIBnOGOa5rgOvYlw+S6G6+72t9ymsptR18UdtjcHMttFGYqfkCMOcMlz3dB1ccDrgDJUfohBERFEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREH//Z" alt="Diamond Landscapes" style="height:36px;width:auto;flex-shrink:0;"/></div>
+      <div id="topbar-date" style="font-size:12px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <div class="topbar-role" id="role-badge" style="background:#1a2e1a;border-color:#2e4d2e;">MANAGER</div>
+      <button id="hamburger-btn" onclick="toggleDrawer()" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </div>
+
+
+<div id="sync-bar" style="display:none;"></div>
+
+  <div id="screens">
+
+
+    <div id="screen-dashboard" class="screen active">
+      <div class="stat-row" style="grid-template-columns:1fr 1fr;">
+        <div class="stat-c" onclick="switchTab('routes')" style="cursor:pointer;" title="View Routes">
+          <div class="stat-v" style="color:var(--green);" id="dash-jobs-today">0</div>
+          <div class="stat-l">Jobs Today</div>
+          <div style="font-size:9px;color:var(--text4);margin-top:4px;letter-spacing:.3px;">tap to view →</div>
+        </div>
+        <div class="stat-c" onclick="switchTab('routes')" style="cursor:pointer;" title="View Routes">
+          <div class="stat-v" style="color:var(--lime);" id="dash-completed">0</div>
+          <div class="stat-l">Completed</div>
+          <div style="font-size:9px;color:var(--text4);margin-top:4px;letter-spacing:.3px;">tap to view →</div>
+        </div>
+        <div class="stat-c" onclick="openDashFlags()" style="cursor:pointer;" title="View Flags">
+          <div class="stat-v" style="color:var(--yellow);" id="dash-flags">0</div>
+          <div class="stat-l">Flags / Issues</div>
+          <div style="font-size:9px;color:var(--text4);margin-top:4px;letter-spacing:.3px;">tap to view →</div>
+        </div>
+        <div class="stat-c" onclick="switchTab('crew')" style="cursor:pointer;" title="View Crew">
+          <div class="stat-v" style="color:var(--teal);" id="dash-crew-active">0</div>
+          <div class="stat-l">Crew Active</div>
+          <div style="font-size:9px;color:var(--text4);margin-top:4px;letter-spacing:.3px;">tap to view →</div>
+        </div>
+      </div>
+
+
+      <div class="card">
+        <div class="sec-title">Today's Routes</div>
+        <div id="dash-routes"></div>
+        <button class="btn btn-green" onclick="switchTab('routes')" style="margin-top:4px;">View All Routes →</button>
+      </div>
+
+
+      <div class="card" onclick="openDashFlags()" style="cursor:pointer;">
+        <div class="sec-title">Recent Flags & Issues</div>
+        <div id="dash-flags-list"></div>
+        <div id="dash-no-flags" style="font-size:13px;color:var(--text4);text-align:center;padding:10px 0;">No open issues 🎉</div>
+      </div>
+
+
+      <div class="card">
+        <div class="sec-title">Equipment Due for Service</div>
+        <div id="dash-eq-alerts"></div>
+      </div>
+
+
+      <div class="card">
+        <div class="sec-title">Inventory Alerts</div>
+        <div id="dash-inv-alerts"></div>
+      </div>
+    </div>
+
+
+    <div id="screen-routes" class="screen">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">Routes</div>
+        <button class="btn-sm btn-green" onclick="openAddRoute()">+ New Route</button>
+      </div>
+      <div class="pills" id="route-day-pills"></div>
+      <div id="routes-list"></div>
+    </div>
+
+
+    <div id="screen-properties" class="screen">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">Properties</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;" id="prop-header-btns">
+
+        </div>
+      </div>
+
+      <div id="prop-bulk-bar" style="display:none;background:var(--bg3);border-radius:12px;padding:10px 14px;margin-bottom:10px;border:1px solid var(--border2);">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+          <div style="font-size:13px;font-weight:700;color:var(--text2);">
+            <span id="prop-select-count">0</span> selected
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn-sm" onclick="selectAllProps()" style="background:var(--bg4);color:var(--text3);border:1px solid var(--border2);">Select All</button>
+            <button class="btn-sm" onclick="bulkAssignToRoute()" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">📅 Add to Route</button>
+            <button class="btn-sm" onclick="bulkDeleteProps()" style="background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);">🗑 Delete</button>
+          </div>
+        </div>
+      </div>
+      <input class="inp" id="prop-search" placeholder="🔍  Search properties..." oninput="renderProperties()" style="margin-bottom:12px;"/>
+      <div id="properties-list"></div>
+    </div>
+
+
+    <div id="screen-crew" class="screen">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">Crew</div>
+        <button class="btn-sm btn-green" onclick="openAddCrew()">+ Add Member</button>
+      </div>
+      <div id="crew-list"></div>
+    </div>
+
+
+    <div id="screen-inventory" class="screen">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">Inventory</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-sm" onclick="openImport('inventory')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">⬆ Import</button>
+          <button class="btn-sm btn-green" onclick="openAddInventory()">+ Add Item</button>
+        </div>
+      </div>
+      <div id="inventory-list"></div>
+    </div>
+
+
+
+    <div id="screen-equipment" class="screen">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">Equipment</div>
+        <button class="btn-sm btn-green" onclick="openAddEquipment()">+ Add</button>
+      </div>
+
+      <div id="eq-alert-banner" style="display:none;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);border-radius:12px;padding:12px 14px;margin-bottom:12px;">
+        <div style="font-size:12px;font-weight:800;color:var(--red);margin-bottom:4px;">⚠️ SERVICE DUE</div>
+        <div id="eq-alert-list" style="font-size:13px;color:var(--text2);"></div>
+      </div>
+      <div class="pills" id="eq-cat-pills"></div>
+      <div id="equipment-list"></div>
+    </div>
+
+
+
+    <div id="screen-reports" class="screen">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">Reports</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-sm" onclick="exportDailyReport()" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">⬇ Export Excel</button>
+          <button class="btn-sm" onclick="renderReports()" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">↺ Refresh</button>
+        </div>
+      </div>
+
+
+      <div class="pills" id="report-range-pills"></div>
+
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;" id="report-stats"></div>
+
+
+      <div id="report-alert-banner" style="display:none;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);border-radius:14px;padding:14px 16px;margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:800;color:var(--red);letter-spacing:1px;margin-bottom:8px;">🔔 NEEDS YOUR ATTENTION</div>
+        <div id="report-alerts-list"></div>
+      </div>
+
+
+      <div class="card" style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div class="sec-title" style="margin-bottom:0;">Crew Performance</div>
+          <div id="report-date-label" style="font-size:11px;color:var(--text3);"></div>
+        </div>
+        <div id="report-crew-table"></div>
+      </div>
+
+
+      <div class="card" style="margin-bottom:14px;">
+        <div class="sec-title">Outstanding Tasks by Crew Member</div>
+        <div id="report-outstanding"></div>
+      </div>
+
+
+      <div class="card" style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div class="sec-title" style="margin-bottom:0;">Open Flags & Issues</div>
+          <span id="report-open-flag-count" class="badge badge-red"></span>
+        </div>
+        <div style="font-size:11px;color:var(--text4);margin-bottom:8px;">Tap any flag to view details, assign to a route, or resolve</div>
+      <div id="report-open-flags"></div>
+      </div>
+
+
+      <div class="card" style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div class="sec-title" style="margin-bottom:0;">Recently Resolved</div>
+          <span id="report-resolved-count" class="badge badge-green"></span>
+        </div>
+        <div id="report-resolved-flags"></div>
+      </div>
+
+
+      <div class="card" style="margin-bottom:14px;">
+        <div class="sec-title">7-Day Completion Timeline</div>
+        <div id="report-timeline" style="display:flex;gap:6px;align-items:flex-end;height:100px;margin-top:8px;"></div>
+        <div id="report-timeline-labels" style="display:flex;gap:6px;margin-top:6px;"></div>
+      </div>
+
+
+      <div class="card" style="margin-bottom:14px;">
+        <div class="sec-title">Inventory Reorder Needed</div>
+        <div id="report-inv-reorder"></div>
+      </div>
+
+
+      <div class="card" style="margin-bottom:40px;">
+        <div class="sec-title">Equipment Service Due</div>
+        <div id="report-eq-due"></div>
+      </div>
+    </div>
+
+
+
+    <div id="screen-schedule" class="screen">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+        <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">Schedule</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-sm" onclick="openAddRoute()" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">+ New Route</button>
+          <button class="btn-sm" onclick="generateSchedule()" style="background:linear-gradient(135deg,var(--blue),var(--teal));color:#fff;border:none;">✦ Auto-Generate</button>
+        </div>
+      </div>
+
+
+      <div class="pills" style="margin-bottom:14px;" id="sched-view-pills">
+        <button class="pill active" onclick="setSchedView('week')" id="sv-week">Week</button>
+        <button class="pill" onclick="setSchedView('month')" id="sv-month">Month</button>
+        <button class="pill" onclick="setSchedView('due')" id="sv-due">Due for Service</button>
+      </div>
+
+
+      <div id="sched-month-nav" style="display:none;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <button onclick="changeMonth(-1)" style="background:var(--bg4);border:1px solid var(--border2);border-radius:10px;padding:8px 14px;color:var(--text);font-size:16px;cursor:pointer;">‹</button>
+        <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;font-weight:800;" id="sched-month-label"></div>
+        <button onclick="changeMonth(1)" style="background:var(--bg4);border:1px solid var(--border2);border-radius:10px;padding:8px 14px;color:var(--text);font-size:16px;cursor:pointer;">›</button>
+      </div>
+
+
+      <div id="sched-month-grid" style="display:none;margin-bottom:14px;"></div>
+
+
+      <div id="sched-day-detail" style="display:none;margin-bottom:14px;"></div>
+
+
+      <div id="sched-drafts-banner" style="display:none;background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.25);border-radius:14px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:800;color:var(--yellow);letter-spacing:1px;margin-bottom:8px;">⏳ PENDING APPROVAL</div>
+        <div id="sched-drafts-list"></div>
+      </div>
+
+
+      <div id="sched-due-banner" style="display:none;background:rgba(251,146,60,.1);border:1px solid rgba(251,146,60,.3);border-radius:14px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:8px;">📅 DUE FOR SERVICE</div>
+        <div id="sched-due-list"></div>
+        <button class="btn-sm" onclick="generateSchedule()" style="background:linear-gradient(135deg,var(--blue),var(--teal));color:#fff;border:none;margin-top:10px;padding:8px 16px;">✦ Generate Routes from Due Properties</button>
+      </div>
+
+
+      <div class="card" style="margin-bottom:14px;">
+        <div class="sec-title">This Week</div>
+        <div id="sched-week"></div>
+      </div>
+
+
+      <div class="card">
+        <div class="sec-title">All Routes</div>
+        <div class="pills" id="sched-day-pills"></div>
+        <div id="sched-routes-list"></div>
+      </div>
+    </div>
+
+
+
+    <div id="screen-crew-week" class="screen">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div style="font-size:20px;font-weight:800;">My Month</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button onclick="cwPrevMonth()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:18px;color:var(--text2);display:flex;align-items:center;justify-content:center;line-height:1;">‹</button>
+          <div id="cw-month-label" style="font-size:14px;font-weight:700;min-width:130px;text-align:center;"></div>
+          <button onclick="cwNextMonth()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:18px;color:var(--text2);display:flex;align-items:center;justify-content:center;line-height:1;">›</button>
+        </div>
+      </div>
+      <div id="cw-calendar"></div>
+      <div id="cw-route-content" style="margin-top:14px;"></div>
+    </div>
+
+
+    <div id="screen-field" class="screen">
+      <div style="background:linear-gradient(135deg,var(--bg3),var(--bg2));border-radius:16px;padding:16px;border:1px solid var(--border);margin-bottom:12px;">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px;letter-spacing:1px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">YOUR ROUTE TODAY</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div id="field-crew-avatar" style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#16a34a,#2dd4bf);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;color:white;flex-shrink:0;">?</div>
+          <div>
+            <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:22px;font-weight:800;line-height:1;" id="field-crew-name">Loading...</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:3px;" id="field-crew-role"></div>
+          </div>
+        </div>
+
+        <select id="field-crew-select" onchange="loadFieldView()" style="display:none;"></select>
+      </div>
+      <div id="field-stops"></div>
+    </div>
+
+
+    <!-- ══════ WORK ORDERS — MANAGER ══════ -->
+    <div id="screen-workorders" class="screen">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div style="font-size:20px;font-weight:800;">Work Orders</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-sm" onclick="openCreateWO()" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">+ Create</button>
+          <button class="btn-sm" onclick="renderWorkOrders()" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">↺ Refresh</button>
+        </div>
+      </div>
+      <!-- Community list -->
+      <div id="wo-community-list"></div>
+    </div>
+
+    <!-- ══════ WORK ORDERS — CREW ══════ -->
+    <div id="screen-wo-crew" class="screen">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="font-size:18px;font-weight:800;">My Work Orders</div>
+        <button class="btn-sm" onclick="renderCrewWorkOrders()" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">↺ Refresh</button>
+      </div>
+      <div id="wo-crew-list"></div>
+    </div>
+
+
+  </div><!-- /screens -->
+
+
+  <!-- /screens -->
+
+
+  <div id="nav"></div>
+
+
+  <!-- ══════ ROUTE DETAIL PANEL ══════ -->
+  <div id="route-panel" class="panel">
+    <div class="panel-head">
+      <div class="panel-title" id="rp-title">Route Detail</div>
+      <button class="close-btn" onclick="closePanel('route-panel')">✕</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:14px;-webkit-overflow-scrolling:touch;" id="rp-body"></div>
+  </div>
+
+  <div id="prop-panel" class="panel">
+    <div class="panel-head">
+      <div class="panel-title" id="pp-title">Property Detail</div>
+      <button class="close-btn" onclick="closePanel('prop-panel')">✕</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:14px;-webkit-overflow-scrolling:touch;" id="pp-body"></div>
+  </div>
+
+
+  <div id="field-panel" class="panel">
+    <div class="panel-head">
+      <div class="panel-title" id="fp-title">Job Details</div>
+      <button class="close-btn" onclick="closePanel('field-panel')">✕</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:14px;-webkit-overflow-scrolling:touch;" id="fp-body"></div>
+  </div>
+
+
+  <div id="add-route-overlay" class="overlay">
+    <div class="sheet">
+      <div class="sheet-title">New Route</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <input class="inp" id="nr-name" placeholder="Route name (e.g. North Zone A)"/>
+        <select class="inp" id="nr-day">
+          <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
+          <option>Thursday</option><option>Friday</option><option>Saturday</option>
+        </select>
+        <select class="inp" id="nr-crew">
+          <option value="">Assign crew member...</option>
+        </select>
+        <div style="font-size:12px;color:var(--text3);font-weight:700;letter-spacing:1px;">ADD PROPERTIES TO ROUTE</div>
+        <div id="nr-prop-list" style="max-height:200px;overflow-y:auto;"></div>
+        <button class="btn btn-green" onclick="saveRoute()">Create Route</button>
+        <button class="btn btn-outline" onclick="closeOverlay('add-route-overlay')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+
+  <div id="add-prop-overlay" class="overlay">
+    <div class="sheet">
+      <div class="sheet-title">Add Property</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <input class="inp" id="np-name" placeholder="Customer name"/>
+        <input class="inp" id="np-address" placeholder="Address"/>
+        <input class="inp" id="np-phone" placeholder="Phone (optional)" type="tel"/>
+        <div style="font-size:12px;color:var(--text3);font-weight:700;letter-spacing:1px;">SERVICES</div>
+        <div id="np-services" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+        <div style="font-size:12px;color:var(--text3);font-weight:700;letter-spacing:1px;">SERVICE FREQUENCY</div>
+        <select class="inp" id="np-frequency" onchange="document.getElementById('np-days-wrap').style.display=this.value==='2x Per Week'?'block':'none'">
+          <option value="">— Select frequency —</option>
+          <option>Weekly</option>
+          <option>2x Per Week</option>
+          <option>Bi-Weekly</option>
+          <option>Monthly</option>
+          <option>2x Per Month</option>
+          <option>Quarterly</option>
+          <option>As Needed</option>
+          <option>Custom</option>
+        </select>
+        <div id="np-custom-freq-wrap" style="display:none;">
+          <input class="inp" id="np-custom-freq" placeholder="e.g. Every 10 days"/>
+        </div>
+        <input class="inp" id="np-notes" placeholder="Notes (gate code, dog, etc.)"/>
+        <script>document.getElementById('np-frequency')?.addEventListener('change',function(){document.getElementById('np-custom-freq-wrap').style.display=this.value==='Custom'?'block':'none';});</script>
+        <button class="btn btn-green" onclick="saveProperty()">Save Property</button>
+        <button class="btn btn-outline" onclick="closeOverlay('add-prop-overlay')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+
+  <div id="add-crew-overlay" class="overlay">
+    <div class="sheet">
+      <div class="sheet-title">Add Crew Member</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <input class="inp" id="nc-name" placeholder="Full name"/>
+        <input class="inp" id="nc-phone" placeholder="Phone number" type="tel"/>
+        <select class="inp" id="nc-role">
+          <option>Crew Lead</option><option>Crew Member</option><option>Driver</option>
+        </select>
+        <button class="btn btn-green" onclick="saveCrew()">Add Member</button>
+        <button class="btn btn-outline" onclick="closeOverlay('add-crew-overlay')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+
+  <div id="add-inv-overlay" class="overlay">
+    <div class="sheet">
+      <div class="sheet-title">Add Inventory Item</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <input class="inp" id="ni-name" placeholder="Item name (e.g. Mulch - Brown)"/>
+        <select class="inp" id="ni-category">
+          <option>Mulch</option><option>Rock/Gravel</option><option>Fertilizer</option>
+          <option>Chemicals</option><option>Equipment</option><option>Other</option>
+        </select>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <input class="inp" id="ni-qty" placeholder="Quantity" type="number"/>
+          <input class="inp" id="ni-unit" placeholder="Unit (bags, yards...)"/>
+        </div>
+        <input class="inp" id="ni-low" placeholder="Low stock alert at..." type="number"/>
+        <button class="btn btn-green" onclick="saveInventory()">Save Item</button>
+        <button class="btn btn-outline" onclick="closeOverlay('add-inv-overlay')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+
+
+
+  <div id="crew-panel" class="panel">
+    <div class="panel-head">
+      <div class="panel-title" id="cp-title">Crew Member</div>
+      <button class="close-btn" onclick="closePanel('crew-panel')">✕</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:14px;-webkit-overflow-scrolling:touch;" id="cp-body"></div>
+  </div>
+
+
+  <div id="eq-panel" class="panel">
+    <div class="panel-head">
+      <div class="panel-title" id="ep-title">Equipment Detail</div>
+      <button class="close-btn" onclick="closePanel('eq-panel')">✕</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:14px;-webkit-overflow-scrolling:touch;" id="ep-body"></div>
+  </div>
+
+
+  <div id="add-eq-overlay" class="overlay">
+    <div class="sheet">
+      <div class="sheet-title" id="add-eq-title">Add Equipment</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <select class="inp" id="ne-category" onchange="toggleEqFields()">
+          <option value="Mower">🌿 Mower</option>
+          <option value="Truck">🚛 Truck</option>
+          <option value="Trailer">🚜 Trailer</option>
+          <option value="Handheld Tool">🔧 Handheld Tool</option>
+          <option value="Blower">💨 Blower</option>
+          <option value="Trimmer">✂️ Trimmer</option>
+          <option value="Edger">Edger</option>
+          <option value="Chainsaw">🪚 Chainsaw</option>
+          <option value="Sprayer">Sprayer</option>
+          <option value="Other">Other</option>
+        </select>
+        <input class="inp" id="ne-name" placeholder="Name / Description (e.g. Scag 52&quot; Zero Turn)"/>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <input class="inp" id="ne-make" placeholder="Make (e.g. Scag)"/>
+          <input class="inp" id="ne-model" placeholder="Model"/>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <input class="inp" id="ne-year" placeholder="Year" type="number"/>
+          <input class="inp" id="ne-serial" placeholder="Serial #"/>
+        </div>
+
+        <div id="ne-vehicle-fields" style="display:flex;flex-direction:column;gap:10px;">
+          <input class="inp" id="ne-vin" placeholder="VIN"/>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <input class="inp" id="ne-plate" placeholder="License Plate"/>
+            <input class="inp" id="ne-reg-exp" placeholder="Reg. Expires" type="date"/>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <input class="inp" id="ne-insurance-exp" placeholder="Insurance Exp." type="date"/>
+            <input class="inp" id="ne-mileage" placeholder="Current Mileage" type="number"/>
+          </div>
+          <input class="inp" id="ne-tires-changed" placeholder="Tires Last Changed (date)" type="date"/>
+        </div>
+
+        <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-top:4px;">SERVICE SCHEDULE</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <input class="inp" id="ne-last-service" placeholder="Last Serviced" type="date"/>
+          <input class="inp" id="ne-next-service" placeholder="Next Service Due" type="date"/>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <input class="inp" id="ne-hours" placeholder="Current Hours" type="number"/>
+          <input class="inp" id="ne-service-interval" placeholder="Service every (hrs)" type="number"/>
+        </div>
+        <input class="inp" id="ne-assigned-crew" placeholder="Assigned to crew member (optional)"/>
+        <textarea class="inp" id="ne-notes" placeholder="Notes (oil type, blade size, quirks...)" rows="2"></textarea>
+        <button class="btn btn-green" onclick="saveEquipment()">Save Equipment</button>
+        <button class="btn btn-outline" onclick="closeOverlay('add-eq-overlay')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+
+  <div id="import-overlay" class="overlay">
+    <div class="sheet" style="max-height:92vh;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <div class="sheet-title" id="import-title" style="margin-bottom:0;">Import Data</div>
+        <button onclick="closeOverlay('import-overlay')" style="background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;">✕</button>
+      </div>
+
+
+      <div class="pills" id="import-type-pills" style="margin-bottom:14px;"></div>
+
+
+      <div style="background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.25);border-radius:12px;padding:12px 14px;margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:800;color:var(--blue);margin-bottom:6px;">📄 DOWNLOAD TEMPLATE</div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Use our template so columns match correctly. Or use your own file — we'll show you how to map columns.</div>
+        <button class="btn-sm" onclick="downloadTemplate()" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);width:100%;padding:10px;">⬇ Download CSV Template</button>
+      </div>
+
+
+      <div id="import-drop-zone" style="margin-bottom:12px;">
+        <input type="file" id="import-file-input" accept=".xlsx,.xls,.csv"
+          style="position:absolute;opacity:0;width:0;height:0;pointer-events:none;"
+          onchange="handleImportFile(this)"/>
+        <button onclick="document.getElementById('import-file-input').click()"
+          style="width:100%;padding:24px 16px;background:var(--bg4);border:2px dashed var(--border2);
+          border-radius:14px;cursor:pointer;text-align:center;transition:border .2s;">
+          <div style="font-size:36px;margin-bottom:8px;">📂</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text2);font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">Choose File</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px;">Excel (.xlsx) or CSV (.csv)</div>
+        </button>
+        <div id="import-file-name" style="display:none;margin-top:8px;padding:10px 14px;
+          background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);border-radius:10px;
+          font-size:13px;font-weight:700;color:var(--green);text-align:center;"></div>
+      </div>
+
+
+      <div id="import-preview" style="display:none;">
+        <div style="font-size:12px;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">COLUMN MAPPING</div>
+        <div id="import-mapping" style="margin-bottom:12px;"></div>
+        <div style="font-size:12px;font-weight:800;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">PREVIEW <span id="import-count" style="color:var(--green);"></span></div>
+        <div id="import-preview-rows" style="max-height:200px;overflow-y:auto;margin-bottom:14px;"></div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-green" onclick="confirmImport()" id="import-confirm-btn">Import All Records</button>
+          <button class="btn btn-outline" onclick="resetImport()" style="flex:0.4;">Clear</button>
+        </div>
+      </div>
+
+      <div id="import-success" style="display:none;text-align:center;padding:20px 0;">
+        <div style="font-size:48px;margin-bottom:10px;">✅</div>
+        <div style="font-size:16px;font-weight:800;color:var(--green);" id="import-success-msg">Imported successfully!</div>
+        <button class="btn btn-outline" onclick="closeOverlay('import-overlay');resetImport();" style="margin-top:14px;">Done</button>
+      </div>
+    </div>
+  </div>
+
+
+  <div id="login-overlay" class="overlay">
+    <div class="sheet">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div class="sheet-title" style="margin-bottom:0;" id="login-sheet-title">Sign In</div>
+        <button onclick="closeOverlay('login-overlay')" style="background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;">✕</button>
+      </div>
+
+
+      <div id="login-who" style="display:flex;flex-direction:column;gap:10px;">
+        <button class="btn btn-green" onclick="startManagerLogin()">👔 Manager Login</button>
+        <button class="btn" style="background:linear-gradient(135deg,var(--blue),var(--teal));color:#fff;" onclick="startCrewLogin()">👷 Crew Login</button>
+        <button class="btn btn-outline" onclick="closeOverlay('login-overlay')">Cancel</button>
+      </div>
+
+
+      <div id="login-manager-pin" style="display:none;flex-direction:column;gap:12px;">
+        <div style="font-size:13px;color:var(--text3);text-align:center;">Enter Manager PIN</div>
+        <div style="display:flex;justify-content:center;gap:10px;" id="pin-dots">
+          <div class="pin-dot" id="pd1"></div>
+          <div class="pin-dot" id="pd2"></div>
+          <div class="pin-dot" id="pd3"></div>
+          <div class="pin-dot" id="pd4"></div>
+        </div>
+        <div id="pin-error" style="font-size:12px;color:var(--red);text-align:center;min-height:16px;"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+          ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => `
+            <button onclick="pinKey('${k}')" style="padding:16px;font-size:20px;font-weight:700;background:var(--bg4);border:1px solid var(--border2);border-radius:12px;color:var(--text);cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">${k}</button>
+          `).join('')}
+        </div>
+        <button class="btn btn-outline" onclick="showLoginWho()" style="margin-top:4px;">← Back</button>
+      </div>
+
+
+      <div id="login-crew-select" style="display:none;flex-direction:column;gap:10px;">
+        <div style="font-size:13px;color:var(--text3);">Select your name to continue</div>
+        <div id="crew-name-list"></div>
+        <button class="btn btn-outline" onclick="showLoginWho()">← Back</button>
+      </div>
+    </div>
+  </div>
+
+
+
+  <div id="photo-viewer" onclick="closePhotoViewer()">
+    <button id="photo-viewer-close" onclick="closePhotoViewer()">✕</button>
+    <img id="photo-viewer-img" src="" alt=""/>
+    <div id="photo-viewer-caption"></div>
+  </div>
+
+</div><!-- /app -->
+
+<!-- Crew mobile bottom nav -->
+<div id="crew-bottom-nav">
+  <button class="cbn-btn active" data-tab="field" onclick="switchTab('field');updateCrewBottomNav('field')">
+    <span class="cbn-icon">📋</span><span class="cbn-label">My Jobs</span>
+  </button>
+  <button class="cbn-btn" data-tab="crew-week" onclick="switchTab('crew-week');updateCrewBottomNav('crew-week')">
+    <span class="cbn-icon">📅</span><span class="cbn-label">My Month</span>
+  </button>
+  <button class="cbn-btn" data-tab="properties" onclick="switchTab('properties');updateCrewBottomNav('properties')">
+    <span class="cbn-icon">🏡</span><span class="cbn-label">Properties</span>
+  </button>
+  <button class="cbn-btn" data-tab="wo-crew" onclick="switchTab('wo-crew');updateCrewBottomNav('wo-crew')">
+    <span class="cbn-icon">📋</span><span class="cbn-label">Work Orders</span>
+  </button>
+  <button class="cbn-btn" data-tab="menu" onclick="toggleDrawer()">
+    <span class="cbn-icon">☰</span><span class="cbn-label">Menu</span>
+  </button>
+</div>
+
+
+  <div id="nav-drawer-overlay" onclick="closeDrawer()"></div>
+
+
+  <div id="nav-drawer">
+    <div class="drawer-header" style="justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:10px;">
+      <img src="data:image/png;base64,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znHn0d1OMA4Ue1889fUzVddVVNTU1LzJNPNKXyyOd3e556l3zJXyRBu+sd2dx9W2X6kv+ra6qthjbHJTNayJsrR/5hY0OfkgfeJ/xUobQeJZmidDw6aqtCUs30NmKeS2zCnbM73fM12fUe5cC4uPUgKvCIJP3U3z19uG2airrg212aQFpttByZHI09CJXk8penscNP4VGIDQAA1oHw+K4REiXdB+Ijc3SFnhtFPXW+7UVNGIqdlzpjI+JgGA0SMc1xGAO/I9lq26G6Gtdxp43aou/nUsT/MgoaaLyqaN2COQjycuAJw55cevTHZaWiEbXt9uLrTQEkr9J6gqrdHO4PmpuDJoZHAcQ5zHgjOAAXDBOB16BbjqbxF7s321vtkl+gtkMjeMktrpPo8zx/zC5zmfmzifmojRCNq2q1vX7e65ptWUFBRXCrhjliLax7+JEg9T+QyeXTv1zkrPb3bxai3UrKA3Olp7bb6AOdDQ00jntMjscnucQOTiPSOnpGcfeKjdEImDabf3UO2+3z9KWWx2uqd9LlqY6urleeHmYPHy2jqQQe7lkds/EnqfRtruFDNYLVd3Vtyqbi+d8z4HCWd5fJkNa4OHMkjsQCB7KDkQjNa31Pd9Z6tuOpb5Ix9fXSc3+W3DGNADWsZ7hrWhoGepxlYmGR0M0M7A0vhlZK0OGWktcHAEfDIXzRCLPTeMO+ml40+hLbHUFg9clykcwOx1PEMBIz7ZHTplQluVubrXcSoa/VF4dPTMfzioIR5dJGQehEWcOPcZfzPU4IWnIhEn7X78bhaAtENmtlwpLhaoRxho7jT+aIBnOGOa5rgOvYlw+S6G6+72t9ymsptR18UdtjcHMttFGYqfkCMOcMlz3dB1ccDrgDJUfohBERFEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREH//Z" alt="Diamond Landscapes" style="height:44px;width:auto;"/>
+      <div>
+        <div id="drawer-role-label" style="font-size:11px;color:var(--green);margin-top:1px;font-weight:700;letter-spacing:1px;">MANAGER</div>
+      </div>
+      </div>
+      <button onclick="closeDrawer()" style="background:none;border:none;color:var(--text3);font-size:26px;cursor:pointer;padding:4px 8px;line-height:1;flex-shrink:0;">✕</button>
+    </div>
+
+    <div class="drawer-items" id="drawer-items"></div>
+    <div class="drawer-footer" style="display:none;"></div>
+  </div>
+
+<script>
+// ─── DATA ────────────────────────────────────────────────────────────────
+const SERVICES = ['Mow & Edge','Blow & Clean','Mulch Refresh','Rock Refresh','Irrigation Check','Fertilize','Trim Shrubs','Weed Control','Aeration','Leaf Removal'];
+const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const PRIORITIES = ['Low','Medium','High','Urgent'];
+const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
+
+let state = {
+  role: 'manager',
+  properties: [],
+  routes: [],
+  crew: [],
+  inventory: [],
+  flags: [],
+  equipment: [],
+  workOrders: [],
+  routeWeeks: {},
+  eqCategory: 'All',
+  routeDay: 'Monday',
+  selectedProps: [],
+};
+
+function load() {
+  try { const s = localStorage.getItem('diamondlandscapes_v1'); if(s) Object.assign(state, JSON.parse(s)); } catch(e) {}
+}
+function save() {
+  try {
+    // Save photos separately so main state stays small
+    var photos = {};
+    (state.workOrders||[]).forEach(function(w) {
+      if (w.completedPhoto && (w.completedPhoto.startsWith('data:') || w.completedPhoto.startsWith('http'))) {
+        photos[w.id] = w.completedPhoto;
+      }
+    });
+
+    // Save slim state (no base64 photos inline)
+    var slim = JSON.parse(JSON.stringify(state));
+    (slim.workOrders||[]).forEach(function(w) {
+      if (w.completedPhoto && w.completedPhoto.startsWith('data:')) {
+        w.completedPhoto = 'saved'; // placeholder
+      }
+    });
+
+    localStorage.setItem('diamondlandscapes_v1', JSON.stringify(slim));
+
+    // Save photos in separate key
+    if (Object.keys(photos).length > 0) {
+      try {
+        var existing = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+        Object.assign(existing, photos);
+        localStorage.setItem('dlphotos', JSON.stringify(existing));
+      } catch(pe) {
+        // Photos key full - save individually
+        Object.keys(photos).forEach(function(id) {
+          try { localStorage.setItem('dlphoto_' + id, photos[id]); } catch(e2) {}
+        });
+      }
+    }
+  } catch(e) {
+    console.error('save() failed:', e);
+  }
+}
+
+
+function uid() { return Date.now() + Math.random().toString(36).slice(2,7); }
+
+function toast(msg='✓ Saved') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+// ─── TABS ─────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  // Close any open panels when switching tabs
+  document.querySelectorAll('.panel.open').forEach(p => p.classList.remove('open'));
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const screenEl = document.getElementById('screen-' + tab);
+  if (screenEl) screenEl.classList.add('active');
+  document.querySelectorAll('.nb').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  const screensEl = document.getElementById('screens');
+  if (screensEl) screensEl.scrollTop = 0;
+  updateDrawerActive(tab);
+  if (state.role === 'field') updateCrewBottomNav(tab);
+  // auto-render reports immediately when opened
+  if (tab === 'reports') { setTimeout(() => renderReports(), 50); }
+  const renders = { dashboard: renderDashboard, routes: renderRoutes,
+    properties: renderProperties, crew: renderCrew, inventory: renderInventory,
+    equipment: renderEquipment, reports: renderReports,
+    schedule: renderSchedule, 'crew-week': renderCrewWeek, field: renderFieldView,
+    workorders: renderWorkOrders, 'wo-crew': renderCrewWorkOrders };
+  renders[tab]?.();
+}
+
+function closePanel(id) { document.getElementById(id).classList.remove('open'); }
+function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
+function openOverlay(id) { document.getElementById(id).classList.add('open'); }
+
+// ─── ROLE ─────────────────────────────────────────────────────────────────
+// ─── AUTH & LOGIN ─────────────────────────────────────────────────────────
+const MANAGER_PIN = '1234'; // Change this to your preferred PIN
+let pinBuffer = '';
+
+function openLoginSheet() {
+  showLoginWho();
+  openOverlay('login-overlay');
+}
+
+function showLoginWho() {
+  document.getElementById('login-who').style.display = 'flex';
+  document.getElementById('login-manager-pin').style.display = 'none';
+  document.getElementById('login-crew-select').style.display = 'none';
+  pinBuffer = '';
+  updatePinDots();
+  document.getElementById('pin-error').textContent = '';
+}
+
+function startManagerLogin() {
+  document.getElementById('login-who').style.display = 'none';
+  document.getElementById('login-manager-pin').style.display = 'flex';
+  // render numpad properly
+  document.getElementById('login-manager-pin').innerHTML = `
+    <div style="font-size:13px;color:var(--text3);text-align:center;margin-bottom:4px;">Enter Manager PIN</div>
+    <div style="display:flex;justify-content:center;gap:12px;margin-bottom:4px;" id="pin-dots">
+      <div class="pin-dot" id="pd1"></div><div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div><div class="pin-dot" id="pd4"></div>
+    </div>
+    <div id="pin-error" style="font-size:12px;color:var(--red);text-align:center;min-height:16px;margin-bottom:4px;"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+      ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k =>
+        k==='' ? '<div></div>' :
+        `<button onclick="pinKey('${k}')" style="padding:16px;font-size:20px;font-weight:700;background:var(--bg4);border:1px solid var(--border2);border-radius:12px;color:var(--text);cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">${k}</button>`
+      ).join('')}
+    </div>
+    <button class="btn btn-outline" onclick="showLoginWho()" style="margin-top:8px;">← Back</button>`;
+  pinBuffer = '';
+}
+
+function pinKey(k) {
+  if (k === '⌫') { pinBuffer = pinBuffer.slice(0,-1); }
+  else if (pinBuffer.length < 4) { pinBuffer += String(k); }
+  updatePinDots();
+  if (pinBuffer.length === 4) {
+    setTimeout(() => {
+      if (pinBuffer === MANAGER_PIN) {
+        closeOverlay('login-overlay');
+        applyRole('manager');
+        
+      } else {
+        document.getElementById('pin-error').textContent = '✕ Incorrect PIN — try again';
+        pinBuffer = '';
+        updatePinDots();
+      }
+    }, 200);
+  }
+}
+
+function updatePinDots() {
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById('pd'+i);
+    if (el) el.classList.toggle('filled', i <= pinBuffer.length);
+  }
+}
+
+function startCrewLogin() {
+  document.getElementById('login-who').style.display = 'none';
+  document.getElementById('login-crew-select').style.display = 'flex';
+  const list = document.getElementById('crew-name-list');
+  if (!state.crew.length) {
+    list.innerHTML = '<div style="font-size:13px;color:var(--text4);text-align:center;padding:10px;">No crew members added yet</div>';
+    return;
+  }
+  list.innerHTML = state.crew.map(c => `
+    <button onclick="loginAsCrew('${c.id}')" style="display:flex;align-items:center;gap:12px;width:100%;background:var(--bg4);border:1px solid var(--border2);border-radius:12px;padding:12px 14px;cursor:pointer;margin-bottom:8px;">
+      <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--green3),var(--teal));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#fff;flex-shrink:0;">${c.name[0].toUpperCase()}</div>
+      <div style="text-align:left;"><div style="font-size:14px;font-weight:700;color:var(--text);">${c.name}</div><div style="font-size:12px;color:var(--text3);">${c.role}</div></div>
+    </button>`).join('');
+}
+
+function loginAsCrew(crewId) {
+  const crew = state.crew.find(c => c.id === crewId);
+  if (!crew) return;
+  state.loggedInCrewId = crewId;
+  closeOverlay('login-overlay');
+  applyRole('field');
+  
+}
+
+function applyRole(r) {
+  state.role = r;
+  save();
+  const roleBadge = document.getElementById('role-badge');
+  if (roleBadge) roleBadge.textContent = r === 'manager' ? 'MANAGER' : 'CREW';
+  const drawerRole = document.getElementById('drawer-role-label');
+  const drawerLogin = document.getElementById('drawer-login-label');
+  if (drawerRole) drawerRole.textContent = r === 'manager' ? 'MANAGER' : 'CREW';
+  if (drawerLogin) drawerLogin.textContent = r === 'field' ? 'Sign Out' : 'Switch / Sign Out';
+  buildDrawerItems(r === 'field' ? CREW_MENU : MANAGER_MENU, r === 'field' ? 'field' : 'dashboard');
+  if (r === 'field') { showCrewBottomNav(); } else { hideCrewBottomNav(); }
+
+  if (r === 'field') {
+    document.getElementById('nav').innerHTML = `<div id="nav-tabs-wrap">
+    <button class="nb active" onclick="switchTab('field')" data-tab="field"><span class="ni">📋</span><span class="nl">My Jobs</span></button>
+    <button class="nb" onclick="switchTab('crew-week')" data-tab="crew-week"><span class="ni">📅</span><span class="nl">My Week</span></button>
+    <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni">🏡</span><span class="nl">Properties</span></button>
+    <button class="nb" onclick="switchTab('wo-crew')" data-tab="wo-crew"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
+    </div>
+    <div id="nav-utils-inner">
+      <button class="nb" onclick="signOut()"><span class="ni">🔒</span><span class="nl">Sign Out</span></button>
+    </div>`;
+    switchTab('field');
+    // pre-select the logged-in crew member
+    setTimeout(() => {
+      const sel = document.getElementById('field-crew-select');
+      if (sel && state.loggedInCrewId) {
+        sel.value = state.loggedInCrewId;
+        loadFieldView();
+      }
+    }, 100);
+  } else {
+    document.getElementById('nav').innerHTML = `<div id="nav-tabs-wrap">
+    <button class="nb active" onclick="switchTab('dashboard')" data-tab="dashboard"><span class="ni">⚡</span><span class="nl">Dashboard</span></button>
+    <button class="nb" onclick="switchTab('routes')" data-tab="routes"><span class="ni">🗺️</span><span class="nl">Routes</span></button>
+    <button class="nb" onclick="switchTab('schedule')" data-tab="schedule"><span class="ni">📅</span><span class="nl">Schedule</span></button>
+    <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni">🏡</span><span class="nl">Properties</span></button>
+    <button class="nb" onclick="switchTab('crew')" data-tab="crew"><span class="ni">👷</span><span class="nl">Crew</span></button>
+    <button class="nb" onclick="switchTab('inventory')" data-tab="inventory"><span class="ni">📦</span><span class="nl">Inventory</span></button>
+    <button class="nb" onclick="switchTab('equipment')" data-tab="equipment"><span class="ni">🔧</span><span class="nl">Equipment</span></button>
+    <button class="nb" onclick="switchTab('reports')" data-tab="reports"><span class="ni">📊</span><span class="nl">Reports</span></button>
+    <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
+    </div>
+    <div id="nav-utils-inner">
+      <button class="nb" onclick="gsLoad()"><span class="ni">↺</span><span class="nl">Refresh Data</span></button>
+      <button class="nb" onclick="clearCacheAndReload()"><span class="ni">🔄</span><span class="nl">Clear Cache</span></button>
+      <button class="nb" onclick="openLoginSheet()"><span class="ni">🔒</span><span class="nl">Switch / Sign Out</span></button>
+    </div>`;
+    switchTab('dashboard');
+  }
+}
+
+function crewSignOut_old() {
+  state.loggedInCrewId = null;
+  applyRole('manager');
+  
+}
+
+function openRoleSwitch() { openLoginSheet(); }
+
+
+function renderDashboard() {
+  const today = new Date().toLocaleDateString('en-US',{weekday:'long'});
+  document.title = 'Diamond Landscapes';
+const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
+
+  const todayRoutes = state.routes.filter(r => r.day === today);
+  const completed = todayRoutes.filter(r => r.status === 'Done').length;
+  const openFlags = state.flags.filter(f => !f.resolved);
+  const activeCrew = new Set(todayRoutes.map(r => r.crewId).filter(Boolean)).size;
+
+  document.getElementById('dash-jobs-today').textContent = todayRoutes.length;
+  document.getElementById('dash-completed').textContent = completed;
+  document.getElementById('dash-flags').textContent = openFlags.length;
+  document.getElementById('dash-crew-active').textContent = activeCrew;
+
+  // routes summary
+  const dr = document.getElementById('dash-routes');
+  if (!todayRoutes.length) {
+    dr.innerHTML = `<div style="font-size:13px;color:var(--text4);text-align:center;padding:8px 0;">No routes scheduled today</div>`;
+  } else {
+    dr.innerHTML = todayRoutes.map(r => {
+      const crew = state.crew.find(c => c.id === r.crewId);
+      const stops = r.stops?.length || 0;
+      const done = r.stops?.filter(s => s.completed).length || 0;
+      return `<div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:700;font-size:14px;">${r.name}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">${crew?.name || 'Unassigned'} · ${done}/${stops} stops</div>
+        </div>
+        <span class="badge badge-${r.status==='Done'?'green':r.status==='In Progress'?'yellow':'blue'}">${r.status||'Scheduled'}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // flags
+  const fl = document.getElementById('dash-flags-list');
+  const nofl = document.getElementById('dash-no-flags');
+  if (!openFlags.length) { fl.innerHTML=''; nofl.style.display='block'; }
+  else {
+    nofl.style.display='none';
+    fl.innerHTML = openFlags.slice(0,4).map(f => {
+      const prop = state.properties.find(p => p.id === f.propId);
+      return `<div class="card-flat" style="display:flex;gap:10px;align-items:flex-start;">
+        <div class="dot dot-${PCOLORS[f.priority]||'yellow'}" style="margin-top:4px;"></div>
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:700;">${prop?.name||'Unknown'}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">${f.note}</div>
+          <div style="font-size:11px;color:var(--text4);margin-top:3px;">${f.service||''} · ${f.date||''}</div>
+        </div>
+        <span class="badge badge-${PCOLORS[f.priority]||'yellow'}">${f.priority}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // equipment service alerts on dashboard
+  const eqDue = (state.equipment||[]).filter(e => {
+    const d = e.nextService ? Math.ceil((new Date(e.nextService+'T00:00:00')-new Date())/(1000*60*60*24)) : null;
+    return d !== null && d <= 7;
+  });
+  const eqBanner = document.getElementById('dash-eq-alerts');
+  if (eqBanner) {
+    eqBanner.innerHTML = eqDue.length
+      ? eqDue.map(e=>`<div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;"><div><div style="font-weight:700;font-size:13px;">${EQ_ICONS[e.category]||'🔧'} ${e.name}</div><div style="font-size:11px;color:var(--red);">Service due ${e.nextService}</div></div><button class="btn-sm" onclick="switchTab('equipment')" style="background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);">View</button></div>`).join('')
+      : '<div style="font-size:13px;color:var(--text4);text-align:center;padding:8px 0;">All equipment current ✓</div>';
+  }
+
+  // inventory alerts
+  const ia = document.getElementById('dash-inv-alerts');
+  const lowItems = state.inventory.filter(i => (+i.qty) <= (+i.lowAlert||5));
+  if (!lowItems.length) {
+    ia.innerHTML = `<div style="font-size:13px;color:var(--text4);text-align:center;padding:8px 0;">All stocked up ✓</div>`;
+  } else {
+    ia.innerHTML = lowItems.map(i => `
+      <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;">
+        <div><div style="font-size:13px;font-weight:700;">${i.name}</div>
+        <div style="font-size:12px;color:var(--red);">⚠️ Only ${i.qty} ${i.unit} remaining</div></div>
+        <button class="btn-sm" onclick="openAddInventory()" style="background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);">Restock</button>
+      </div>`).join('');
+  }
+}
+
+// ─── ROUTES ───────────────────────────────────────────────────────────────
+function renderRoutes() {
+  // day pills
+  const pills = document.getElementById('route-day-pills');
+  pills.innerHTML = DAYS_OF_WEEK.map(d =>
+    `<button class="pill ${d===state.routeDay?'active':''}" onclick="setRouteDay('${d}')">${d.slice(0,3)}</button>`
+  ).join('');
+
+  const filtered = state.routes.filter(r => r.day === state.routeDay);
+  const el = document.getElementById('routes-list');
+  if (!filtered.length) {
+    el.innerHTML = `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">No routes for ${state.routeDay}.<br/>Tap + New Route to create one.</div>`;
+    return;
+  }
+  el.innerHTML = filtered.map(r => {
+    const crew = state.crew.find(c => c.id === r.crewId);
+    const stops = r.stops?.length || 0;
+    const done = r.stops?.filter(s=>s.completed).length || 0;
+    const pct = stops ? Math.round((done/stops)*100) : 0;
+    return `<div class="card" style="cursor:pointer;" onclick="openRouteDetail('${r.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+        <div>
+          <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;font-weight:800;">${r.name}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:3px;">👷 ${crew?.name||'Unassigned'} · ${stops} stops</div>
+        </div>
+        <span class="badge badge-${r.status==='Done'?'green':r.status==='In Progress'?'yellow':'blue'}">${r.status||'Scheduled'}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:6px;">
+        <span>${done}/${stops} completed</span><span>${pct}%</span>
+      </div>
+      <div class="inv-bar"><div class="inv-fill" style="width:${pct}%;background:linear-gradient(90deg,var(--green3),var(--lime));"></div></div>
+      ${r.optimized?`<div style="font-size:11px;color:var(--teal);margin-top:8px;">✦ Route optimized</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function setRouteDay(d) { state.routeDay = d; renderRoutes(); }
+
+function openRouteDetail(id) {
+  const r = state.routes.find(x => x.id === id);
+  if (!r) return;
+  const crew = state.crew.find(c => c.id === r.crewId);
+  // Build editable title
+  const rpTitle = document.getElementById('rp-title');
+  rpTitle.innerHTML = '';
+  const nameInput = document.createElement('input');
+  nameInput.value = r.name;
+  nameInput.style.cssText = 'background:transparent;border:none;border-bottom:1px solid var(--border2);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif,sans-serif;font-size:18px;font-weight:800;width:100%;outline:none;padding:2px 0;';
+  nameInput.onblur = () => {
+    const val = nameInput.value.trim();
+    if (val && val !== r.name) {
+      r.name = val;
+      saveAndSync('routes', r);
+      renderRoutes();
+      toast('Route renamed ✓');
+    }
+  };
+  nameInput.onkeydown = (e) => { if (e.key === 'Enter') nameInput.blur(); };
+  rpTitle.appendChild(nameInput);
+  const stops = r.stops || [];
+
+  let html = `
+    <div class="card" style="margin-bottom:12px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div><div style="font-size:11px;color:var(--text3);">DAY</div>
+          <select onchange="updateRouteDay('${r.id}',this.value)" style="background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:13px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;margin-top:3px;">
+            ${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(d=>`<option ${r.day===d?'selected':''}>${d}</option>`).join('')}
+          </select>
+        </div>
+        <div><div style="font-size:11px;color:var(--text3);">CREW</div>
+          <select onchange="updateRouteCrew('${r.id}',this.value)" style="background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:13px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;margin-top:3px;">
+            <option value="">Unassigned</option>
+            ${(state.crew||[]).map(c=>`<option value="${c.id}" ${r.crewId===c.id?'selected':''}>${c.name}</option>`).join('')}
+          </select>
+        </div>
+        <div><div style="font-size:11px;color:var(--text3);">STATUS</div>
+          <select onchange="updateRouteStatus('${r.id}',this.value)" style="background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:4px 8px;color:var(--text);font-size:13px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">
+            ${['Scheduled','In Progress','Done'].map(s=>`<option ${r.status===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div><div style="font-size:11px;color:var(--text3);">STOPS</div><div style="font-weight:700;">${stops.length}</div></div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="font-size:14px;font-weight:700;">STOPS (${stops.length})</div>
+      <button class="btn-sm" onclick="optimizeRoute('${r.id}')" style="background:rgba(45,212,191,.15);color:var(--teal);border:1px solid rgba(45,212,191,.3);">✦ Optimize</button>
+    </div>`;
+    // Add Stop card - built outside template to avoid nested backtick issues
+    html += '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:12px;border:1px solid var(--border);">';
+    html += '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">ADD STOP</div>';
+    html += '<div style="display:flex;gap:8px;">';
+    const existingIds = new Set((r.stops||[]).map(s=>s.propId));
+    const addableProps = (state.properties||[]).filter(p=>!existingIds.has(p.id));
+    let optHtml = '<option value="">— Select property —</option>';
+    addableProps.forEach(p => { optHtml += '<option value="' + p.id + '">' + p.name + (p.address?' · '+p.address:'')+'</option>'; });
+    html += '<select id="add-stop-select-' + r.id + '" style="flex:1;background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:8px;color:var(--text);font-size:13px;">' + optHtml + '</select>';
+    html += '<button class="btn btn-green" onclick="addStopToRoute(\''+ r.id +'\')" style="flex-shrink:0;font-size:13px;padding:8px 14px;">+ Add</button>';
+    html += '</div></div>';
+  if (!stops.length) {
+    html += `<div style="font-size:13px;color:var(--text4);text-align:center;padding:16px;">No stops added yet</div>`;
+  } else {
+    stops.forEach((s,i) => {
+      const prop = state.properties.find(p => p.id === s.propId);
+      const flags = state.flags.filter(f => f.propId === s.propId && !f.resolved);
+      html += `<div class="stop-card" data-idx="${i}" data-prop="${s.propId}">
+        <div class="stop-head" onclick="toggleStop('stop-${id}-${i}')">
+          <div style="display:flex;gap:10px;align-items:center;">
+            <div style="width:26px;height:26px;border-radius:50%;background:${s.completed?'var(--green3)':'var(--bg4)'};
+              border:2px solid ${s.completed?'var(--green)':'var(--border2)'};
+              display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:${s.completed?'#fff':'var(--text3)'};">${i+1}</div>
+            <div>
+              <div style="font-weight:700;font-size:14px;">${prop?.name||'Unknown'}</div>
+              <div style="font-size:11px;color:var(--text3);">${prop?.address||''}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            ${flags.length?`<span class="badge badge-red">⚑ ${flags.length}</span>`:''}
+            ${state.role==='manager'?`
+              <button onclick="event.stopPropagation();moveStop('${r.id}','${s.propId}',-1)" ${i===0?'disabled':''} style="background:none;border:1px solid var(--border2);border-radius:6px;color:var(--text3);font-size:11px;width:24px;height:24px;cursor:pointer;padding:0;">↑</button>
+              <button onclick="event.stopPropagation();moveStop('${r.id}','${s.propId}',1)" ${i===stops.length-1?'disabled':''} style="background:none;border:1px solid var(--border2);border-radius:6px;color:var(--text3);font-size:11px;width:24px;height:24px;cursor:pointer;padding:0;">↓</button>
+              <button onclick="event.stopPropagation();removeStop('${r.id}','${s.propId}')" style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);border-radius:6px;color:var(--red);font-size:11px;width:24px;height:24px;cursor:pointer;padding:0;">✕</button>
+            `:''}
+            <span style="color:var(--text3);font-size:16px;">›</span>
+          </div>
+        </div>
+        <div class="stop-body" id="stop-${id}-${i}">
+          <div style="margin-top:10px;">
+            <div class="sec-title">Services</div>
+            ${(prop?.services||[]).map(svc => `
+              <div class="svc-item">
+                <span style="font-size:13px;">${svc}</span>
+                <input type="checkbox" ${s.completedServices?.includes(svc)?'checked':''} 
+                  onchange="toggleService('${r.id}','${s.propId}','${svc}',this.checked)"
+                  style="width:18px;height:18px;accent-color:var(--green);cursor:pointer;"/>
+              </div>`).join('')}
+            ${prop?.notes?`<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.2);border-radius:8px;padding:10px;margin-top:8px;font-size:12px;color:var(--yellow);">📝 ${prop.notes}</div>`:''}
+            <button class="btn btn-outline" onclick="markStopDone('${r.id}','${s.propId}')" style="margin-top:10px;font-size:13px;${s.completed?'border-color:var(--green);color:var(--green)':''}">${s.completed?'✓ Completed':'Mark Complete'}</button>
+          </div>
+          ${state.role==='manager' ? buildServiceDatesHTML(r.id, s.propId, prop) : ''}
+        </div>
+      </div>`;
+    });
+  }
+
+  html += `<div style="margin-top:12px;"><button class="btn btn-red" onclick="deleteRoute('${r.id}')" style="font-size:13px;">Delete Route</button></div>`;
+  document.getElementById('rp-body').innerHTML = html;
+  document.getElementById('route-panel').classList.add('open');
+  if (state.role === 'manager') initRouteDragDrop(r.id);
+}
+
+function toggleStop(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('open');
+}
+
+
+
+function openCrewDetail(id) {
+  const c = state.crew.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('cp-title').textContent = c.name;
+
+  const today      = new Date().toLocaleDateString('en-US',{weekday:'long'});
+  const allRoutes  = (state.routes||[]).filter(r => r.crewId === id);
+  const todayRoute = allRoutes.find(r => r.day === today);
+  const todayStops = todayRoute?.stops?.length || 0;
+  const todayDone  = todayRoute?.stops?.filter(s=>s.completed).length || 0;
+  const totalDone  = allRoutes.reduce((a,r)=>a+(r.stops?.filter(s=>s.completed).length||0),0);
+  const totalStops = allRoutes.reduce((a,r)=>a+(r.stops?.length||0),0);
+  const openFlags  = (state.flags||[]).filter(f => f.by === c.name && !f.resolved);
+
+  let html = `
+
+    <div style="background:linear-gradient(135deg,var(--bg3),var(--bg2));border-radius:16px;padding:20px;
+      border:1px solid var(--border);margin-bottom:14px;display:flex;gap:16px;align-items:center;">
+      <div style="width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,var(--green3),var(--teal));
+        display:flex;align-items:center;justify-content:center;font-weight:800;font-size:26px;color:#fff;flex-shrink:0;">
+        ${c.name.trim()[0].toUpperCase()}
+      </div>
+      <div style="flex:1;">
+        <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">${c.name}</div>
+        <div style="font-size:13px;color:var(--green);font-weight:700;margin-top:2px;">${c.role}</div>
+        ${c.phone ? `<div style="font-size:13px;color:var(--text3);margin-top:4px;">📞 <a href="tel:${c.phone}" style="color:var(--blue);text-decoration:none;">${c.phone}</a></div>` : ''}
+      </div>
+    </div>
+
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+      <div class="stat-c">
+        <div class="stat-v" style="color:var(--green);font-size:22px;">${todayDone}/${todayStops}</div>
+        <div class="stat-l">Today</div>
+      </div>
+      <div class="stat-c">
+        <div class="stat-v" style="color:var(--blue);font-size:22px;">${allRoutes.length}</div>
+        <div class="stat-l">Routes</div>
+      </div>
+      <div class="stat-c">
+        <div class="stat-v" style="color:${openFlags.length?'var(--red)':'var(--text4)'};font-size:22px;">${openFlags.length}</div>
+        <div class="stat-l">Open Flags</div>
+      </div>
+    </div>
+
+
+    <div class="card" style="margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div class="sec-title" style="margin-bottom:0;">Info</div>
+        <button class="btn-sm" onclick="toggleCrewEdit('${id}')" id="crew-edit-btn-${id}"
+          style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">✏️ Edit</button>
+      </div>
+      <div id="crew-view-${id}">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><div style="font-size:11px;color:var(--text3);">PHONE</div><div style="font-size:13px;font-weight:700;margin-top:2px;">${c.phone||'—'}</div></div>
+          <div><div style="font-size:11px;color:var(--text3);">ROLE</div><div style="font-size:13px;font-weight:700;margin-top:2px;">${c.role}</div></div>
+        </div>
+      </div>
+      <div id="crew-edit-${id}" style="display:none;flex-direction:column;gap:10px;">
+        <input class="inp" id="ce-name-${id}" value="${c.name}" placeholder="Full name"/>
+        <input class="inp" id="ce-phone-${id}" value="${c.phone||''}" placeholder="Phone" type="tel"/>
+        <select class="inp" id="ce-role-${id}">
+          ${['Crew Lead','Crew Member','Driver'].map(r=>`<option ${c.role===r?'selected':''}>${r}</option>`).join('')}
+        </select>
+        <button class="btn btn-green" onclick="saveCrewEdit('${id}')" style="font-size:13px;">Save Changes</button>
+        <button class="btn btn-outline" onclick="toggleCrewEdit('${id}')" style="font-size:13px;">Cancel</button>
+      </div>
+    </div>
+
+
+    <div class="card" style="margin-bottom:14px;">
+      <div class="sec-title">Assigned Routes (${allRoutes.length})</div>
+      ${!allRoutes.length
+        ? '<div style="font-size:13px;color:var(--text4);">No routes assigned yet</div>'
+        : allRoutes.map(r => {
+            const stops = r.stops?.length || 0;
+            const done  = r.stops?.filter(s=>s.completed).length || 0;
+            const pct   = stops ? Math.round((done/stops)*100) : 0;
+            const isToday = r.day === today;
+            return `<div class="card-flat" onclick="closePanel('crew-panel');openRouteDetail('${r.id}')"
+              style="margin-bottom:8px;cursor:pointer;${isToday?'border-color:rgba(74,222,128,.4);':''}">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <div>
+                  <div style="font-weight:800;font-size:13px;">${r.name} ${isToday?'<span style="color:var(--green);font-size:11px;">● Today</span>':''}</div>
+                  <div style="font-size:11px;color:var(--text3);margin-top:2px;">📅 ${r.day} · ${stops} stops</div>
+                </div>
+                <span class="badge badge-${r.status==='Done'?'green':r.status==='In Progress'?'yellow':'blue'}">${r.status||'Scheduled'}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:4px;">
+                <span>${done}/${stops} complete</span><span>${pct}%</span>
+              </div>
+              <div class="inv-bar"><div class="inv-fill" style="width:${pct}%;background:linear-gradient(90deg,var(--green3),var(--lime));"></div></div>
+            </div>`;
+          }).join('')}
+    </div>
+
+
+    ${openFlags.length ? `
+    <div class="card" style="margin-bottom:14px;">
+      <div class="sec-title">Open Flags Reported (${openFlags.length})</div>
+      ${openFlags.map(f => {
+        const prop = state.properties.find(p => p.id === f.propId);
+        return `<div class="card-flat" onclick="openReportFlag('${f.id}')" style="cursor:pointer;margin-bottom:6px;border-left:3px solid var(--orange);">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
+            <span class="badge badge-${PCOLORS[f.priority]||'yellow'}">${f.priority}</span>
+            <span style="font-size:12px;color:var(--blue);">${f.service}</span>
+          </div>
+          <div style="font-size:13px;font-weight:700;">${prop?.name||'Unknown'}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">${f.note}</div>
+        </div>`;
+      }).join('')}
+    </div>` : ''}
+
+
+    <div class="card" style="margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div class="sec-title" style="margin-bottom:0;">Monthly Schedule</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button onclick="mgr_cwPrev('${id}')" style="background:var(--bg4);border:1px solid var(--border2);border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:14px;color:var(--text2);display:flex;align-items:center;justify-content:center;line-height:1;">‹</button>
+          <div id="mgr-cal-label-${id}" style="font-size:12px;font-weight:700;min-width:100px;text-align:center;"></div>
+          <button onclick="mgr_cwNext('${id}')" style="background:var(--bg4);border:1px solid var(--border2);border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:14px;color:var(--text2);display:flex;align-items:center;justify-content:center;line-height:1;">›</button>
+        </div>
+      </div>
+      <div id="mgr-cal-${id}"></div>
+      <div id="mgr-cal-detail-${id}" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;">
+      <div class="sec-title">Assign to Route</div>
+      <select class="inp" id="crew-assign-route-${id}" style="margin-bottom:10px;">
+        <option value="">— Select a route —</option>
+        ${(state.routes||[]).filter(r=>!r.crewId||r.crewId!==id).map(r=>
+          `<option value="${r.id}">${r.name} (${r.day})</option>`).join('')}
+      </select>
+      <button class="btn btn-green" onclick="assignCrewToRoute('${id}')" style="font-size:13px;">Assign to Route</button>
+    </div>
+
+    <button class="btn btn-red" onclick="deleteCrew('${id}');closePanel('crew-panel');" style="font-size:13px;margin-bottom:16px;">Remove Crew Member</button>`;
+
+  document.getElementById('cp-body').innerHTML = html;
+  document.getElementById('crew-panel').classList.add('open');
+  // init crew calendar for manager view
+  if (!state._mgrCal) state._mgrCal = {};
+  if (!state._mgrCal[id]) state._mgrCal[id] = { year: new Date().getFullYear(), month: new Date().getMonth() };
+  buildMgrCrewCal(id);
+}
+
+function toggleCrewEdit(id) {
+  const view = document.getElementById('crew-view-'+id);
+  const edit = document.getElementById('crew-edit-'+id);
+  const btn  = document.getElementById('crew-edit-btn-'+id);
+  const editing = edit.style.display !== 'none';
+  view.style.display = editing ? 'block' : 'none';
+  edit.style.display = editing ? 'none'  : 'flex';
+  edit.style.flexDirection = 'column';
+  edit.style.gap = '10px';
+  if (btn) { btn.textContent = editing ? '✏️ Edit' : '✕ Cancel';
+             btn.style.color = editing ? 'var(--blue)' : 'var(--red)'; }
+}
+
+function saveCrewEdit(id) {
+  const c = state.crew.find(x => x.id === id);
+  if (!c) return;
+  c.name  = document.getElementById('ce-name-'+id)?.value.trim()  || c.name;
+  c.phone = document.getElementById('ce-phone-'+id)?.value.trim() || '';
+  c.role  = document.getElementById('ce-role-'+id)?.value         || c.role;
+  saveAndSync('crew', c);
+  openCrewDetail(id);
+  renderCrew();
+  toast('Saved ✓');
+}
+
+function assignCrewToRoute(crewId) {
+  const routeId = document.getElementById('crew-assign-route-'+crewId)?.value;
+  if (!routeId) { toast('Select a route first'); return; }
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r) return;
+  r.crewId = crewId;
+  saveAndSync('routes', r);
+  openCrewDetail(crewId);
+  renderCrew();
+  toast('Assigned ✓');
+}
+
+function updateRouteCrew(routeId, crewId) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r) return;
+  r.crewId = crewId;
+  saveAndSync('routes', r);
+  renderRoutes();
+  renderDashboard();
+  toast('Crew assigned ✓');
+}
+
+function updateRouteDay(routeId, day) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r) return;
+  r.day = day;
+  saveAndSync('routes', r);
+  renderRoutes();
+  toast('Day updated ✓');
+}
+
+function updateRouteStatus(rid, status) {
+  const r = state.routes.find(x => x.id === rid);
+  if (r) { r.status = status; saveAndSync('routes', r); renderDashboard(); }
+}
+
+function markStopDone(routeId, propId) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r) return;
+  const s = r.stops?.find(x => x.propId === propId);
+  if (!s) return;
+
+  // toggle completion freely — flags never block this
+  s.completed = !s.completed;
+  if (s.completed) {
+    s.completedAt = new Date().toLocaleString();
+    // auto-update last service date and calculate next service date
+    const prop = state.properties.find(p => p.id === propId);
+    if (prop) {
+      const today = new Date();
+      prop.lastServiceDate = today.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+      // auto-calculate next service based on frequency
+      const days = FREQ_DAYS[prop.frequency];
+      if (days) {
+        const next = new Date(today.getTime() + days*24*60*60*1000);
+        prop.nextServiceDate = next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+      }
+      saveAndSync('properties', prop);
+    }
+  }
+  const routeToSync = state.routes.find(x => x.id === routeId);
+  if (routeToSync) saveAndSync('routes', routeToSync);
+  if (document.getElementById('route-panel').classList.contains('open')) openRouteDetail(routeId);
+  else loadFieldView();
+  toast(s.completed ? '✓ Job complete' : 'Reopened');
+}
+
+function toggleService(routeId, propId, svc, checked) {
+  const r = state.routes.find(x => x.id === routeId);
+  const s = r?.stops?.find(x => x.propId === propId);
+  if (!s) return;
+  if (!s.completedServices) s.completedServices = [];
+  if (checked) { if(!s.completedServices.includes(svc)) s.completedServices.push(svc); }
+  else { s.completedServices = s.completedServices.filter(x=>x!==svc); }
+  save();
+}
+
+function optimizeRoute(rid) {
+  const r = state.routes.find(x => x.id === rid);
+  if (!r || !r.stops?.length) return;
+  // Simulate optimization by shuffling with a consistent seed (real app would use Maps API)
+  r.stops = [...r.stops].sort(() => Math.sin(r.id.charCodeAt(0) + r.stops.indexOf(r.stops[0])) - 0.3);
+  r.optimized = true;
+  save();
+  openRouteDetail(rid);
+  toast('✦ Route optimized!');
+}
+
+function deleteRoute(id) {
+  if (!confirm('Delete this route?')) return;
+  state.routes = state.routes.filter(r => r.id !== id);
+  save();
+  gsDelete('routes', id);
+  closePanel('route-panel');
+  renderRoutes();
+  renderDashboard();
+  toast('Route deleted');
+}
+
+function openAddRoute() {
+  // populate crew select
+  const sel = document.getElementById('nr-crew');
+  sel.innerHTML = '<option value="">Assign crew member...</option>' +
+    state.crew.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+
+  // populate properties as tap-to-select rows
+  const listEl = document.getElementById('nr-prop-list');
+  if (!state.properties.length) {
+    listEl.innerHTML = '<div style="font-size:13px;color:var(--text4);padding:8px 0;">Add properties first</div>';
+  } else {
+    listEl.innerHTML = '';
+    state.properties.forEach(function(p) {
+      var row = document.createElement('div');
+      row.dataset.propId = p.id;
+      row.dataset.selected = '0';
+      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 8px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:8px;';
+      row.innerHTML =
+        '<div style="width:24px;height:24px;border-radius:6px;border:2px solid var(--border2);background:var(--bg4);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;transition:all .15s;" class="nr-row-check"></div>' +
+        '<div><div style="font-size:13px;font-weight:700;">' + p.name + '</div>' +
+        '<div style="font-size:11px;color:var(--text3);">' + p.address + '</div></div>';
+      row.onclick = function() {
+        var sel = row.dataset.selected === '1';
+        sel = !sel;
+        row.dataset.selected = sel ? '1' : '0';
+        var check = row.querySelector('.nr-row-check');
+        check.style.background    = sel ? 'var(--green3)' : 'var(--bg4)';
+        check.style.borderColor   = sel ? 'var(--green)'  : 'var(--border2)';
+        check.style.color         = sel ? '#fff'          : 'transparent';
+        check.textContent         = sel ? '✓' : '';
+        row.style.background      = sel ? 'rgba(74,222,128,.06)' : '';
+      };
+      listEl.appendChild(row);
+    });
+  }
+  openOverlay('add-route-overlay');
+}
+
+function saveRoute() {
+  const name = document.getElementById('nr-name').value.trim();
+  if (!name) { toast('Enter a route name'); return; }
+  const checked = [...document.querySelectorAll('#nr-prop-list div[data-selected="1"]')].map(r => r.dataset.propId);
+  state.routes.push({
+    id: uid(), name, day: document.getElementById('nr-day').value,
+    crewId: document.getElementById('nr-crew').value,
+    status: 'Scheduled', optimized: false,
+    stops: checked.map(pid => ({ propId: pid, completed: false, completedServices: [], photos: [], notes:'' }))
+  });
+  save(); closeOverlay('add-route-overlay');
+  document.getElementById('nr-name').value = '';
+  renderRoutes(); renderDashboard(); toast('Route created!');
+}
+
+// ─── PROPERTIES ───────────────────────────────────────────────────────────
+function renderProperties() {
+  // show/hide manager-only buttons
+  const propBtns = document.getElementById('prop-header-btns');
+  if (propBtns) {
+    propBtns.innerHTML = state.role === 'manager' ? `
+      <button class="btn-sm" id="prop-select-btn" onclick="togglePropSelect()" style="background:var(--bg4);color:var(--text3);border:1px solid var(--border2);">Select</button>
+      <button class="btn-sm" onclick="openImport('properties')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">⬆ Import</button>
+      <button class="btn-sm btn-green" onclick="openAddProperty()">+ Add</button>` : '';
+  }
+  // hide bulk bar for crew
+  const bulkBar = document.getElementById('prop-bulk-bar');
+  if (bulkBar && state.role !== 'manager') bulkBar.style.display = 'none';
+  const q = document.getElementById('prop-search')?.value?.toLowerCase() || '';
+  const filtered = state.properties.filter(p =>
+    p.name.toLowerCase().includes(q) || (p.address||'').toLowerCase().includes(q)
+  );
+  const el = document.getElementById('properties-list');
+  if (!filtered.length) {
+    el.innerHTML = `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">${q?'No results found':'No properties yet. Tap + Add to start.'}</div>`;
+    return;
+  }
+  el.innerHTML = filtered.map(p => {
+    const flags = state.flags.filter(f => f.propId === p.id && !f.resolved);
+    const lastVisit = state.routes.filter(r => r.stops?.some(s=>s.propId===p.id&&s.completed))
+      .sort((a,b)=>b.id.localeCompare(a.id))[0];
+    const isSelected = selectedPropIds.has(p.id);
+    return `<div class="card" style="cursor:pointer;transition:border .15s;${isSelected?'border-color:var(--green);background:rgba(74,222,128,.05);':''}"
+      onclick="${propSelectMode ? `togglePropCheckbox('${p.id}',${!isSelected});renderProperties()` : `openPropDetail('${p.id}')`}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+        ${propSelectMode ? `<div style="flex-shrink:0;margin-top:2px;">
+          <div style="width:22px;height:22px;border-radius:6px;border:2px solid ${isSelected?'var(--green)':'var(--border2)'};
+            background:${isSelected?'var(--green)':'transparent'};display:flex;align-items:center;justify-content:center;">
+            ${isSelected?'<span style="color:#fff;font-size:14px;font-weight:800;">✓</span>':''}
+          </div>
+        </div>` : ''}
+        <div style="flex:1;min-width:0;">
+          <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">📍 ${p.address||'No address'}</div>
+          ${p.frequency?`<div style="font-size:11px;color:var(--teal);margin-top:3px;">🔄 ${p.frequency}</div>`:''}
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;">
+            ${(p.services||[]).slice(0,3).map(s=>`<span style="font-size:10px;background:var(--bg4);color:var(--text2);padding:2px 8px;border-radius:10px;border:1px solid var(--border2);">${s}</span>`).join('')}
+            ${(p.services||[]).length>3?`<span style="font-size:10px;color:var(--text3);">+${p.services.length-3} more</span>`:''}
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
+          ${flags.length?`<span class="badge badge-red">⚑ ${flags.length}</span>`:`<span class="badge badge-green">✓ Clear</span>`}
+          ${lastVisit?`<span style="font-size:10px;color:var(--text4);">Last: ${lastVisit.day}</span>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openPropDetail(id) {
+  const p = state.properties.find(x => x.id === id);
+  if (!p) return;
+  const flags     = state.flags.filter(f => f.propId === id);
+  const openFlags = flags.filter(f => !f.resolved);
+  document.getElementById('pp-title').textContent = p.name;
+
+  const freqOptions = ['Weekly','2x Per Week','Bi-Weekly','Monthly','2x Per Month','Quarterly','As Needed','Custom'];
+
+  let html = `
+
+    <div class="card" style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div class="sec-title" style="margin-bottom:0;">Property Info</div>
+        ${state.role==='manager'?`<button class="btn-sm" onclick="togglePropEdit('${id}')" id="prop-edit-btn-${id}"
+          style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">✏️ Edit</button>`:''}
+      </div>
+
+
+      <div id="prop-view-${id}">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+          <div><div style="font-size:11px;color:var(--text3);letter-spacing:.5px;">ADDRESS</div>
+               <div style="font-size:13px;font-weight:700;margin-top:2px;">${p.address||'—'}</div></div>
+          <div><div style="font-size:11px;color:var(--text3);letter-spacing:.5px;">PHONE</div>
+               <div style="font-size:13px;font-weight:700;margin-top:2px;">${p.phone||'—'}</div></div>
+          <div><div style="font-size:11px;color:var(--text3);letter-spacing:.5px;">FREQUENCY</div>
+               <div style="font-size:13px;font-weight:700;color:var(--green);margin-top:2px;">${p.frequency||p.customFreq||'Not set'}</div></div>
+          <div><div style="font-size:11px;color:var(--text3);letter-spacing:.5px;">LAST SERVICE</div>
+               <div style="font-size:13px;font-weight:700;margin-top:2px;">${p.lastServiceDate||'Never'}</div></div>
+        </div>
+        ${p.notes?`<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.2);border-radius:8px;padding:10px;font-size:12px;color:var(--yellow);">📝 ${p.notes}</div>`:''}
+      </div>
+
+
+      <div id="prop-edit-${id}" style="display:none;flex-direction:column;gap:10px;">
+        <input class="inp" id="pe-name-${id}" value="${p.name||''}" placeholder="Customer name"/>
+        <input class="inp" id="pe-address-${id}" value="${p.address||''}" placeholder="Address"/>
+        <input class="inp" id="pe-phone-${id}" value="${p.phone||''}" placeholder="Phone" type="tel"/>
+        <textarea class="inp" id="pe-notes-${id}" rows="2" placeholder="Notes (gate code, dog, etc.)">${p.notes||''}</textarea>
+        <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">SERVICE FREQUENCY</div>
+        <select class="inp" id="pe-freq-${id}" onchange="onPeFreqChange('${id}',this.value)">
+          <option value="">— Not set —</option>
+          ${freqOptions.map(f=>`<option value="${f}" ${p.frequency===f?'selected':''}>${f}</option>`).join('')}
+        </select>
+        <input class="inp" id="pe-custom-${id}" placeholder="Custom frequency (e.g. Every 10 days)"
+          value="${p.customFreq||''}" style="display:${p.frequency==='Custom'?'block':'none'};"/>
+        <div id="pe-days-${id}" style="display:${p.frequency==='2x Per Week'?'block':'none'};margin-bottom:8px;">
+          <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">SERVICE DAYS — tap to select</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(day => {
+              const active = (p.serviceDays||[]).includes(day);
+              return `<button type="button" onclick="togglePeDay('${id}',this,'${day}')"
+                data-day="${day}" data-active="${active?'1':'0'}"
+                style="padding:7px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:2px solid;
+                background:${active?'var(--green3)':'var(--bg4)'};color:${active?'#fff':'var(--text3)'};
+                border-color:${active?'var(--green)':'var(--border2)'};">
+                ${day.slice(0,3)}
+              </button>`;
+            }).join('')}
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">LAST SERVICE DATE</div>
+        <input type="date" class="inp" id="pe-last-${id}" value="${formatDateForInput(p.lastServiceDate)}" style="color-scheme:dark;background:var(--bg4);color:var(--text);border:1px solid var(--green);"/>
+        <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">NEXT SERVICE DATE</div>
+        <input type="date" class="inp" id="pe-next-${id}" value="${formatDateForInput(p.nextServiceDate)||calculateNextService(p)}" style="color-scheme:dark;background:var(--bg4);color:var(--text);border:1px solid var(--border2);"/>
+        <div style="font-size:11px;color:var(--text4);">&#x1F4A1; Next service auto-calculates when you save.</div>
+        <button class="btn btn-green" onclick="savePropEdit('${id}')" style="font-size:13px;">Save Changes</button>
+        <button class="btn btn-outline" onclick="togglePropEdit('${id}')" style="font-size:13px;">Cancel</button>
+      </div>
+    </div>
+
+
+    <div class="card" style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div class="sec-title" style="margin-bottom:0;">Services</div>
+        ${state.role==='manager'?`<button class="btn-sm" onclick="toggleServicesEdit('${id}')" id="svc-edit-btn-${id}"
+          style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">✏️ Edit</button>`:''}
+      </div>
+
+      <div id="svc-view-${id}">
+        ${(p.services||[]).length
+          ? (p.services||[]).map(s=>`<div class="card-flat" style="margin-bottom:6px;">${s}</div>`).join('')
+          : '<div style="color:var(--text4);font-size:13px;">No services assigned — tap Edit to add</div>'}
+      </div>
+
+      <div id="svc-edit-${id}" style="display:none;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+          ${SERVICES.map(s => {
+            const on = (p.services||[]).includes(s);
+            return `<button onclick="togglePropService('${id}','${s}',this)"
+              data-on="${on}"
+              style="padding:9px 8px;border-radius:10px;font-size:11px;font-weight:700;text-align:left;
+              background:${on?'rgba(74,222,128,.15)':'var(--bg4)'};
+              border:1px solid ${on?'var(--green)':'var(--border2)'};
+              color:${on?'var(--green)':'var(--text3)'};cursor:pointer;
+              font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;display:flex;align-items:center;gap:6px;">
+              <span>${on?'✓':'○'}</span>${s}
+            </button>`;
+          }).join('')}
+        </div>
+        <button class="btn btn-green" onclick="savePropServices('${id}')" style="font-size:13px;">Save Services</button>
+      </div>
+    </div>
+
+
+    <div class="card" style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div class="sec-title" style="margin-bottom:0;">Flags & Issues (${openFlags.length} open)</div>
+        <button class="btn-sm" onclick="openAddFlag('${id}')"
+          style="background:rgba(251,146,60,.15);color:var(--orange);border:1px solid rgba(251,146,60,.3);">+ Flag</button>
+      </div>
+      ${flags.length ? flags.map(f => `
+        <div class="card-flat" style="margin-bottom:8px;cursor:pointer;" onclick="openReportFlag('${f.id}')">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+            <div style="flex:1;">
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap;">
+                <span class="badge badge-${PCOLORS[f.priority]||'yellow'}">${f.priority}</span>
+                <span style="font-size:12px;color:var(--blue);">${f.service}</span>
+                ${f.resolved?'<span class="badge badge-green">✓ Resolved</span>':'<span class="badge badge-red">Open</span>'}
+              </div>
+              <div style="font-size:13px;color:var(--text2);">${f.note}</div>
+              <div style="font-size:11px;color:var(--text4);margin-top:4px;">
+                By ${f.by||'—'} · ${f.date||''}
+                ${f.assignedRouteName?`<span style="color:var(--teal);"> · 📅 ${f.assignedRouteName}</span>`:''}
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;margin-left:8px;">
+              ${getFlagPhoto(f)?`<img src="${getFlagPhoto(f)}" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f)}','Issue')" style="width:60px;height:60px;border-radius:8px;object-fit:cover;cursor:zoom-in;border:2px solid var(--border2);"/>`:'' }
               ${!f.resolved?`
                 <div style="display:flex;gap:4px;margin-top:4px;">
                   <button onclick="event.stopPropagation();openEditFlag('${f.id}')"
