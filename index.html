@@ -711,8 +711,10 @@ select.inp{cursor:pointer;}
 
 @media print {
   #pdf-print-overlay #pdf-btns { display: none !important; }
+  #pdf-print-overlay > div:first-child { display: none !important; }
   body > *:not(#pdf-print-overlay) { display: none !important; }
-  #pdf-print-overlay { position:static !important; padding:0 !important; }
+  #pdf-print-overlay { position:static !important; padding:0 !important; overflow:visible !important; }
+  img { max-width:100% !important; page-break-inside:avoid; }
 }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
@@ -7722,7 +7724,7 @@ function exportWOPDFDownload() {
     '<style>' +
     'body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;padding:20px;background:#f9fafb;color:#111;}' +
     'img{max-width:100%;height:auto;}' +
-    '@media print{body{padding:0;}}' +
+    '@media print{body{padding:0;}#pdf-btns{display:none!important;}.page-item{page-break-before:always;}img{max-width:100%!important;page-break-inside:avoid;}}' +
     '</style></head><body>' +
     reportContent.outerHTML +
     '<div style="text-align:center;margin-top:20px;">' +
@@ -7764,36 +7766,40 @@ function exportWOPDF(community) {
   overlay.id = 'pdf-print-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#f9fafb;overflow-y:auto;padding:24px;box-sizing:border-box;';
 
+  // Each completed WO gets its own page
   var completedHTML = wos.map(function(w) {
     var crew = (state.crew||[]).find(function(c) { return c.id === w.assignedTo; });
     var typeIcon = w.type === 'irrigation' ? '💧 Irrigation' : '🌿 Landscaping';
-    return '<div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #e5e7eb;">' +
-      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
-        '<div>' +
-          '<div style="font-size:11px;color:#6b7280;font-weight:700;letter-spacing:1px;">' + typeIcon + '</div>' +
-          '<div style="font-size:15px;font-weight:800;color:#111;">#' + (w.woNumber||'') + ' · ' + (w.ownerName||'—') + '</div>' +
-          '<div style="font-size:12px;color:#6b7280;">' + (w.address||'') + (w.village ? ' · Village ' + w.village : '') + '</div>' +
+    return '<div style="page-break-before:always;padding-top:24px;">' +
+      '<div style="background:#fff;border-radius:12px;padding:20px;border:1px solid #e5e7eb;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">' +
+          '<div>' +
+            '<div style="font-size:11px;color:#6b7280;font-weight:700;letter-spacing:1px;">' + typeIcon + '</div>' +
+            '<div style="font-size:17px;font-weight:800;color:#111;">#' + (w.woNumber||'') + ' · ' + (w.ownerName||'--') + '</div>' +
+            '<div style="font-size:12px;color:#6b7280;">' + (w.address||'') + (w.village ? ' - Village ' + w.village : '') + '</div>' +
+          '</div>' +
+          '<div style="background:#dcfce7;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:800;color:#16a34a;">COMPLETED</div>' +
         '</div>' +
-        '<div style="background:#dcfce7;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:800;color:#16a34a;">✓ COMPLETED</div>' +
+        '<div style="font-size:13px;color:#374151;margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
+        '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + (w.completedOn ? ' - ' + w.completedOn : '') + '</div>' +
+        (w.completedNotes ? '<div style="font-size:12px;color:#374151;margin-top:8px;padding:8px 12px;background:#f9fafb;border-radius:8px;border-left:3px solid #16a34a;">Notes: ' + w.completedNotes + '</div>' : '') +
+        (getWOPhoto(w)
+          ? '<img src="' + getWOPhoto(w) + '" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:460px;object-fit:cover;border-radius:10px;margin-top:14px;"/>'
+          : '<div style="background:#f3f4f6;border-radius:8px;padding:16px;text-align:center;color:#9ca3af;font-size:12px;margin-top:10px;">No photo attached</div>') +
       '</div>' +
-      '<div style="font-size:13px;color:#374151;margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
-      '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
-      (w.completedNotes ? '<div style="font-size:11px;color:#6b7280;margin-top:4px;">Notes: ' + w.completedNotes + '</div>' : '') +
-      (getWOPhoto(w)
-      ? '<img src="' + getWOPhoto(w) + '" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;"/>' +
-          '<div style="font-size:11px;color:#6b7280;text-align:center;margin-top:4px;">📱 Long press → Save to Photos &nbsp;|&nbsp; 💻 Right-click → Save Image</div>'
-        : '<div style="background:#f3f4f6;border-radius:8px;padding:16px;text-align:center;color:#9ca3af;font-size:12px;margin-top:10px;">No photo attached</div>') +
     '</div>';
   }).join('');
 
+  // All remaining WOs combined on their own page(s)
   var openHTML = '';
   if (open.length) {
-    openHTML = '<div style="margin-top:16px;"><h2 style="font-size:16px;font-weight:800;color:#dc2626;margin:0 0 12px;">⏳ Remaining (' + open.length + ')</h2>';
+    openHTML = '<div style="page-break-before:always;padding-top:24px;">' +
+      '<h2 style="font-size:16px;font-weight:800;color:#dc2626;margin:0 0 14px;">Remaining (' + open.length + ')</h2>';
     open.forEach(function(w) {
       var typeIcon = w.type === 'irrigation' ? '💧' : '🌿';
       openHTML += '<div style="background:#fff;border-radius:10px;padding:12px;margin-bottom:8px;border:1px solid #e5e7eb;border-left:3px solid #dc2626;">' +
-        '<div style="font-size:13px;font-weight:700;">' + typeIcon + ' #' + (w.woNumber||'') + ' · ' + (w.ownerName||'') + '</div>' +
-        '<div style="font-size:11px;color:#6b7280;">' + (w.address||'') + ' · ' + (w.requestType||'') + '</div>' +
+        '<div style="font-size:13px;font-weight:700;">' + typeIcon + ' #' + (w.woNumber||'') + ' - ' + (w.ownerName||'') + '</div>' +
+        '<div style="font-size:11px;color:#6b7280;">' + (w.address||'') + ' - ' + (w.requestType||'') + '</div>' +
       '</div>';
     });
     openHTML += '</div>';
