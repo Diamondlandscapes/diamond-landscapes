@@ -7430,7 +7430,7 @@ function openUploadWO(community) {
   // Hint
   var hint = document.createElement('div');
   hint.style.cssText = 'font-size:11px;color:var(--text3);margin:6px 0 12px;';
-  hint.textContent = 'Columns: Date, WO#, Address, Village, Owner, Request Type, Details';
+  hint.textContent = 'Columns: Date Work Order Submitted, WO#, Address, Village, Owner, Request Type, Details';
   inner.appendChild(hint);
 
   // Import button
@@ -7485,6 +7485,8 @@ function processWOUpload(community) {
       details: details,
       assignedTo: '',
       status: 'open',
+      dateReceived: new Date().toLocaleDateString(),
+      dateCompleted: '',
       completedOn: '',
       completedPhoto: '',
       completedBy: '',
@@ -7571,6 +7573,15 @@ function openWODetail(woId) {
         '<select id="wo-status-sel" style="width:100%;background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:10px;color:var(--text);font-size:14px;">' + statusOptions + '</select>' +
       '</div>' +
 
+      '<div style="background:var(--bg3);border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid var(--border);">' +
+        '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">DATES</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">' +
+          '<div><div style="font-size:10px;color:var(--text4);font-weight:700;letter-spacing:1px;">DATE SUBMITTED</div><div style="font-size:13px;margin-top:2px;">' + (wo.date||'—') + '</div></div>' +
+          '<div><div style="font-size:10px;color:var(--text4);font-weight:700;letter-spacing:1px;">DATE COMPLETED</div><div style="font-size:13px;margin-top:2px;color:var(--green);">' + (wo.dateCompleted||wo.completedOn||'—') + '</div></div>' +
+        '</div>' +
+        '<div style="font-size:10px;color:var(--text4);font-weight:700;letter-spacing:1px;margin-bottom:4px;">DATE RECEIVED <span style="font-size:10px;font-weight:400;color:var(--text3);">(editable)</span></div>' +
+        '<input type="date" id="wo-date-received" class="inp" value="' + (wo.dateReceived ? new Date(wo.dateReceived).toISOString().slice(0,10) : '') + '" style="width:100%;font-size:13px;"/>' +
+      '</div>' +
       '<div style="margin-bottom:14px;">' +
         '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">DUE DATE (optional)</div>' +
         '<input type="date" id="wo-due-date" class="inp" value="' + (wo.dueDate||'') + '" style="width:100%;"/>' +
@@ -7608,8 +7619,13 @@ function saveWODetail(woId) {
   wo.status = document.getElementById('wo-status-sel').value;
   wo.type = document.getElementById('wo-type-sel')?.value || wo.type;
   wo.dueDate = document.getElementById('wo-due-date')?.value || wo.dueDate || '';
+  var drEl = document.getElementById('wo-date-received');
+  if (drEl && drEl.value) wo.dateReceived = new Date(drEl.value).toLocaleDateString();
+  if (wo.status === 'completed' && !wo.dateCompleted) {
+    wo.dateCompleted = new Date().toLocaleDateString();
+  }
   if (wo.status === 'completed' && !wo.completedOn) {
-    wo.completedOn = new Date().toLocaleDateString();
+    wo.completedOn = wo.dateCompleted || new Date().toLocaleDateString();
   }
   saveAndSync('workOrders', wo);
   document.getElementById('wo-detail-sheet')?.remove();
@@ -7746,9 +7762,44 @@ function exportWOPDFDownload() {
 
 function pdfClose() { var o=document.getElementById('pdf-print-overlay'); if(o)o.remove(); }
 
-function exportWOPDF(community) {
+function exportWOPDF(community, dateFrom, dateTo) {
+  // If no dates passed, show date filter UI first
+  if (dateFrom === undefined) {
+    var existing2 = document.getElementById('wo-date-filter-overlay');
+    if (existing2) existing2.remove();
+    var fo = document.createElement('div');
+    fo.id = 'wo-date-filter-overlay';
+    fo.className = 'overlay open';
+    fo.style.zIndex = '9000';
+    var fi = document.createElement('div');
+    fi.className = 'sheet';
+    fi.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
+        '<div class="sheet-title" style="margin-bottom:0;">📄 Export Report</div>' +
+        '<button onclick="document.getElementById(\'wo-date-filter-overlay\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+      '</div>' +
+      '<div style="font-size:13px;color:var(--text3);margin-bottom:14px;">Filter completed work orders by date range (optional)</div>' +
+      '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">DATE COMPLETED — FROM</div>' +
+      '<input type="date" id="wo-filter-from" class="inp" style="margin-bottom:12px;"/>' +
+      '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">DATE COMPLETED — TO</div>' +
+      '<input type="date" id="wo-filter-to" class="inp" style="margin-bottom:16px;"/>' +
+      '<button class="btn btn-green" style="margin-bottom:8px;" onclick="(function(){ var df=document.getElementById(\'wo-filter-from\').value; var dt=document.getElementById(\'wo-filter-to\').value; document.getElementById(\'wo-date-filter-overlay\').remove(); exportWOPDF(\''+community.replace(/'/g,"\'")+'\',df||null,dt||null); })()">📄 Generate Report</button>' +
+      '<button class="btn btn-outline" onclick="document.getElementById(\'wo-date-filter-overlay\').remove()">Cancel</button>';
+    fo.appendChild(fi);
+    document.body.appendChild(fo);
+    return;
+  }
+
   var wos = (state.workOrders||[]).filter(function(w) {
-    return w.community === community && w.status === 'completed';
+    if (w.community !== community || w.status !== 'completed') return false;
+    if (dateFrom || dateTo) {
+      var dc = w.dateCompleted || w.completedOn || '';
+      if (!dc) return false;
+      var d = new Date(dc);
+      if (dateFrom && d < new Date(dateFrom)) return false;
+      if (dateTo && d > new Date(dateTo + 'T23:59:59')) return false;
+    }
+    return true;
   });
   var open = (state.workOrders||[]).filter(function(w) {
     return w.community === community && w.status !== 'completed' && w.status !== 'placeholder';
@@ -7781,7 +7832,12 @@ function exportWOPDF(community) {
           '<div style="background:#dcfce7;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:800;color:#16a34a;">COMPLETED</div>' +
         '</div>' +
         '<div style="font-size:13px;color:#374151;margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
-        '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + (w.completedOn ? ' - ' + w.completedOn : '') + '</div>' +
+        '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px;">' +
+          '<div style="font-size:11px;color:#6b7280;"><span style="font-weight:700;color:#374151;">Submitted:</span> ' + (w.date||'—') + '</div>' +
+          '<div style="font-size:11px;color:#6b7280;"><span style="font-weight:700;color:#374151;">Received:</span> ' + (w.dateReceived||'—') + '</div>' +
+          '<div style="font-size:11px;color:#16a34a;"><span style="font-weight:700;">Completed:</span> ' + (w.dateCompleted||w.completedOn||'—') + '</div>' +
+        '</div>' +
+        '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + '</div>' +
         (w.completedNotes ? '<div style="font-size:12px;color:#374151;margin-top:8px;padding:8px 12px;background:#f9fafb;border-radius:8px;border-left:3px solid #16a34a;">Notes: ' + w.completedNotes + '</div>' : '') +
         (getWOPhoto(w)
           ? '<img src="' + getWOPhoto(w) + '" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:460px;object-fit:cover;border-radius:10px;margin-top:14px;"/>'
@@ -7922,15 +7978,16 @@ function exportWOReport(community) {
 }
 
 // ── Crew Work Orders ──────────────────────────────────────────────────────────
-function renderCrewWorkOrders() {
+function renderCrewWorkOrders(villageFilter) {
   var el = document.getElementById('wo-crew-list');
   if (!el) return;
 
   var crewId = state.loggedInCrewId;
   var crew = crewId ? (state.crew || []).find(function(c) { return c.id === crewId; }) : null;
   var allWOs = state.workOrders || [];
+  var vf = (villageFilter !== undefined ? villageFilter : (window._crewWOVillage || '')).toString().trim();
+  window._crewWOVillage = vf;
 
-  // Show WOs assigned to this crew member
   var myWOs = allWOs.filter(function(w) {
     return (w.assignedTo === crewId || (crew && w.assignedTo === crew.name)) && w.status !== 'completed' && w.status !== 'placeholder';
   });
@@ -7943,6 +8000,17 @@ function renderCrewWorkOrders() {
     return;
   }
 
+  // Build village list from assigned WOs
+  var villages = [];
+  myWOs.forEach(function(w) {
+    var v = (w.village||'').toString().trim();
+    if (v && !villages.includes(v)) villages.push(v);
+  });
+  villages.sort(function(a,b){ return (parseInt(a)||0)-(parseInt(b)||0); });
+
+  // Apply village filter
+  var filteredMyWOs = vf ? myWOs.filter(function(w){ return (w.village||'').toString().trim()===vf; }) : myWOs;
+
   if (!myWOs.length && !doneWOs.length) {
     el.innerHTML = '<div class="card" style="text-align:center;padding:32px;">' +
       '<div style="font-size:40px;margin-bottom:12px;">✅</div>' +
@@ -7954,20 +8022,30 @@ function renderCrewWorkOrders() {
 
   var html = '';
 
-  if (myWOs.length) {
-    html += '<div class="sec-title">Assigned to Me (' + myWOs.length + ')</div>';
-    myWOs.forEach(function(w) {
+  // Village filter pills (only show if multiple villages)
+  if (villages.length > 1) {
+    html += '<div class="pills" style="margin-bottom:12px;">';
+    html += '<button class="pill' + (!vf ? ' active' : '') + '" onclick="renderCrewWorkOrders(\'\')">All</button>';
+    villages.forEach(function(v) {
+      html += '<button class="pill' + (vf===v ? ' active' : '') + '" onclick="renderCrewWorkOrders(\'' + v + '\')">Village ' + v + '</button>';
+    });
+    html += '</div>';
+  }
+
+  if (filteredMyWOs.length) {
+    html += '<div class="sec-title">Assigned to Me (' + filteredMyWOs.length + (vf ? ' - Village ' + vf : '') + ')</div>';
+    filteredMyWOs.forEach(function(w) {
       var typeIcon = w.type === 'irrigation' ? '💧' : '🌿';
       var statusColor = w.status === 'in_progress' ? 'yellow' : 'red';
       html += '<div class="card" style="margin-bottom:10px;cursor:pointer;border-left:3px solid var(--' + statusColor + ');" onclick="openCrewWODetail(\'' + w.id + '\')">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
-          '<div>' +
+          '<div style="flex:1;min-width:0;">' +
             '<div style="font-weight:800;font-size:14px;">' + typeIcon + ' #' + (w.woNumber||w.id.slice(-4)) + ' · ' + (w.ownerName||'') + '</div>' +
-            '<div style="font-size:12px;color:var(--text3);">' + (w.address||'') + '</div>' +
+            '<div style="font-size:12px;color:var(--text3);">' + (w.address||'') + (w.village ? ' · <span style=\"color:var(--blue);font-weight:700;\">Village ' + w.village + '</span>' : '') + '</div>' +
           '</div>' +
-          '<span class="badge badge-' + statusColor + '">' + (w.status==='in_progress'?'In Progress':'Open') + '</span>' +
+          '<span class="badge badge-' + statusColor + '">' + (w.status==='in_progress' ? 'In Progress' : 'Open') + '</span>' +
         '</div>' +
-        '<div style="font-size:12px;color:var(--text2);"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details.slice(0,80) + (w.details.length>80?'…':'') : '') + '</div>' +
+        '<div style="font-size:12px;color:var(--text2);"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details.slice(0,80) + (w.details.length>80 ? '…' : '') : '') + '</div>' +
         (w.community ? '<div style="font-size:11px;color:var(--text4);margin-top:4px;">' + w.community + '</div>' : '') +
         (w.dueDate ? '<div style="font-size:11px;color:var(--red);margin-top:4px;font-weight:700;">⏰ Due: ' + w.dueDate + '</div>' : '') +
         '<div style="margin-top:10px;">' +
@@ -7975,6 +8053,8 @@ function renderCrewWorkOrders() {
         '</div>' +
         '</div>';
     });
+  } else if (vf) {
+    html += '<div class="card" style="text-align:center;padding:24px;color:var(--text4);font-size:13px;">No open work orders for Village ' + vf + '</div>';
   }
 
   if (doneWOs.length) {
@@ -7984,13 +8064,13 @@ function renderCrewWorkOrders() {
       html += '<div class="card-flat" style="margin-bottom:8px;border-left:3px solid var(--green);">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;">' +
           '<div>' +
-            '<div style="font-weight:700;font-size:13px;">' + typeIcon + ' #' + (w.woNumber||'') + ' · ' + (w.ownerName||'') + '</div>' +
-            '<div style="font-size:11px;color:var(--text3);">' + (w.completedOn||'') + '</div>' +
+            '<div style="font-weight:700;font-size:13px;">' + typeIcon + ' #' + (w.woNumber||'') + ' · ' + (w.ownerName||'') + (w.village ? ' · <span style=\"color:var(--blue);\">Village ' + w.village + '</span>' : '') + '</div>' +
+            '<div style="font-size:11px;color:var(--text3);">' + (w.dateCompleted||w.completedOn||'') + '</div>' +
           '</div>' +
           '<span class="badge badge-green">✓</span>' +
         '</div>' +
         (getWOPhoto(w) ? '<img src="' + getWOPhoto(w) + '" style="width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-top:8px;"/>' : '') +
-      '</div>';
+        '</div>';
     });
   }
 
@@ -8515,6 +8595,7 @@ function submitCrewWOComplete(woId, photoData) {
     // Step 3: update WO status
     wo.status = 'completed';
     wo.completedOn = new Date().toLocaleDateString();
+    wo.dateCompleted = wo.completedOn;
     wo.completedBy = crew ? crew.name : 'Crew';
     wo.completedNotes = notes;
 
