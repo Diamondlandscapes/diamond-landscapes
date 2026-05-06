@@ -7241,10 +7241,13 @@ function renderWorkOrders() {
 
 // ── Open community detail ─────────────────────────────────────────────────────
 function openCommunityWO(community) {
-  window._woVillage = '';
-  window._woType = 'all';
+  window._woVillage  = '';
+  window._woType     = 'all';
   window._woDateFrom = '';
-  window._woDateTo = '';
+  window._woDateTo   = '';
+  window._woBulkMode = false;
+  window._woBulkSel  = new Set();
+
   var wos = (state.workOrders || []).filter(function(w) { return w.community === community; });
 
   var panel = document.createElement('div');
@@ -7257,7 +7260,7 @@ function openCommunityWO(community) {
     if (df || dt) {
       filtered = filtered.filter(function(w) {
         var dc = w.dateCompleted || w.completedOn || w.date || '';
-        if (!dc) return !(df || dt); // no date — include if no filter set
+        if (!dc) return !(df || dt);
         var d = new Date(dc);
         if (df && d < new Date(df)) return false;
         if (dt && d > new Date(dt + 'T23:59:59')) return false;
@@ -7271,101 +7274,132 @@ function openCommunityWO(community) {
     var vf = (villageFilter !== undefined ? villageFilter : (window._woVillage || '')).toString().trim();
     var df = (dateFrom !== undefined ? dateFrom : (window._woDateFrom || '')).toString().trim();
     var dt = (dateTo   !== undefined ? dateTo   : (window._woDateTo   || '')).toString().trim();
-    window._woVillage   = vf;
-    window._woDateFrom  = df;
-    window._woDateTo    = dt;
+    window._woVillage  = vf;
+    window._woDateFrom = df;
+    window._woDateTo   = dt;
 
     var filtered = applyFilters(type, vf, df, dt);
+    var bulk = window._woBulkMode;
+    var sel  = window._woBulkSel;
 
     function sortByVillage(arr) {
-      return arr.slice().sort(function(a, b) {
-        return (parseInt(a.village)||0) - (parseInt(b.village)||0);
-      });
+      return arr.slice().sort(function(a,b){ return (parseInt(a.village)||0)-(parseInt(b.village)||0); });
     }
-    var open   = sortByVillage(filtered.filter(function(w) { return w.status === 'open'; }));
-    var inProg = sortByVillage(filtered.filter(function(w) { return w.status === 'in_progress'; }));
-    var done   = sortByVillage(filtered.filter(function(w) { return w.status === 'completed'; }));
+    var openWOs = sortByVillage(filtered.filter(function(w){ return w.status==='open'; }));
+    var inProg  = sortByVillage(filtered.filter(function(w){ return w.status==='in_progress'; }));
+    var done    = sortByVillage(filtered.filter(function(w){ return w.status==='completed'; }));
+
+    function assignLabel(w) {
+      var crew = (state.crew||[]).find(function(c){ return c.id===w.assignedTo; });
+      return w.assignedTo==='__team__'
+        ? '<div style="font-size:11px;color:var(--blue);font-weight:700;">&#x1F465; General Team</div>'
+        : crew ? '<div style="font-size:11px;color:var(--teal);">&#x1F477; '+crew.name+'</div>'
+        : '<div style="font-size:11px;color:var(--text4);">Unassigned</div>';
+    }
+
+    function woCard(w, color) {
+      var addr = (w.address||'') + (w.village ? ' &middot; <span style="color:var(--blue);font-weight:700;">V'+w.village+'</span>' : '');
+      if (bulk) {
+        var checked = sel.has(w.id);
+        return '<label style="display:flex;align-items:flex-start;gap:10px;background:var(--bg3);border-radius:10px;padding:10px 12px;margin-bottom:8px;border-left:3px solid var(--'+color+');'+(checked?'outline:2px solid var(--blue);outline-offset:-2px;':'')+' cursor:pointer;">'
+          + '<input type="checkbox" data-woid="'+w.id+'" '+(checked?'checked ':'')+' onchange="woBulkToggle(this)" style="width:18px;height:18px;accent-color:var(--blue);flex-shrink:0;margin-top:2px;cursor:pointer;"/>'
+          + '<div style="flex:1;min-width:0;">'
+          +   '<div style="font-weight:700;font-size:13px;">#'+(w.woNumber||w.id.slice(-4))+' &middot; '+(w.ownerName||'')+'</div>'
+          +   '<div style="font-size:11px;color:var(--text3);">'+addr+'</div>'
+          +   '<div style="font-size:11px;color:var(--text3);margin-top:2px;">'+(w.requestType||'')+'</div>'
+          +   assignLabel(w)
+          + '</div>'
+          + '</label>';
+      }
+      return '<div class="card-flat" style="margin-bottom:8px;cursor:pointer;border-left:3px solid var(--'+color+');" onclick="openWODetail(\''+w.id+'\')">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+        +   '<div style="flex:1;min-width:0;">'
+        +     '<div style="font-weight:700;font-size:13px;">#'+(w.woNumber||w.id.slice(-4))+' &middot; '+(w.ownerName||'')+'</div>'
+        +     '<div style="font-size:11px;color:var(--text3);">'+addr+'</div>'
+        +     '<div style="font-size:11px;color:var(--text3);margin-top:2px;">'+(w.requestType||'')+'</div>'
+        +   '</div>'
+        +   '<div style="text-align:right;flex-shrink:0;">'
+        +     assignLabel(w)
+        +     (w.dateCompleted||w.completedOn?'<div style="font-size:10px;color:var(--green);">&#x2713; '+(w.dateCompleted||w.completedOn)+'</div>':'')
+        +   '</div>'
+        + '</div>'
+        + (w.details?'<div style="font-size:11px;color:var(--text3);margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">'+w.details+'</div>':'')
+        + '</div>';
+    }
 
     var woRows = '';
-    [['🔴 Open', open, 'red'], ['🟡 In Progress', inProg, 'yellow'], ['🟢 Completed', done, 'green']].forEach(function(group) {
-      var label = group[0]; var items = group[1]; var color = group[2];
-      if (!items.length) return;
-      woRows += '<div class="sec-title" style="margin-top:14px;">' + label + ' (' + items.length + ')</div>';
-      items.forEach(function(w) {
-        var crew = (state.crew || []).find(function(c) { return c.id === w.assignedTo; });
-        woRows += '<div class="card-flat" style="margin-bottom:8px;cursor:pointer;border-left:3px solid var(--' + color + ');" onclick="openWODetail(\'' + w.id + '\')">' +
-          '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
-            '<div style="flex:1;min-width:0;">' +
-              '<div style="font-weight:700;font-size:13px;">#' + (w.woNumber||w.id.slice(-4)) + ' · ' + (w.ownerName||'') + '</div>' +
-              '<div style="font-size:11px;color:var(--text3);">' + (w.address||'') + (w.village ? ' · <span style="color:var(--blue);font-weight:700;">V' + w.village + '</span>' : '') + '</div>' +
-              '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + (w.requestType||'') + '</div>' +
-            '</div>' +
-            '<div style="text-align:right;flex-shrink:0;">' +
-              (w.assignedTo === '__team__' ? '<div style="font-size:11px;color:var(--blue);font-weight:700;">👥 General Team</div>' : crew ? '<div style="font-size:11px;color:var(--teal);">👷 ' + crew.name + '</div>' : '<div style="font-size:11px;color:var(--text4);">Unassigned</div>') +
-              (w.dateCompleted||w.completedOn ? '<div style="font-size:10px;color:var(--green);">✓ ' + (w.dateCompleted||w.completedOn) + '</div>' : '') +
-            '</div>' +
-          '</div>' +
-          (w.details ? '<div style="font-size:11px;color:var(--text3);margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">' + w.details + '</div>' : '') +
-        '</div>';
-      });
+    [['Open', openWOs, 'red'],['In Progress', inProg, 'yellow'],['Completed', done, 'green']].forEach(function(g) {
+      if (!g[1].length) return;
+      woRows += '<div class="sec-title" style="margin-top:14px;">'+g[0]+' ('+g[1].length+')</div>';
+      g[1].forEach(function(w){ woRows += woCard(w, g[2]); });
     });
 
-    // Village options
     var villages = [];
-    wos.forEach(function(w) {
-      var v = (w.village||'').toString().trim();
-      if (v && !villages.includes(v)) villages.push(v);
-    });
-    villages.sort(function(a,b) { return (parseInt(a)||0) - (parseInt(b)||0); });
+    wos.forEach(function(w){ var v=(w.village||'').toString().trim(); if(v&&!villages.includes(v)) villages.push(v); });
+    villages.sort(function(a,b){ return (parseInt(a)||0)-(parseInt(b)||0); });
     var opts = '<option value="">All Villages</option>';
-    villages.forEach(function(v) { opts += '<option value="' + v + '"' + (vf===v?' selected':'') + '>Village ' + v + '</option>'; });
+    villages.forEach(function(v){ opts += '<option value="'+v+'"'+(vf===v?' selected':'')+'>Village '+v+'</option>'; });
+
+    var crewOpts = '<option value="">-- Select crew --</option><option value="__team__">Team (All Crew)</option>'
+      + (state.crew||[]).map(function(c){ return '<option value="'+c.id+'">'+c.name+'</option>'; }).join('');
 
     var hasFilter = vf || df || dt;
-    var resultCount = filtered.length;
+    var visCount = filtered.filter(function(w){return w.status!=='placeholder';}).length;
+    var commStr = community.replace(/'/g,"\\'");
+    var selCount = sel.size;
+
+    var bulkBar = bulk
+      ? '<div id="wo-bulk-bar" style="background:var(--bg2);border-top:2px solid var(--blue);padding:10px 14px;">'
+        +  '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+        +    '<div style="font-size:13px;font-weight:800;color:var(--blue);" id="wo-bulk-count">'+selCount+' selected</div>'
+        +    '<button onclick="woBulkSelectAll()" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);cursor:pointer;font-weight:700;">Select All</button>'
+        +    '<button onclick="woBulkClear()" style="font-size:11px;padding:4px 10px;border-radius:8px;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);cursor:pointer;">Clear</button>'
+        +  '</div>'
+        +  '<div style="display:flex;gap:8px;">'
+        +    '<select id="wo-bulk-crew" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:8px 10px;color:var(--text);font-size:13px;">'+crewOpts+'</select>'
+        +    '<button onclick="woBulkAssign()" style="padding:8px 18px;border-radius:10px;background:var(--blue);color:#fff;border:none;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">Assign</button>'
+        +  '</div>'
+        + '</div>'
+      : '';
 
     panel.innerHTML =
-      '<div class="panel-head">' +
-        '<button class="close-btn" onclick="document.getElementById(\'wo-community-panel\').remove();renderWorkOrders();">✕</button>' +
-        '<div class="panel-title">' + community + '</div>' +
-      '</div>' +
+      '<div class="panel-head">'
+        + '<button class="close-btn" onclick="document.getElementById(\'wo-community-panel\').remove();renderWorkOrders();">&#x2715;</button>'
+        + '<div class="panel-title">'+community+'</div>'
+      + '</div>'
 
-      // Type pills + action buttons
-      '<div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' +
-        '<button class="pill' + (type==='all'?' active':'') + '" onclick="woCommType(\'all\')">All (' + wos.filter(function(w){return w.status!=='placeholder';}).length + ')</button>' +
-        '<button class="pill' + (type==='landscape'?' active':'') + '" onclick="woCommType(\'landscape\')">🌿 Land</button>' +
-        '<button class="pill' + (type==='irrigation'?' active':'') + '" onclick="woCommType(\'irrigation\')">💧 Irrigation</button>' +
-        '<button class="btn-sm" onclick="openUploadWO(\'' + community.replace(/'/g,"\\'") + '\')" style="margin-left:auto;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">⬆ Upload</button>' +
-        '<button class="btn-sm" onclick="openWOReport(\'' + community.replace(/'/g,"\\'") + '\')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">📄 Report</button>' +
-      '</div>' +
+      + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
+        + '<button class="pill'+(type==='all'?' active':'')+'" onclick="woCommType(\'all\')">All ('+wos.filter(function(w){return w.status!=='placeholder';}).length+')</button>'
+        + '<button class="pill'+(type==='landscape'?' active':'')+'" onclick="woCommType(\'landscape\')">Land</button>'
+        + '<button class="pill'+(type==='irrigation'?' active':'')+'" onclick="woCommType(\'irrigation\')">Irrigation</button>'
+        + '<button id="wo-bulk-toggle" onclick="woBulkToggleMode()" style="margin-left:auto;font-size:12px;padding:5px 12px;border-radius:8px;font-weight:700;cursor:pointer;border:1px solid '+(bulk?'rgba(248,113,113,.4)':'rgba(96,165,250,.3)')+';background:'+(bulk?'rgba(248,113,113,.12)':'rgba(96,165,250,.15)')+';color:'+(bulk?'var(--red)':'var(--blue)')+';">'+(bulk?'Cancel':'Bulk Assign')+'</button>'
+        + '<button class="btn-sm" onclick="openUploadWO(\''+commStr+'\')" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">Upload</button>'
+        + '<button class="btn-sm" onclick="openWOReport(\''+commStr+'\')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">Report</button>'
+      + '</div>'
 
-      // Filter row — village + date range
-      '<div style="padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg2);">' +
-        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
-          '<div style="font-size:11px;font-weight:700;color:var(--text3);white-space:nowrap;">🏘 Village</div>' +
-          '<select id="wo-village-filter" onchange="woFilterVillage(this.value)" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;font-weight:700;">' + opts + '</select>' +
-        '</div>' +
-        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
-          '<div style="font-size:11px;font-weight:700;color:var(--text3);white-space:nowrap;">📅 Dates</div>' +
-          '<input type="date" id="wo-date-from" value="' + df + '" placeholder="From" onchange="woFilterDates()" style="flex:1;min-width:100px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;"/>' +
-          '<div style="font-size:11px;color:var(--text4);">to</div>' +
-          '<input type="date" id="wo-date-to" value="' + dt + '" placeholder="To" onchange="woFilterDates()" style="flex:1;min-width:100px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;"/>' +
-          (hasFilter ? '<button onclick="woClearFilters()" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);cursor:pointer;font-weight:700;white-space:nowrap;">✕ Clear</button>' : '') +
-        '</div>' +
-        (hasFilter ? '<div style="font-size:11px;color:var(--teal);margin-top:4px;font-weight:700;">' + resultCount + ' result' + (resultCount!==1?'s':'') + ' matching filters</div>' : '') +
-      '</div>' +
+      + '<div style="padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg2);">'
+        + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+          + '<div style="font-size:11px;font-weight:700;color:var(--text3);white-space:nowrap;">Village</div>'
+          + '<select id="wo-village-filter" onchange="woFilterVillage(this.value)" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;font-weight:700;">'+opts+'</select>'
+        + '</div>'
+        + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
+          + '<div style="font-size:11px;font-weight:700;color:var(--text3);white-space:nowrap;">Dates</div>'
+          + '<input type="date" id="wo-date-from" value="'+df+'" onchange="woFilterDates()" style="flex:1;min-width:90px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;"/>'
+          + '<div style="font-size:11px;color:var(--text4);">to</div>'
+          + '<input type="date" id="wo-date-to" value="'+dt+'" onchange="woFilterDates()" style="flex:1;min-width:90px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;"/>'
+          + (hasFilter?'<button onclick="woClearFilters()" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);cursor:pointer;font-weight:700;white-space:nowrap;">Clear</button>':'')
+        + '</div>'
+        + (hasFilter?'<div style="font-size:11px;color:var(--teal);margin-top:4px;font-weight:700;">'+visCount+' result'+(visCount!==1?'s':'')+' matching filters</div>':'')
+      + '</div>'
 
-      '<div style="flex:1;overflow-y:auto;padding:14px;" id="wo-comm-body">' +
-        (filtered.filter(function(w){return w.status!=='placeholder';}).length
-          ? woRows
-          : '<div style="text-align:center;color:var(--text4);font-size:13px;padding:32px;">' +
-              (hasFilter ? '🔍 No work orders match these filters.<br><button class="btn btn-outline" style="margin-top:12px;font-size:13px;" onclick="woClearFilters()">Clear Filters</button>' : 'No work orders yet.<br><button class="btn btn-green" style="margin-top:12px;" onclick="openUploadWO(\'' + community.replace(/'/g,"\\'") + '\')">⬆ Upload List</button>') +
-            '</div>') +
-      '</div>';
+      + '<div style="flex:1;overflow-y:auto;padding:14px;" id="wo-comm-body">'
+        + (visCount ? woRows : '<div style="text-align:center;color:var(--text4);font-size:13px;padding:32px;">'+(hasFilter?'No work orders match these filters.<br><button class="btn btn-outline" style="margin-top:12px;font-size:13px;" onclick="woClearFilters()">Clear Filters</button>':'No work orders yet.<br><button class="btn btn-green" style="margin-top:12px;" onclick="openUploadWO(\''+commStr+'\')">Upload List</button>')+'</div>')
+        + bulkBar
+      + '</div>';
 
     window._woCommunity = community;
     window._woType = type;
 
-    // Re-apply select values after render (select loses value on innerHTML)
     setTimeout(function() {
       var vSel = document.getElementById('wo-village-filter');
       if (vSel && vf) vSel.value = vf;
@@ -7375,28 +7409,69 @@ function openCommunityWO(community) {
   buildPanel('all');
   document.body.appendChild(panel);
 
+  window.woBulkToggle = function(cb) {
+    var id = cb.dataset.woid;
+    if (cb.checked) window._woBulkSel.add(id); else window._woBulkSel.delete(id);
+    var countEl = document.getElementById('wo-bulk-count');
+    if (countEl) countEl.textContent = window._woBulkSel.size + ' selected';
+    var label = cb.closest('label');
+    if (label) label.style.outline = cb.checked ? '2px solid var(--blue)' : '';
+    label.style.outlineOffset = cb.checked ? '-2px' : '';
+  };
+  window.woBulkSelectAll = function() {
+    document.querySelectorAll('#wo-comm-body input[type=checkbox]').forEach(function(cb){
+      cb.checked = true; window._woBulkSel.add(cb.dataset.woid);
+      var l = cb.closest('label'); if(l){l.style.outline='2px solid var(--blue)';l.style.outlineOffset='-2px';}
+    });
+    var c=document.getElementById('wo-bulk-count'); if(c) c.textContent=window._woBulkSel.size+' selected';
+  };
+  window.woBulkClear = function() {
+    window._woBulkSel.clear();
+    document.querySelectorAll('#wo-comm-body input[type=checkbox]').forEach(function(cb){
+      cb.checked=false; var l=cb.closest('label'); if(l){l.style.outline='';l.style.outlineOffset='';}
+    });
+    var c=document.getElementById('wo-bulk-count'); if(c) c.textContent='0 selected';
+  };
+  window.woBulkToggleMode = function() {
+    window._woBulkMode = !window._woBulkMode;
+    window._woBulkSel.clear();
+    buildPanel(window._woType||'all', window._woVillage, window._woDateFrom, window._woDateTo);
+  };
+  window.woBulkAssign = function() {
+    var crewId = (document.getElementById('wo-bulk-crew')||{}).value;
+    if (!crewId) { toast('Select a crew member first'); return; }
+    var ids = Array.from(window._woBulkSel);
+    if (!ids.length) { toast('Select at least one work order'); return; }
+    ids.forEach(function(id) {
+      var wo = (state.workOrders||[]).find(function(w){ return w.id===id; });
+      if (wo) { wo.assignedTo = crewId; saveAndSync('workOrders', wo); }
+    });
+    var crewName = crewId==='__team__' ? 'General Team' : ((state.crew||[]).find(function(c){return c.id===crewId;})||{}).name||'Crew';
+    toast(ids.length+' WO'+(ids.length!==1?'s':'')+' assigned to '+crewName+' \u2713');
+    window._woBulkMode = false; window._woBulkSel.clear();
+    wos = (state.workOrders||[]).filter(function(w){ return w.community===community; });
+    buildPanel(window._woType||'all', window._woVillage, window._woDateFrom, window._woDateTo);
+  };
   window.woCommType = function(t) {
     window._woType = t;
     buildPanel(t, window._woVillage, window._woDateFrom, window._woDateTo);
   };
   window.woFilterVillage = function(v) {
     window._woVillage = v.toString().trim();
-    buildPanel(window._woType || 'all', window._woVillage, window._woDateFrom, window._woDateTo);
+    buildPanel(window._woType||'all', window._woVillage, window._woDateFrom, window._woDateTo);
   };
   window.woFilterDates = function() {
-    var df = (document.getElementById('wo-date-from') || {}).value || '';
-    var dt = (document.getElementById('wo-date-to')   || {}).value || '';
-    window._woDateFrom = df;
-    window._woDateTo   = dt;
-    buildPanel(window._woType || 'all', window._woVillage, df, dt);
+    var df=(document.getElementById('wo-date-from')||{}).value||'';
+    var dt=(document.getElementById('wo-date-to')||{}).value||'';
+    window._woDateFrom=df; window._woDateTo=dt;
+    buildPanel(window._woType||'all', window._woVillage, df, dt);
   };
   window.woClearFilters = function() {
-    window._woVillage = '';
-    window._woDateFrom = '';
-    window._woDateTo = '';
-    buildPanel(window._woType || 'all', '', '', '');
+    window._woVillage=''; window._woDateFrom=''; window._woDateTo='';
+    buildPanel(window._woType||'all','','','');
   };
 }
+
 
 // ── Upload work order CSV/list ─────────────────────────────────────────────────
 function openAddCommunityWO() {
