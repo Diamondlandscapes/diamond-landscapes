@@ -711,10 +711,8 @@ select.inp{cursor:pointer;}
 
 @media print {
   #pdf-print-overlay #pdf-btns { display: none !important; }
-  #pdf-print-overlay > div:first-child { display: none !important; }
   body > *:not(#pdf-print-overlay) { display: none !important; }
-  #pdf-print-overlay { position:static !important; padding:0 !important; overflow:visible !important; }
-  img { max-width:100% !important; page-break-inside:avoid; }
+  #pdf-print-overlay { position:static !important; padding:0 !important; }
 }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
@@ -734,7 +732,7 @@ select.inp{cursor:pointer;}
       <button onclick="ls_showManager()" style="width:100%;padding:18px;background:linear-gradient(135deg,#16a34a,#22c55e);border:none;border-radius:14px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;font-weight:800;color:white;cursor:pointer;letter-spacing:1px;">
         👔  Manager Login
       </button>
-      <button onclick="ls_showCrewNames()" style="width:100%;padding:18px;background:linear-gradient(135deg,#1d4ed8,#3b82f6);border:none;border-radius:14px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;font-weight:800;color:white;cursor:pointer;letter-spacing:1px;">
+      <button onclick="ls_showCrew()" style="width:100%;padding:18px;background:linear-gradient(135deg,#1d4ed8,#3b82f6);border:none;border-radius:14px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;font-weight:800;color:white;cursor:pointer;letter-spacing:1px;">
         👷  Crew Login
       </button>
     </div>
@@ -767,7 +765,31 @@ select.inp{cursor:pointer;}
     </div>
 
 
-    <div id="ls-crew" style="display:none;"></div>
+    <div id="ls-crew" style="width:100%;display:none;flex-direction:column;gap:12px;">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;color:#6b8f6b;letter-spacing:2px;text-transform:uppercase;text-align:center;">Crew PIN</div>
+      <div style="display:flex;gap:16px;justify-content:center;margin:4px 0;" id="ls-crew-dots">
+        <div class="pin-dot" id="lcd1"></div>
+        <div class="pin-dot" id="lcd2"></div>
+        <div class="pin-dot" id="lcd3"></div>
+        <div class="pin-dot" id="lcd4"></div>
+      </div>
+      <div id="ls-crew-error" style="font-size:13px;color:#f87171;min-height:18px;font-weight:700;text-align:center;"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;width:100%;max-width:300px;margin:0 auto;">
+        <button onclick="ls_crewPinKey('1')" class="ls-key">1</button>
+        <button onclick="ls_crewPinKey('2')" class="ls-key">2</button>
+        <button onclick="ls_crewPinKey('3')" class="ls-key">3</button>
+        <button onclick="ls_crewPinKey('4')" class="ls-key">4</button>
+        <button onclick="ls_crewPinKey('5')" class="ls-key">5</button>
+        <button onclick="ls_crewPinKey('6')" class="ls-key">6</button>
+        <button onclick="ls_crewPinKey('7')" class="ls-key">7</button>
+        <button onclick="ls_crewPinKey('8')" class="ls-key">8</button>
+        <button onclick="ls_crewPinKey('9')" class="ls-key">9</button>
+        <div></div>
+        <button onclick="ls_crewPinKey('0')" class="ls-key">0</button>
+        <button onclick="ls_crewPinKey('⌫')" class="ls-key" style="font-size:20px;">⌫</button>
+      </div>
+      <button onclick="ls_showWho()" style="background:none;border:none;color:#6b8f6b;font-size:13px;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">← Back</button>
+    </div>
 
 
     <div id="ls-crew-names" style="width:100%;display:none;flex-direction:column;gap:10px;">
@@ -1214,10 +1236,6 @@ select.inp{cursor:pointer;}
         <select class="inp" id="nc-role">
           <option>Crew Lead</option><option>Crew Member</option><option>Driver</option>
         </select>
-        <div>
-          <input class="inp" id="nc-pin" placeholder="4-digit login PIN (e.g. 1234)" type="number" maxlength="4" inputmode="numeric" style="letter-spacing:4px;font-weight:700;"/>
-          <div style="font-size:11px;color:var(--text3);margin-top:4px;">This PIN is used to log in to their crew console. Leave blank for no PIN required.</div>
-        </div>
         <button class="btn btn-green" onclick="saveCrew()">Add Member</button>
         <button class="btn btn-outline" onclick="closeOverlay('add-crew-overlay')">Cancel</button>
       </div>
@@ -2019,10 +2037,6 @@ function openCrewDetail(id) {
         <select class="inp" id="ce-role-${id}">
           ${['Crew Lead','Crew Member','Driver'].map(r=>`<option ${c.role===r?'selected':''}>${r}</option>`).join('')}
         </select>
-        <div>
-          <input class="inp" id="ce-pin-${id}" value="${c.pin||''}" placeholder="4-digit login PIN" type="number" maxlength="4" inputmode="numeric" style="letter-spacing:4px;font-weight:700;"/>
-          <div style="font-size:11px;color:var(--text3);margin-top:4px;">Current PIN: <strong>${c.pin ? '****' : 'None set'}</strong></div>
-        </div>
         <button class="btn btn-green" onclick="saveCrewEdit('${id}')" style="font-size:13px;">Save Changes</button>
         <button class="btn btn-outline" onclick="toggleCrewEdit('${id}')" style="font-size:13px;">Cancel</button>
       </div>
@@ -2125,13 +2139,6 @@ function saveCrewEdit(id) {
   c.name  = document.getElementById('ce-name-'+id)?.value.trim()  || c.name;
   c.phone = document.getElementById('ce-phone-'+id)?.value.trim() || '';
   c.role  = document.getElementById('ce-role-'+id)?.value         || c.role;
-  const pinVal = (document.getElementById('ce-pin-'+id)?.value || '').trim();
-  if (pinVal) {
-    if (pinVal.length !== 4 || !/^\d{4}$/.test(pinVal)) { toast('PIN must be exactly 4 digits'); return; }
-    const dup = state.crew.find(x => x.id !== id && x.pin === pinVal);
-    if (dup) { toast('That PIN is already used by ' + dup.name); return; }
-    c.pin = pinVal;
-  }
   saveAndSync('crew', c);
   openCrewDetail(id);
   renderCrew();
@@ -3257,7 +3264,7 @@ function renderCrew() {
         <div class="crew-avatar">${c.name[0].toUpperCase()}</div>
         <div style="flex:1;">
           <div style="font-weight:800;font-size:15px;">${c.name}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px;">${c.role} · ${c.phone||'No phone'} ${c.pin ? '<span style="color:var(--green);font-weight:700;">· PIN ✓</span>' : '<span style="color:var(--red);font-size:11px;">· No PIN</span>'}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">${c.role} · ${c.phone||'No phone'}</div>
           ${route?`<div style="font-size:11px;color:var(--green);margin-top:4px;">Today: ${route.name} · ${done}/${total} stops</div>`:`<div style="font-size:11px;color:var(--text4);margin-top:4px;">No route today</div>`}
         </div>
       </div>
@@ -3271,20 +3278,13 @@ function openAddCrew() { openOverlay('add-crew-overlay'); }
 function saveCrew() {
   const name = document.getElementById('nc-name').value.trim();
   if (!name) { toast('Enter a name'); return; }
-  const pin = (document.getElementById('nc-pin')?.value || '').trim();
-  if (pin && (pin.length !== 4 || !/^\d{4}$/.test(pin))) { toast('PIN must be exactly 4 digits'); return; }
-  // Check duplicate PIN
-  if (pin && state.crew.some(c => c.pin === pin)) { toast('That PIN is already in use'); return; }
-  const newMember = {
+  state.crew.push({
     id: uid(), name,
-    phone: document.getElementById('nc-phone')?.value || '',
-    role: document.getElementById('nc-role')?.value || 'Crew Member',
-    pin: pin || ''
-  };
-  state.crew.push(newMember);
-  saveAndSync('crew', newMember);
-  closeOverlay('add-crew-overlay');
-  ['nc-name','nc-phone','nc-pin'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+    phone: document.getElementById('nc-phone').value,
+    role: document.getElementById('nc-role').value
+  });
+  save(); closeOverlay('add-crew-overlay');
+  ['nc-name','nc-phone'].forEach(id => document.getElementById(id).value='');
   renderCrew(); toast('Crew member added!');
 }
 
@@ -4638,7 +4638,11 @@ function ls_showManager() {
 }
 
 function ls_showCrew() {
-  ls_showCrewNames();
+  document.getElementById('ls-who').style.display  = 'none';
+  document.getElementById('ls-crew').style.display = 'flex';
+  ls_crewBuffer = ''; ls_updateDots('lcd', 0);
+  // pre-load fresh crew data in background
+  gsLoad().catch(()=>{});
 }
 
 function ls_updateDots(prefix, count) {
@@ -4683,10 +4687,8 @@ function ls_crewPinKey(k) {
 }
 
 function ls_showCrewNames() {
-  document.getElementById('ls-who').style.display        = 'none';
-  document.getElementById('ls-manager').style.display    = 'none';
+  document.getElementById('ls-crew').style.display       = 'none';
   document.getElementById('ls-crew-names').style.display = 'flex';
-  gsLoad().catch(()=>{});
   const list = document.getElementById('ls-crew-name-list');
 
   // Show cached crew IMMEDIATELY — no waiting for network
@@ -4701,7 +4703,7 @@ function ls_showCrewNames() {
       return;
     }
     list.innerHTML = state.crew.map(c => `
-      <button onclick="ls_crewSelected('${c.id}')" style="display:flex;align-items:center;gap:14px;width:100%;
+      <button onclick="ls_selectCrew('${c.id}')" style="display:flex;align-items:center;gap:14px;width:100%;
         background:#1f281f;border:1px solid #2e3d2e;border-radius:14px;padding:14px 16px;
         cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
         transition:background .15s;margin-bottom:4px;">
@@ -4711,11 +4713,10 @@ function ls_showCrewNames() {
           font-weight:800;font-size:18px;color:white;flex-shrink:0;">
           ${c.name.trim()[0].toUpperCase()}
         </div>
-        <div style="text-align:left;flex:1;">
+        <div style="text-align:left;">
           <div style="font-size:15px;font-weight:800;color:white;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">${c.name}</div>
           <div style="font-size:12px;color:#6b8f6b;margin-top:2px;">${c.role}</div>
         </div>
-        ${c.pin ? '<div style="font-size:11px;color:#6b8f6b;">🔒 PIN</div>' : '<div style="font-size:11px;color:#6b8f6b;">No PIN</div>'}
       </button>`).join('');
   }
 
@@ -4728,63 +4729,6 @@ function ls_showCrewNames() {
   }).catch(() => {
     // offline — cached list is already showing, nothing to do
   });
-}
-
-function ls_crewSelected(crewId) {
-  const c = state.crew.find(x => x.id === crewId);
-  if (!c) return;
-  if (!c.pin) {
-    ls_selectCrew(crewId);
-    return;
-  }
-  // Show per-crew PIN pad inline, replacing the name list content
-  const nameArea = document.getElementById('ls-crew-names');
-  nameArea.innerHTML = `
-    <div style="text-align:center;padding:8px 0 16px;">
-      <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#16a34a,#2dd4bf);
-        display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;color:white;margin:0 auto 10px;">
-        ${c.name.trim()[0].toUpperCase()}
-      </div>
-      <div style="font-size:17px;font-weight:800;color:white;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">${c.name}</div>
-      <div style="font-size:12px;color:#6b8f6b;margin-top:2px;">Enter your PIN</div>
-    </div>
-    <div style="display:flex;justify-content:center;gap:16px;margin-bottom:8px;" id="crew-pin-dots">
-      <div class="pin-dot" id="cpd1"></div><div class="pin-dot" id="cpd2"></div>
-      <div class="pin-dot" id="cpd3"></div><div class="pin-dot" id="cpd4"></div>
-    </div>
-    <div id="crew-pin-error" style="font-size:13px;color:#f87171;text-align:center;min-height:18px;font-weight:700;margin-bottom:8px;"></div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%;max-width:300px;margin:0 auto;">
-      ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => k==='' ? '<div></div>' :
-        `<button onclick="ls_crewPinDigit('${c.id}','${k}')" class="ls-key">${k}</button>`).join('')}
-    </div>
-    <button onclick="ls_showCrewNames()" style="margin-top:16px;background:none;border:none;color:#6b8f6b;font-size:13px;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;text-decoration:underline;">← Back</button>
-  `;
-  window._crewPinBuffer = '';
-}
-
-window._crewPinBuffer = '';
-function ls_crewPinDigit(crewId, k) {
-  if (k === '⌫') { window._crewPinBuffer = window._crewPinBuffer.slice(0,-1); }
-  else if (window._crewPinBuffer.length < 4) { window._crewPinBuffer += k; }
-  // Update dots
-  for (var i=1; i<=4; i++) {
-    var d = document.getElementById('cpd'+i);
-    if (d) d.className = 'pin-dot' + (i <= window._crewPinBuffer.length ? ' filled' : '');
-  }
-  if (window._crewPinBuffer.length === 4) {
-    setTimeout(function() {
-      const c = state.crew.find(x => x.id === crewId);
-      if (c && window._crewPinBuffer === c.pin) {
-        ls_selectCrew(crewId);
-      } else {
-        var errEl = document.getElementById('crew-pin-error');
-        if (errEl) errEl.textContent = '✕ Incorrect PIN';
-        window._crewPinBuffer = '';
-        for (var i=1; i<=4; i++) { var d=document.getElementById('cpd'+i); if(d) d.className='pin-dot'; }
-        setTimeout(function() { var e=document.getElementById('crew-pin-error'); if(e) e.textContent=''; }, 1500);
-      }
-    }, 50);
-  }
 }
 
 function ls_selectCrew(crewId) {
@@ -5310,7 +5254,6 @@ function renderReports() {
           +'<div style="font-size:12px;color:var(--text3);margin-top:2px;">'+f.note+'</div>'
           +(f.resolveNote?'<div style="font-size:11px;color:var(--green);margin-top:3px;">"'+f.resolveNote+'"</div>':'')
           +'<div style="font-size:11px;color:var(--text4);margin-top:3px;">Resolved '+(f.resolveDate||'')+'</div>'
-          +(state.role==='manager'?'<button onclick="event.stopPropagation();deleteFlag(\''+f.id+'\')" style="margin-top:8px;font-size:11px;padding:5px 12px;border-radius:7px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);cursor:pointer;font-weight:700;">🗑 Delete</button>':'')
           +'</div>'
           +'<div style="display:flex;gap:4px;">'
           +(getFlagPhoto(f)?'<img src="'+getFlagPhoto(f)+'" style="width:48px;height:48px;border-radius:6px;object-fit:cover;"/>':'')
@@ -6077,21 +6020,13 @@ function openReportFlag(flagId) {
 
       ${!f.resolved && state.role === 'manager' ? `
       <div class="card" style="margin-bottom:12px;">
-        <div class="sec-title">Assign to Crew</div>
-        <select class="inp" id="flag-assign-crew-${f.id}" style="margin-bottom:10px;">
-          <option value="">— Unassigned —</option>
-          <option value="__team__" ${f.assignedCrewId==='__team__'?'selected':''}>👥 General Team (All Crew)</option>
-          ${(state.crew||[]).map(c => `<option value="${c.id}" ${f.assignedCrewId===c.id?'selected':''}>${c.name}</option>`).join('')}
-        </select>
-        <button class="btn btn-green" onclick="assignFlagToCrew('${f.id}')" style="font-size:13px;margin-bottom:10px;">
-          👷 Assign Crew
-        </button>
-        <div class="sec-title" style="margin-top:8px;">Assign to Route</div>
+        <div class="sec-title">Assign to Next Service</div>
+        <div style="font-size:13px;color:var(--text3);margin-bottom:10px;">Schedule this fix on the next visit:</div>
         <select class="inp" id="flag-assign-route-${f.id}" style="margin-bottom:10px;">
           <option value="">— Select a route —</option>
-          ${(state.routes||[]).map(r => `<option value="${r.id}" ${f.assignedRouteId===r.id?'selected':''}>${r.name} (${r.day})</option>`).join('')}
+          ${(state.routes||[]).map(r => `<option value="${r.id}">${r.name} (${r.day})</option>`).join('')}
         </select>
-        <button class="btn btn-outline" onclick="assignFlagToRoute('${f.id}')" style="font-size:13px;">
+        <button class="btn btn-green" onclick="assignFlagToRoute('${f.id}')" style="font-size:13px;">
           📅 Assign to Route
         </button>
       </div>` : ''}
@@ -6107,28 +6042,15 @@ function openReportFlag(flagId) {
 
     </div>
 
-    <div style="padding:12px 16px;padding-bottom:calc(12px + var(--safe-bottom));border-top:1px solid var(--border);background:var(--bg2);display:flex;gap:10px;flex-wrap:wrap;">
+    <div style="padding:12px 16px;padding-bottom:calc(12px + var(--safe-bottom));border-top:1px solid var(--border);background:var(--bg2);display:flex;gap:10px;">
       ${!f.resolved
         ? `<button class="btn btn-green" onclick="resolveFlag('${f.id}','${f.propId}');document.getElementById('report-flag-panel').remove();state.role==='manager'?renderReports():renderProperties();" style="font-size:14px;">✓ Mark Resolved</button>`
-        : `<button class="btn btn-outline" style="font-size:14px;color:var(--text3);flex:1;">✓ Resolved</button>`
-      }
-      ${f.resolved && state.role === 'manager'
-        ? `<button class="btn btn-red" onclick="deleteFlag('${f.id}');document.getElementById('report-flag-panel').remove();" style="font-size:14px;flex:1;">🗑 Delete</button>`
-        : ''
+        : `<button class="btn btn-outline" style="font-size:14px;color:var(--text3);">Already Resolved</button>`
       }
       <button class="btn btn-outline" onclick="document.getElementById('report-flag-panel').remove()" style="font-size:14px;flex:0.4;">Back</button>
     </div>`;
 
   document.getElementById('app').appendChild(panel);
-}
-
-function assignFlagToCrew(flagId) {
-  const crewId = document.getElementById('flag-assign-crew-'+flagId)?.value;
-  const f = state.flags.find(x => x.id === flagId);
-  if (!f) return;
-  f.assignedCrewId = crewId || '';
-  saveAndSync('flags', f);
-  toast(crewId === '__team__' ? 'Assigned to General Team ✓' : crewId ? 'Assigned ✓' : 'Unassigned ✓');
 }
 
 function assignFlagToRoute(flagId) {
@@ -7241,237 +7163,112 @@ function renderWorkOrders() {
 
 // ── Open community detail ─────────────────────────────────────────────────────
 function openCommunityWO(community) {
-  window._woVillage  = '';
-  window._woType     = 'all';
-  window._woDateFrom = '';
-  window._woDateTo   = '';
-  window._woBulkMode = false;
-  window._woBulkSel  = new Set();
-
+  window._woVillage = ''; // reset village filter for new community
+  window._woType = 'all';
   var wos = (state.workOrders || []).filter(function(w) { return w.community === community; });
 
   var panel = document.createElement('div');
   panel.id = 'wo-community-panel';
   panel.className = 'panel open';
 
-  function applyFilters(type, vf, df, dt) {
-    var filtered = type === 'all' ? wos.slice() : wos.filter(function(w) { return w.type === type; });
-    if (vf) filtered = filtered.filter(function(w) { return (w.village||'').toString().trim() === vf; });
-    if (df || dt) {
-      filtered = filtered.filter(function(w) {
-        var dc = w.dateCompleted || w.completedOn || w.date || '';
-        if (!dc) return !(df || dt);
-        var d = new Date(dc);
-        if (df && d < new Date(df)) return false;
-        if (dt && d > new Date(dt + 'T23:59:59')) return false;
-        return true;
+  var tabs = ['all', 'landscape', 'irrigation'];
+  var activeType = 'all';
+
+  function buildPanel(type, villageFilter) {
+    var vf = (villageFilter !== undefined ? villageFilter : (window._woVillage || '')).toString().trim();
+    var filtered = type === 'all' ? wos : wos.filter(function(w) { return w.type === type; });
+    if (vf !== '') {
+      filtered = filtered.filter(function(w) { return (w.village||'').toString().trim() === vf; });
+    }
+    function sortByVillage(arr) {
+      return arr.slice().sort(function(a, b) {
+        var va = parseInt(a.village) || 0;
+        var vb = parseInt(b.village) || 0;
+        return va - vb;
       });
     }
-    return filtered;
-  }
-
-  function buildPanel(type, villageFilter, dateFrom, dateTo) {
-    var vf = (villageFilter !== undefined ? villageFilter : (window._woVillage || '')).toString().trim();
-    var df = (dateFrom !== undefined ? dateFrom : (window._woDateFrom || '')).toString().trim();
-    var dt = (dateTo   !== undefined ? dateTo   : (window._woDateTo   || '')).toString().trim();
-    window._woVillage  = vf;
-    window._woDateFrom = df;
-    window._woDateTo   = dt;
-
-    var filtered = applyFilters(type, vf, df, dt);
-    var bulk = window._woBulkMode;
-    var sel  = window._woBulkSel;
-
-    function sortByVillage(arr) {
-      return arr.slice().sort(function(a,b){ return (parseInt(a.village)||0)-(parseInt(b.village)||0); });
-    }
-    var openWOs = sortByVillage(filtered.filter(function(w){ return w.status==='open'; }));
-    var inProg  = sortByVillage(filtered.filter(function(w){ return w.status==='in_progress'; }));
-    var done    = sortByVillage(filtered.filter(function(w){ return w.status==='completed'; }));
-
-    function assignLabel(w) {
-      var crew = (state.crew||[]).find(function(c){ return c.id===w.assignedTo; });
-      return w.assignedTo==='__team__'
-        ? '<div style="font-size:11px;color:var(--blue);font-weight:700;">&#x1F465; General Team</div>'
-        : crew ? '<div style="font-size:11px;color:var(--teal);">&#x1F477; '+crew.name+'</div>'
-        : '<div style="font-size:11px;color:var(--text4);">Unassigned</div>';
-    }
-
-    function woCard(w, color) {
-      var addr = (w.address||'') + (w.village ? ' &middot; <span style="color:var(--blue);font-weight:700;">V'+w.village+'</span>' : '');
-      if (bulk) {
-        var checked = sel.has(w.id);
-        return '<label style="display:flex;align-items:flex-start;gap:10px;background:var(--bg3);border-radius:10px;padding:10px 12px;margin-bottom:8px;border-left:3px solid var(--'+color+');'+(checked?'outline:2px solid var(--blue);outline-offset:-2px;':'')+' cursor:pointer;">'
-          + '<input type="checkbox" data-woid="'+w.id+'" '+(checked?'checked ':'')+' onchange="woBulkToggle(this)" style="width:18px;height:18px;accent-color:var(--blue);flex-shrink:0;margin-top:2px;cursor:pointer;"/>'
-          + '<div style="flex:1;min-width:0;">'
-          +   '<div style="font-weight:700;font-size:13px;">#'+(w.woNumber||w.id.slice(-4))+' &middot; '+(w.ownerName||'')+'</div>'
-          +   '<div style="font-size:11px;color:var(--text3);">'+addr+'</div>'
-          +   '<div style="font-size:11px;color:var(--text3);margin-top:2px;">'+(w.requestType||'')+'</div>'
-          +   assignLabel(w)
-          + '</div>'
-          + '</label>';
-      }
-      return '<div class="card-flat" style="margin-bottom:8px;cursor:pointer;border-left:3px solid var(--'+color+');" onclick="openWODetail(\''+w.id+'\')">'
-        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-        +   '<div style="flex:1;min-width:0;">'
-        +     '<div style="font-weight:700;font-size:13px;">#'+(w.woNumber||w.id.slice(-4))+' &middot; '+(w.ownerName||'')+'</div>'
-        +     '<div style="font-size:11px;color:var(--text3);">'+addr+'</div>'
-        +     '<div style="font-size:11px;color:var(--text3);margin-top:2px;">'+(w.requestType||'')+'</div>'
-        +   '</div>'
-        +   '<div style="text-align:right;flex-shrink:0;">'
-        +     assignLabel(w)
-        +     (w.dateCompleted||w.completedOn?'<div style="font-size:10px;color:var(--green);">&#x2713; '+(w.dateCompleted||w.completedOn)+'</div>':'')
-        +   '</div>'
-        + '</div>'
-        + (w.details?'<div style="font-size:11px;color:var(--text3);margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">'+w.details+'</div>':'')
-        + '</div>';
-    }
+    var open   = sortByVillage(filtered.filter(function(w) { return w.status === 'open'; }));
+    var inProg = sortByVillage(filtered.filter(function(w) { return w.status === 'in_progress'; }));
+    var done   = sortByVillage(filtered.filter(function(w) { return w.status === 'completed'; }));
 
     var woRows = '';
-    [['Open', openWOs, 'red'],['In Progress', inProg, 'yellow'],['Completed', done, 'green']].forEach(function(g) {
-      if (!g[1].length) return;
-      woRows += '<div class="sec-title" style="margin-top:14px;">'+g[0]+' ('+g[1].length+')</div>';
-      g[1].forEach(function(w){ woRows += woCard(w, g[2]); });
+    [['🔴 Open', open, 'red'], ['🟡 In Progress', inProg, 'yellow'], ['🟢 Completed', done, 'green']].forEach(function(group) {
+      var label = group[0]; var items = group[1]; var color = group[2];
+      if (!items.length) return;
+      woRows += '<div class="sec-title" style="margin-top:14px;">' + label + ' (' + items.length + ')</div>';
+      items.forEach(function(w) {
+        var crew = (state.crew || []).find(function(c) { return c.id === w.assignedTo; });
+        woRows += '<div class="card-flat" style="margin-bottom:8px;cursor:pointer;border-left:3px solid var(--' + color + ');" onclick="openWODetail(\'' + w.id + '\')">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
+            '<div style="flex:1;min-width:0;">' +
+              '<div style="font-weight:700;font-size:13px;">#' + (w.woNumber||w.id.slice(-4)) + ' · ' + (w.ownerName||'') + '</div>' +
+              '<div style="font-size:11px;color:var(--text3);">' + (w.address||'') + '</div>' +
+              '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + (w.requestType||'') + '</div>' +
+            '</div>' +
+            '<div style="text-align:right;flex-shrink:0;">' +
+              (crew ? '<div style="font-size:11px;color:var(--teal);">👷 ' + crew.name + '</div>' : '<div style="font-size:11px;color:var(--text4);">Unassigned</div>') +
+              (w.completedOn ? '<div style="font-size:10px;color:var(--green);">✓ ' + w.completedOn + '</div>' : '') +
+            '</div>' +
+          '</div>' +
+          (w.details ? '<div style="font-size:11px;color:var(--text3);margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">' + w.details + '</div>' : '') +
+        '</div>';
+      });
     });
 
-    var villages = [];
-    wos.forEach(function(w){ var v=(w.village||'').toString().trim(); if(v&&!villages.includes(v)) villages.push(v); });
-    villages.sort(function(a,b){ return (parseInt(a)||0)-(parseInt(b)||0); });
-    var opts = '<option value="">All Villages</option>';
-    villages.forEach(function(v){ opts += '<option value="'+v+'"'+(vf===v?' selected':'')+'>Village '+v+'</option>'; });
-
-    var crewOpts = '<option value="">-- Select crew --</option><option value="__team__">Team (All Crew)</option>'
-      + (state.crew||[]).map(function(c){ return '<option value="'+c.id+'">'+c.name+'</option>'; }).join('');
-
-    var hasFilter = vf || df || dt;
-    var visCount = filtered.filter(function(w){return w.status!=='placeholder';}).length;
-    var commStr = community.replace(/'/g,"\\'");
-    var selCount = sel.size;
-
-    var bulkBar = bulk
-      ? '<div id="wo-bulk-bar" style="background:var(--bg2);border-top:2px solid var(--blue);padding:10px 14px;">'
-        +  '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
-        +    '<div style="font-size:13px;font-weight:800;color:var(--blue);" id="wo-bulk-count">'+selCount+' selected</div>'
-        +    '<button onclick="woBulkSelectAll()" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);cursor:pointer;font-weight:700;">Select All</button>'
-        +    '<button onclick="woBulkClear()" style="font-size:11px;padding:4px 10px;border-radius:8px;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);cursor:pointer;">Clear</button>'
-        +  '</div>'
-        +  '<div style="display:flex;gap:8px;">'
-        +    '<select id="wo-bulk-crew" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:8px 10px;color:var(--text);font-size:13px;">'+crewOpts+'</select>'
-        +    '<button onclick="woBulkAssign()" style="padding:8px 18px;border-radius:10px;background:var(--blue);color:#fff;border:none;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">Assign</button>'
-        +  '</div>'
-        + '</div>'
-      : '';
-
     panel.innerHTML =
-      '<div class="panel-head">'
-        + '<button class="close-btn" onclick="document.getElementById(\'wo-community-panel\').remove();renderWorkOrders();">&#x2715;</button>'
-        + '<div class="panel-title">'+community+'</div>'
-      + '</div>'
-
-      + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
-        + '<button class="pill'+(type==='all'?' active':'')+'" onclick="woCommType(\'all\')">All ('+wos.filter(function(w){return w.status!=='placeholder';}).length+')</button>'
-        + '<button class="pill'+(type==='landscape'?' active':'')+'" onclick="woCommType(\'landscape\')">Land</button>'
-        + '<button class="pill'+(type==='irrigation'?' active':'')+'" onclick="woCommType(\'irrigation\')">Irrigation</button>'
-        + '<button id="wo-bulk-toggle" onclick="woBulkToggleMode()" style="margin-left:auto;font-size:12px;padding:5px 12px;border-radius:8px;font-weight:700;cursor:pointer;border:1px solid '+(bulk?'rgba(248,113,113,.4)':'rgba(96,165,250,.3)')+';background:'+(bulk?'rgba(248,113,113,.12)':'rgba(96,165,250,.15)')+';color:'+(bulk?'var(--red)':'var(--blue)')+';">'+(bulk?'Cancel':'Bulk Assign')+'</button>'
-        + '<button class="btn-sm" onclick="openUploadWO(\''+commStr+'\')" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">Upload</button>'
-        + '<button class="btn-sm" onclick="openWOReport(\''+commStr+'\')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">Report</button>'
-      + '</div>'
-
-      + '<div style="padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg2);">'
-        + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
-          + '<div style="font-size:11px;font-weight:700;color:var(--text3);white-space:nowrap;">Village</div>'
-          + '<select id="wo-village-filter" onchange="woFilterVillage(this.value)" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;font-weight:700;">'+opts+'</select>'
-        + '</div>'
-        + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
-          + '<div style="font-size:11px;font-weight:700;color:var(--text3);white-space:nowrap;">Dates</div>'
-          + '<input type="date" id="wo-date-from" value="'+df+'" onchange="woFilterDates()" style="flex:1;min-width:90px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;"/>'
-          + '<div style="font-size:11px;color:var(--text4);">to</div>'
-          + '<input type="date" id="wo-date-to" value="'+dt+'" onchange="woFilterDates()" style="flex:1;min-width:90px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;"/>'
-          + (hasFilter?'<button onclick="woClearFilters()" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);cursor:pointer;font-weight:700;white-space:nowrap;">Clear</button>':'')
-        + '</div>'
-        + (hasFilter?'<div style="font-size:11px;color:var(--teal);margin-top:4px;font-weight:700;">'+visCount+' result'+(visCount!==1?'s':'')+' matching filters</div>':'')
-      + '</div>'
-
-      + '<div style="flex:1;overflow-y:auto;padding:14px;" id="wo-comm-body">'
-        + (visCount ? woRows : '<div style="text-align:center;color:var(--text4);font-size:13px;padding:32px;">'+(hasFilter?'No work orders match these filters.<br><button class="btn btn-outline" style="margin-top:12px;font-size:13px;" onclick="woClearFilters()">Clear Filters</button>':'No work orders yet.<br><button class="btn btn-green" style="margin-top:12px;" onclick="openUploadWO(\''+commStr+'\')">Upload List</button>')+'</div>')
-        + bulkBar
-      + '</div>';
-
+      '<div class="panel-head">' +
+        '<button class="close-btn" onclick="document.getElementById(\'wo-community-panel\').remove();renderWorkOrders();">✕</button>' +
+        '<div class="panel-title">' + community + '</div>' +
+      '</div>' +
+      '<div style="padding:14px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;">' +
+        '<button class="pill' + (type==='all'?' active':'') + '" onclick="woCommType(\'all\')">All (' + wos.length + ')</button>' +
+        '<button class="pill' + (type==='landscape'?' active':'') + '" onclick="woCommType(\'landscape\')">🌿 Landscaping</button>' +
+        '<button class="pill' + (type==='irrigation'?' active':'') + '" onclick="woCommType(\'irrigation\')">💧 Irrigation</button>' +
+        '<button class="btn-sm" onclick="openUploadWO(\'' + community.replace(/'/g,"\\'") + '\')" style="margin-left:auto;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">⬆ Upload List</button>' +
+        '<button class="btn-sm" onclick="openWOReport(\'' + community.replace(/'/g,"\\'") + '\')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">📄 Report</button>' +
+      '</div>' +
+      (function() {
+        var villages = [];
+        wos.forEach(function(w) {
+          var v = (w.village||'').toString().trim();
+          if (v && !villages.includes(v)) villages.push(v);
+        });
+        villages.sort(function(a,b) { return (parseInt(a)||0) - (parseInt(b)||0); });
+        var opts = '<option value="">All Villages</option>';
+        villages.forEach(function(v) { opts += '<option value="' + v + '"' + (window._woVillage===v?' selected':'') + '>Village ' + v + '</option>'; });
+        return '<div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">' +
+          '<div style="font-size:12px;font-weight:700;color:var(--text3);white-space:nowrap;">🏘 Village</div>' +
+          '<select id="wo-village-filter" onchange="woFilterVillage(this.value)"' +
+            ' style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;font-weight:700;">' +
+            opts +
+          '</select>' +
+          '<div style="font-size:11px;color:var(--text4);white-space:nowrap;">' + (window._woVillage ? filtered.length + ' result' + (filtered.length!==1?'s':'') : wos.length + ' total') + '</div>';
+      })() +
+      '</div>' +
+      '<div style="flex:1;overflow-y:auto;padding:14px;" id="wo-comm-body">' +
+        (filtered.length ? woRows : '<div style="text-align:center;color:var(--text4);font-size:13px;padding:32px;">No work orders yet.<br><button class="btn btn-green" style="margin-top:12px;" onclick="openUploadWO(\'' + community.replace(/'/g,"\\'") + '\')">⬆ Upload List</button></div>') +
+      '</div>';
     window._woCommunity = community;
     window._woType = type;
-
-    setTimeout(function() {
-      var vSel = document.getElementById('wo-village-filter');
-      if (vSel && vf) vSel.value = vf;
-    }, 10);
   }
 
   buildPanel('all');
   document.body.appendChild(panel);
 
-  window.woBulkToggle = function(cb) {
-    var id = cb.dataset.woid;
-    if (cb.checked) window._woBulkSel.add(id); else window._woBulkSel.delete(id);
-    var countEl = document.getElementById('wo-bulk-count');
-    if (countEl) countEl.textContent = window._woBulkSel.size + ' selected';
-    var label = cb.closest('label');
-    if (label) label.style.outline = cb.checked ? '2px solid var(--blue)' : '';
-    label.style.outlineOffset = cb.checked ? '-2px' : '';
-  };
-  window.woBulkSelectAll = function() {
-    document.querySelectorAll('#wo-comm-body input[type=checkbox]').forEach(function(cb){
-      cb.checked = true; window._woBulkSel.add(cb.dataset.woid);
-      var l = cb.closest('label'); if(l){l.style.outline='2px solid var(--blue)';l.style.outlineOffset='-2px';}
-    });
-    var c=document.getElementById('wo-bulk-count'); if(c) c.textContent=window._woBulkSel.size+' selected';
-  };
-  window.woBulkClear = function() {
-    window._woBulkSel.clear();
-    document.querySelectorAll('#wo-comm-body input[type=checkbox]').forEach(function(cb){
-      cb.checked=false; var l=cb.closest('label'); if(l){l.style.outline='';l.style.outlineOffset='';}
-    });
-    var c=document.getElementById('wo-bulk-count'); if(c) c.textContent='0 selected';
-  };
-  window.woBulkToggleMode = function() {
-    window._woBulkMode = !window._woBulkMode;
-    window._woBulkSel.clear();
-    buildPanel(window._woType||'all', window._woVillage, window._woDateFrom, window._woDateTo);
-  };
-  window.woBulkAssign = function() {
-    var crewId = (document.getElementById('wo-bulk-crew')||{}).value;
-    if (!crewId) { toast('Select a crew member first'); return; }
-    var ids = Array.from(window._woBulkSel);
-    if (!ids.length) { toast('Select at least one work order'); return; }
-    ids.forEach(function(id) {
-      var wo = (state.workOrders||[]).find(function(w){ return w.id===id; });
-      if (wo) { wo.assignedTo = crewId; saveAndSync('workOrders', wo); }
-    });
-    var crewName = crewId==='__team__' ? 'General Team' : ((state.crew||[]).find(function(c){return c.id===crewId;})||{}).name||'Crew';
-    toast(ids.length+' WO'+(ids.length!==1?'s':'')+' assigned to '+crewName+' \u2713');
-    window._woBulkMode = false; window._woBulkSel.clear();
-    wos = (state.workOrders||[]).filter(function(w){ return w.community===community; });
-    buildPanel(window._woType||'all', window._woVillage, window._woDateFrom, window._woDateTo);
-  };
   window.woCommType = function(t) {
     window._woType = t;
-    buildPanel(t, window._woVillage, window._woDateFrom, window._woDateTo);
+    buildPanel(t, window._woVillage || '');
   };
   window.woFilterVillage = function(v) {
     window._woVillage = v.toString().trim();
-    buildPanel(window._woType||'all', window._woVillage, window._woDateFrom, window._woDateTo);
-  };
-  window.woFilterDates = function() {
-    var df=(document.getElementById('wo-date-from')||{}).value||'';
-    var dt=(document.getElementById('wo-date-to')||{}).value||'';
-    window._woDateFrom=df; window._woDateTo=dt;
-    buildPanel(window._woType||'all', window._woVillage, df, dt);
-  };
-  window.woClearFilters = function() {
-    window._woVillage=''; window._woDateFrom=''; window._woDateTo='';
-    buildPanel(window._woType||'all','','','');
+    buildPanel(window._woType || 'all', window._woVillage);
+    // Re-select the option after re-render
+    setTimeout(function() {
+      var sel = document.getElementById('wo-village-filter');
+      if (sel) sel.value = window._woVillage || '';
+    }, 10);
   };
 }
-
 
 // ── Upload work order CSV/list ─────────────────────────────────────────────────
 function openAddCommunityWO() {
@@ -7626,7 +7423,7 @@ function openUploadWO(community) {
   // Hint
   var hint = document.createElement('div');
   hint.style.cssText = 'font-size:11px;color:var(--text3);margin:6px 0 12px;';
-  hint.textContent = 'Columns: Date Work Order Submitted, WO#, Address, Village, Owner, Request Type, Details';
+  hint.textContent = 'Columns: Date, WO#, Address, Village, Owner, Request Type, Details';
   inner.appendChild(hint);
 
   // Import button
@@ -7681,8 +7478,6 @@ function processWOUpload(community) {
       details: details,
       assignedTo: '',
       status: 'open',
-      dateReceived: new Date().toLocaleDateString(),
-      dateCompleted: '',
       completedOn: '',
       completedPhoto: '',
       completedBy: '',
@@ -7724,7 +7519,6 @@ function openWODetail(woId) {
   sheet.className = 'overlay open';
 
   var crewOptions = '<option value="">— Unassigned —</option>' +
-    '<option value="__team__"' + (wo.assignedTo === '__team__' ? ' selected' : '') + '>👥 General Team (All Crew)</option>' +
     (state.crew || []).map(function(c) {
       return '<option value="' + c.id + '"' + (wo.assignedTo === c.id ? ' selected' : '') + '>' + c.name + '</option>';
     }).join('');
@@ -7770,15 +7564,6 @@ function openWODetail(woId) {
         '<select id="wo-status-sel" style="width:100%;background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:10px;color:var(--text);font-size:14px;">' + statusOptions + '</select>' +
       '</div>' +
 
-      '<div style="background:var(--bg3);border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid var(--border);">' +
-        '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">DATES</div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">' +
-          '<div><div style="font-size:10px;color:var(--text4);font-weight:700;letter-spacing:1px;">DATE SUBMITTED</div><div style="font-size:13px;margin-top:2px;">' + (wo.date||'—') + '</div></div>' +
-          '<div><div style="font-size:10px;color:var(--text4);font-weight:700;letter-spacing:1px;">DATE COMPLETED</div><div style="font-size:13px;margin-top:2px;color:var(--green);">' + (wo.dateCompleted||wo.completedOn||'—') + '</div></div>' +
-        '</div>' +
-        '<div style="font-size:10px;color:var(--text4);font-weight:700;letter-spacing:1px;margin-bottom:4px;">DATE RECEIVED <span style="font-size:10px;font-weight:400;color:var(--text3);">(editable)</span></div>' +
-        '<input type="date" id="wo-date-received" class="inp" value="' + (wo.dateReceived ? new Date(wo.dateReceived).toISOString().slice(0,10) : '') + '" style="width:100%;font-size:13px;"/>' +
-      '</div>' +
       '<div style="margin-bottom:14px;">' +
         '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">DUE DATE (optional)</div>' +
         '<input type="date" id="wo-due-date" class="inp" value="' + (wo.dueDate||'') + '" style="width:100%;"/>' +
@@ -7816,13 +7601,8 @@ function saveWODetail(woId) {
   wo.status = document.getElementById('wo-status-sel').value;
   wo.type = document.getElementById('wo-type-sel')?.value || wo.type;
   wo.dueDate = document.getElementById('wo-due-date')?.value || wo.dueDate || '';
-  var drEl = document.getElementById('wo-date-received');
-  if (drEl && drEl.value) wo.dateReceived = new Date(drEl.value).toLocaleDateString();
-  if (wo.status === 'completed' && !wo.dateCompleted) {
-    wo.dateCompleted = new Date().toLocaleDateString();
-  }
   if (wo.status === 'completed' && !wo.completedOn) {
-    wo.completedOn = wo.dateCompleted || new Date().toLocaleDateString();
+    wo.completedOn = new Date().toLocaleDateString();
   }
   saveAndSync('workOrders', wo);
   document.getElementById('wo-detail-sheet')?.remove();
@@ -7846,79 +7626,100 @@ function deleteWO(woId) {
 
 // ── Work Order Report ─────────────────────────────────────────────────────────
 function openWOReport(community) {
-  var wos = (state.workOrders || []).filter(function(w) { return w.community === community; });
-  var completed = wos.filter(function(w) { return w.status === 'completed'; });
-  var open = wos.filter(function(w) { return w.status !== 'completed'; });
-
   var existing = document.getElementById('wo-report-sheet');
   if (existing) existing.remove();
-
   var sheet = document.createElement('div');
   sheet.id = 'wo-report-sheet';
   sheet.className = 'overlay open';
-
-  var rows = '';
-  completed.forEach(function(w) {
-    var crew = (state.crew || []).find(function(c) { return c.id === w.assignedTo; });
-    var typeIcon = w.type === 'irrigation' ? '💧' : '🌿';
-    rows +=
-      '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px;border-left:3px solid var(--green);">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
-          '<div>' +
-            '<div style="font-weight:800;font-size:13px;">' + typeIcon + ' #' + (w.woNumber||w.id.slice(-4)) + ' · ' + (w.ownerName||'') + '</div>' +
-            '<div style="font-size:11px;color:var(--text3);">' + (w.address||'') + (w.village ? ' · Village ' + w.village : '') + '</div>' +
-          '</div>' +
-          '<span class="badge badge-green">✓ Done</span>' +
-        '</div>' +
-        '<div style="font-size:12px;color:var(--text2);margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
-        '<div style="font-size:11px;color:var(--text3);">Completed by ' + (w.completedBy || (crew ? crew.name : 'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
-        (getWOPhoto(w) ?
-          '<img src="' + getWOPhoto(w) + '" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-top:8px;cursor:pointer;"/>' +
-          '<div style="display:flex;gap:8px;margin-top:8px;">' +
-            '<button onclick="dlPhotoFromBtn(this)" data-woid="' + w.id + '" style="flex:1;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">⬇ Download Photo</button>' +
-          '</div>' : '') +
-      '</div>';
-  });
-
-  sheet.innerHTML =
-    '<div class="sheet" style="max-height:92vh;">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
-        '<div class="sheet-title" style="margin-bottom:0;">📄 ' + community + ' Report</div>' +
-        '<button onclick="document.getElementById(\'wo-report-sheet\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
-      '</div>' +
-      '<div style="display:flex;gap:8px;margin-bottom:14px;">' +
-        '<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;">' +
-          '<div style="font-size:24px;font-weight:800;color:var(--green);">' + completed.length + '</div>' +
-          '<div style="font-size:11px;color:var(--text3);">Completed</div>' +
-        '</div>' +
-        '<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;">' +
-          '<div style="font-size:24px;font-weight:800;color:var(--red);">' + open.length + '</div>' +
-          '<div style="font-size:11px;color:var(--text3);">Remaining</div>' +
-        '</div>' +
-        '<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;">' +
-          '<div style="font-size:24px;font-weight:800;color:var(--teal);">' + wos.length + '</div>' +
-          '<div style="font-size:11px;color:var(--text3);">Total</div>' +
-        '</div>' +
-      '</div>' +
-      (completed.length ?
-        '<div style="margin-bottom:10px;"><div class="sec-title">Completed Work Orders</div>' + rows + '</div>' :
-        '<div style="text-align:center;color:var(--text4);font-size:13px;padding:24px;">No completed work orders yet</div>') +
-      (open.length ?
-        '<div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.2);border-radius:12px;padding:12px;margin-bottom:14px;">' +
-          '<div style="font-size:11px;color:var(--red);font-weight:700;margin-bottom:8px;">⏳ ' + open.length + ' REMAINING</div>' +
-          open.map(function(w) {
-            return '<div style="font-size:12px;color:var(--text2);padding:4px 0;border-bottom:1px solid rgba(248,113,113,.1);">' +
-              (w.type==='irrigation'?'💧':'🌿') + ' #' + (w.woNumber||'') + ' · ' + (w.ownerName||'') + ' — ' + (w.requestType||'') +
-              '</div>';
-          }).join('') +
-        '</div>' : '') +
-      '<div style="display:flex;gap:8px;">' +
-        '<button class="btn btn-green" style="flex:1;" onclick="exportWOPDF(\'' + community.replace(/'/g,"\\'") + '\')">📄 Export PDF with Photos</button>' +
-        '<button class="btn" style="background:var(--bg3);color:var(--text2);" onclick="exportWOReport(\'' + community.replace(/'/g,"\\'") + '\')">📊 Excel</button>' +
-      '</div>' +
-    '</div>';
-
   document.body.appendChild(sheet);
+
+  function renderReport(df, dt) {
+    var allWOs = (state.workOrders||[]).filter(function(w){ return w.community===community; });
+    var allCompleted = allWOs.filter(function(w){ return w.status==='completed'; });
+    var open = allWOs.filter(function(w){ return w.status!=='completed' && w.status!=='placeholder'; });
+    var completed = allCompleted.filter(function(w) {
+      if (!df && !dt) return true;
+      var dc = w.dateCompleted || w.completedOn || '';
+      if (!dc) return false;
+      var d = new Date(dc);
+      if (df && d < new Date(df)) return false;
+      if (dt && d > new Date(dt+'T23:59:59')) return false;
+      return true;
+    });
+    var hasFilter = !!(df||dt);
+    var commStr = community.replace(/'/g,"\\'");
+
+    var rows = '';
+    completed.forEach(function(w) {
+      var crew = (state.crew||[]).find(function(c){ return c.id===w.assignedTo; });
+      var icon = w.type==='irrigation' ? '💧' : '🌿';
+      rows += '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px;border-left:3px solid var(--green);">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
+        +   '<div>'
+        +     '<div style="font-weight:800;font-size:13px;">'+icon+' #'+(w.woNumber||w.id.slice(-4))+' · '+(w.ownerName||'')+'</div>'
+        +     '<div style="font-size:11px;color:var(--text3);">'+(w.address||'')+(w.village?' · Village '+w.village:'')+'</div>'
+        +   '</div>'
+        +   '<span class="badge badge-green">✓ Done</span>'
+        + '</div>'
+        + '<div style="font-size:12px;color:var(--text2);margin-bottom:6px;"><strong>'+(w.requestType||'')+'</strong>'+(w.details?': '+w.details:'')+'</div>'
+        + '<div style="font-size:11px;color:var(--text3);">Completed by '+(w.completedBy||(crew?crew.name:'Unknown'))+(w.dateCompleted||w.completedOn?' · '+(w.dateCompleted||w.completedOn):'')+'</div>'
+        + (getWOPhoto(w)
+            ? '<img src="'+getWOPhoto(w)+'" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-top:8px;"/>'
+            + '<div style="display:flex;gap:8px;margin-top:8px;"><button onclick="dlPhotoFromBtn(this)" data-woid="'+w.id+'" style="flex:1;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">⬇ Photo</button></div>'
+            : '')
+        + '</div>';
+    });
+
+    sheet.innerHTML =
+      '<div class="sheet" style="max-height:92vh;">'
+
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'
+      +   '<div class="sheet-title" style="margin-bottom:0;">📄 '+community+'</div>'
+      +   '<button onclick="document.getElementById(\'wo-report-sheet\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>'
+      + '</div>'
+
+      // Date filter card
+      + '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:12px;border:1px solid var(--border);">'
+      +   '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">📅 FILTER BY DATE COMPLETED</div>'
+      +   '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">'
+      +     '<input type="date" id="wor-from" value="'+(df||'')+'" style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:7px 8px;color:var(--text);font-size:13px;"/>'
+      +     '<div style="font-size:12px;color:var(--text4);font-weight:700;">to</div>'
+      +     '<input type="date" id="wor-to" value="'+(dt||'')+'" style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:7px 8px;color:var(--text);font-size:13px;"/>'
+      +   '</div>'
+      +   '<div style="display:flex;gap:8px;">'
+      +     '<button onclick="(function(){var f=document.getElementById(\'wor-from\').value,t=document.getElementById(\'wor-to\').value;renderReport(f,t);})()" style="flex:1;padding:8px;border-radius:8px;background:var(--blue);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;">Apply Filter</button>'
+      +     (hasFilter?'<button onclick="renderReport(\'\',\'\')" style="padding:8px 14px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);font-size:13px;font-weight:700;cursor:pointer;">✕ Clear</button>':'')
+      +   '</div>'
+      +   (hasFilter?'<div style="font-size:11px;color:var(--teal);margin-top:6px;font-weight:700;">Showing '+completed.length+' of '+allCompleted.length+' completed WOs</div>':'')
+      + '</div>'
+
+      // Stats row
+      + '<div style="display:flex;gap:8px;margin-bottom:14px;">'
+      +   '<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;"><div style="font-size:24px;font-weight:800;color:var(--green);">'+completed.length+'</div><div style="font-size:11px;color:var(--text3);">'+(hasFilter?'In Range':'Completed')+'</div></div>'
+      +   '<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;"><div style="font-size:24px;font-weight:800;color:var(--red);">'+open.length+'</div><div style="font-size:11px;color:var(--text3);">Remaining</div></div>'
+      +   '<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;"><div style="font-size:24px;font-weight:800;color:var(--teal);">'+allWOs.length+'</div><div style="font-size:11px;color:var(--text3);">Total</div></div>'
+      + '</div>'
+
+      + (completed.length
+          ? '<div style="margin-bottom:10px;"><div class="sec-title">✓ Completed'+(hasFilter?' (filtered)':'')+'</div>'+rows+'</div>'
+          : '<div style="text-align:center;color:var(--text4);font-size:13px;padding:24px;">'+(hasFilter?'No completed WOs in that date range':'No completed work orders yet')+'</div>')
+
+      + (open.length
+          ? '<div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.2);border-radius:12px;padding:12px;margin-bottom:14px;">'
+          +   '<div style="font-size:11px;color:var(--red);font-weight:700;margin-bottom:8px;">⏳ '+open.length+' REMAINING</div>'
+          +   open.map(function(w){ return '<div style="font-size:12px;color:var(--text2);padding:4px 0;border-bottom:1px solid rgba(248,113,113,.1);">'+(w.type==='irrigation'?'💧':'🌿')+' #'+(w.woNumber||'')+' · '+(w.ownerName||'')+' — '+(w.requestType||'')+'</div>'; }).join('')
+          + '</div>'
+          : '')
+
+      + '<div style="display:flex;gap:8px;">'
+      +   '<button class="btn btn-green" style="flex:1;" onclick="(function(){var f=document.getElementById(\'wor-from\').value,t=document.getElementById(\'wor-to\').value;exportWOPDF(\''+commStr+'\',f||null,t||null);})()">📄 Export PDF</button>'
+      +   '<button class="btn" style="background:var(--bg3);color:var(--text2);" onclick="exportWOReport(\''+commStr+'\')">📊 Excel</button>'
+      + '</div>'
+
+      + '</div>';
+  }
+
+  renderReport('','');
 }
 
 
@@ -7937,7 +7738,7 @@ function exportWOPDFDownload() {
     '<style>' +
     'body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;padding:20px;background:#f9fafb;color:#111;}' +
     'img{max-width:100%;height:auto;}' +
-    '@media print{body{padding:0;}#pdf-btns{display:none!important;}.page-item{page-break-before:always;}img{max-width:100%!important;page-break-inside:avoid;}}' +
+    '@media print{body{padding:0;}}' +
     '</style></head><body>' +
     reportContent.outerHTML +
     '<div style="text-align:center;margin-top:20px;">' +
@@ -7959,44 +7760,9 @@ function exportWOPDFDownload() {
 
 function pdfClose() { var o=document.getElementById('pdf-print-overlay'); if(o)o.remove(); }
 
-function exportWOPDF(community, dateFrom, dateTo) {
-  // If no dates passed, show date filter UI first
-  if (dateFrom === undefined) {
-    var existing2 = document.getElementById('wo-date-filter-overlay');
-    if (existing2) existing2.remove();
-    var fo = document.createElement('div');
-    fo.id = 'wo-date-filter-overlay';
-    fo.className = 'overlay open';
-    fo.style.zIndex = '9000';
-    var fi = document.createElement('div');
-    fi.className = 'sheet';
-    fi.innerHTML =
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
-        '<div class="sheet-title" style="margin-bottom:0;">📄 Export Report</div>' +
-        '<button onclick="document.getElementById(\'wo-date-filter-overlay\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
-      '</div>' +
-      '<div style="font-size:13px;color:var(--text3);margin-bottom:14px;">Filter completed work orders by date range (optional)</div>' +
-      '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">DATE COMPLETED — FROM</div>' +
-      '<input type="date" id="wo-filter-from" class="inp" style="margin-bottom:12px;"/>' +
-      '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">DATE COMPLETED — TO</div>' +
-      '<input type="date" id="wo-filter-to" class="inp" style="margin-bottom:16px;"/>' +
-      '<button class="btn btn-green" style="margin-bottom:8px;" onclick="(function(){ var df=document.getElementById(\'wo-filter-from\').value; var dt=document.getElementById(\'wo-filter-to\').value; document.getElementById(\'wo-date-filter-overlay\').remove(); exportWOPDF(\''+community.replace(/'/g,"\'")+'\',df||null,dt||null); })()">📄 Generate Report</button>' +
-      '<button class="btn btn-outline" onclick="document.getElementById(\'wo-date-filter-overlay\').remove()">Cancel</button>';
-    fo.appendChild(fi);
-    document.body.appendChild(fo);
-    return;
-  }
-
+function exportWOPDF(community) {
   var wos = (state.workOrders||[]).filter(function(w) {
-    if (w.community !== community || w.status !== 'completed') return false;
-    if (dateFrom || dateTo) {
-      var dc = w.dateCompleted || w.completedOn || '';
-      if (!dc) return false;
-      var d = new Date(dc);
-      if (dateFrom && d < new Date(dateFrom)) return false;
-      if (dateTo && d > new Date(dateTo + 'T23:59:59')) return false;
-    }
-    return true;
+    return w.community === community && w.status === 'completed';
   });
   var open = (state.workOrders||[]).filter(function(w) {
     return w.community === community && w.status !== 'completed' && w.status !== 'placeholder';
@@ -8014,45 +7780,36 @@ function exportWOPDF(community, dateFrom, dateTo) {
   overlay.id = 'pdf-print-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#f9fafb;overflow-y:auto;padding:24px;box-sizing:border-box;';
 
-  // Each completed WO gets its own page
   var completedHTML = wos.map(function(w) {
     var crew = (state.crew||[]).find(function(c) { return c.id === w.assignedTo; });
     var typeIcon = w.type === 'irrigation' ? '💧 Irrigation' : '🌿 Landscaping';
-    return '<div style="page-break-before:always;padding-top:24px;">' +
-      '<div style="background:#fff;border-radius:12px;padding:20px;border:1px solid #e5e7eb;">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">' +
-          '<div>' +
-            '<div style="font-size:11px;color:#6b7280;font-weight:700;letter-spacing:1px;">' + typeIcon + '</div>' +
-            '<div style="font-size:17px;font-weight:800;color:#111;">#' + (w.woNumber||'') + ' · ' + (w.ownerName||'--') + '</div>' +
-            '<div style="font-size:12px;color:#6b7280;">' + (w.address||'') + (w.village ? ' - Village ' + w.village : '') + '</div>' +
-          '</div>' +
-          '<div style="background:#dcfce7;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:800;color:#16a34a;">COMPLETED</div>' +
+    return '<div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #e5e7eb;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
+        '<div>' +
+          '<div style="font-size:11px;color:#6b7280;font-weight:700;letter-spacing:1px;">' + typeIcon + '</div>' +
+          '<div style="font-size:15px;font-weight:800;color:#111;">#' + (w.woNumber||'') + ' · ' + (w.ownerName||'—') + '</div>' +
+          '<div style="font-size:12px;color:#6b7280;">' + (w.address||'') + (w.village ? ' · Village ' + w.village : '') + '</div>' +
         '</div>' +
-        '<div style="font-size:13px;color:#374151;margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
-        '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px;">' +
-          '<div style="font-size:11px;color:#6b7280;"><span style="font-weight:700;color:#374151;">Submitted:</span> ' + (w.date||'—') + '</div>' +
-          '<div style="font-size:11px;color:#6b7280;"><span style="font-weight:700;color:#374151;">Received:</span> ' + (w.dateReceived||'—') + '</div>' +
-          '<div style="font-size:11px;color:#16a34a;"><span style="font-weight:700;">Completed:</span> ' + (w.dateCompleted||w.completedOn||'—') + '</div>' +
-        '</div>' +
-        '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + '</div>' +
-        (w.completedNotes ? '<div style="font-size:12px;color:#374151;margin-top:8px;padding:8px 12px;background:#f9fafb;border-radius:8px;border-left:3px solid #16a34a;">Notes: ' + w.completedNotes + '</div>' : '') +
-        (getWOPhoto(w)
-          ? '<img src="' + getWOPhoto(w) + '" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:460px;object-fit:cover;border-radius:10px;margin-top:14px;"/>'
-          : '<div style="background:#f3f4f6;border-radius:8px;padding:16px;text-align:center;color:#9ca3af;font-size:12px;margin-top:10px;">No photo attached</div>') +
+        '<div style="background:#dcfce7;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:800;color:#16a34a;">✓ COMPLETED</div>' +
       '</div>' +
+      '<div style="font-size:13px;color:#374151;margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
+      '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
+      (w.completedNotes ? '<div style="font-size:11px;color:#6b7280;margin-top:4px;">Notes: ' + w.completedNotes + '</div>' : '') +
+      (getWOPhoto(w)
+      ? '<img src="' + getWOPhoto(w) + '" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;"/>' +
+          '<div style="font-size:11px;color:#6b7280;text-align:center;margin-top:4px;">📱 Long press → Save to Photos &nbsp;|&nbsp; 💻 Right-click → Save Image</div>'
+        : '<div style="background:#f3f4f6;border-radius:8px;padding:16px;text-align:center;color:#9ca3af;font-size:12px;margin-top:10px;">No photo attached</div>') +
     '</div>';
   }).join('');
 
-  // All remaining WOs combined on their own page(s)
   var openHTML = '';
   if (open.length) {
-    openHTML = '<div style="page-break-before:always;padding-top:24px;">' +
-      '<h2 style="font-size:16px;font-weight:800;color:#dc2626;margin:0 0 14px;">Remaining (' + open.length + ')</h2>';
+    openHTML = '<div style="margin-top:16px;"><h2 style="font-size:16px;font-weight:800;color:#dc2626;margin:0 0 12px;">⏳ Remaining (' + open.length + ')</h2>';
     open.forEach(function(w) {
       var typeIcon = w.type === 'irrigation' ? '💧' : '🌿';
       openHTML += '<div style="background:#fff;border-radius:10px;padding:12px;margin-bottom:8px;border:1px solid #e5e7eb;border-left:3px solid #dc2626;">' +
-        '<div style="font-size:13px;font-weight:700;">' + typeIcon + ' #' + (w.woNumber||'') + ' - ' + (w.ownerName||'') + '</div>' +
-        '<div style="font-size:11px;color:#6b7280;">' + (w.address||'') + ' - ' + (w.requestType||'') + '</div>' +
+        '<div style="font-size:13px;font-weight:700;">' + typeIcon + ' #' + (w.woNumber||'') + ' · ' + (w.ownerName||'') + '</div>' +
+        '<div style="font-size:11px;color:#6b7280;">' + (w.address||'') + ' · ' + (w.requestType||'') + '</div>' +
       '</div>';
     });
     openHTML += '</div>';
@@ -8175,18 +7932,17 @@ function exportWOReport(community) {
 }
 
 // ── Crew Work Orders ──────────────────────────────────────────────────────────
-function renderCrewWorkOrders(villageFilter) {
+function renderCrewWorkOrders() {
   var el = document.getElementById('wo-crew-list');
   if (!el) return;
 
   var crewId = state.loggedInCrewId;
   var crew = crewId ? (state.crew || []).find(function(c) { return c.id === crewId; }) : null;
   var allWOs = state.workOrders || [];
-  var vf = (villageFilter !== undefined ? villageFilter : (window._crewWOVillage || '')).toString().trim();
-  window._crewWOVillage = vf;
 
+  // Show WOs assigned to this crew member
   var myWOs = allWOs.filter(function(w) {
-    return (w.assignedTo === crewId || w.assignedTo === '__team__' || (crew && w.assignedTo === crew.name)) && w.status !== 'completed' && w.status !== 'placeholder';
+    return (w.assignedTo === crewId || (crew && w.assignedTo === crew.name)) && w.status !== 'completed' && w.status !== 'placeholder';
   });
   var doneWOs = allWOs.filter(function(w) {
     return (w.completedBy === (crew ? crew.name : '') || w.assignedTo === crewId) && w.status === 'completed';
@@ -8196,17 +7952,6 @@ function renderCrewWorkOrders(villageFilter) {
     el.innerHTML = '<div class="card" style="text-align:center;color:var(--text4);font-size:13px;padding:24px;">Log in as a crew member to see your work orders</div>';
     return;
   }
-
-  // Build village list from assigned WOs
-  var villages = [];
-  myWOs.forEach(function(w) {
-    var v = (w.village||'').toString().trim();
-    if (v && !villages.includes(v)) villages.push(v);
-  });
-  villages.sort(function(a,b){ return (parseInt(a)||0)-(parseInt(b)||0); });
-
-  // Apply village filter
-  var filteredMyWOs = vf ? myWOs.filter(function(w){ return (w.village||'').toString().trim()===vf; }) : myWOs;
 
   if (!myWOs.length && !doneWOs.length) {
     el.innerHTML = '<div class="card" style="text-align:center;padding:32px;">' +
@@ -8219,30 +7964,20 @@ function renderCrewWorkOrders(villageFilter) {
 
   var html = '';
 
-  // Village filter pills (only show if multiple villages)
-  if (villages.length > 1) {
-    html += '<div class="pills" style="margin-bottom:12px;">';
-    html += '<button class="pill' + (!vf ? ' active' : '') + '" onclick="renderCrewWorkOrders(\'\')">All</button>';
-    villages.forEach(function(v) {
-      html += '<button class="pill' + (vf===v ? ' active' : '') + '" onclick="renderCrewWorkOrders(\'' + v + '\')">Village ' + v + '</button>';
-    });
-    html += '</div>';
-  }
-
-  if (filteredMyWOs.length) {
-    html += '<div class="sec-title">Assigned to Me (' + filteredMyWOs.length + (vf ? ' - Village ' + vf : '') + ')</div>';
-    filteredMyWOs.forEach(function(w) {
+  if (myWOs.length) {
+    html += '<div class="sec-title">Assigned to Me (' + myWOs.length + ')</div>';
+    myWOs.forEach(function(w) {
       var typeIcon = w.type === 'irrigation' ? '💧' : '🌿';
       var statusColor = w.status === 'in_progress' ? 'yellow' : 'red';
       html += '<div class="card" style="margin-bottom:10px;cursor:pointer;border-left:3px solid var(--' + statusColor + ');" onclick="openCrewWODetail(\'' + w.id + '\')">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
-          '<div style="flex:1;min-width:0;">' +
+          '<div>' +
             '<div style="font-weight:800;font-size:14px;">' + typeIcon + ' #' + (w.woNumber||w.id.slice(-4)) + ' · ' + (w.ownerName||'') + '</div>' +
-            '<div style="font-size:12px;color:var(--text3);">' + (w.address||'') + (w.village ? ' · <span style=\"color:var(--blue);font-weight:700;\">Village ' + w.village + '</span>' : '') + '</div>' +
+            '<div style="font-size:12px;color:var(--text3);">' + (w.address||'') + '</div>' +
           '</div>' +
-          '<span class="badge badge-' + statusColor + '">' + (w.status==='in_progress' ? 'In Progress' : 'Open') + '</span>' +
+          '<span class="badge badge-' + statusColor + '">' + (w.status==='in_progress'?'In Progress':'Open') + '</span>' +
         '</div>' +
-        '<div style="font-size:12px;color:var(--text2);"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details.slice(0,80) + (w.details.length>80 ? '…' : '') : '') + '</div>' +
+        '<div style="font-size:12px;color:var(--text2);"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details.slice(0,80) + (w.details.length>80?'…':'') : '') + '</div>' +
         (w.community ? '<div style="font-size:11px;color:var(--text4);margin-top:4px;">' + w.community + '</div>' : '') +
         (w.dueDate ? '<div style="font-size:11px;color:var(--red);margin-top:4px;font-weight:700;">⏰ Due: ' + w.dueDate + '</div>' : '') +
         '<div style="margin-top:10px;">' +
@@ -8250,8 +7985,6 @@ function renderCrewWorkOrders(villageFilter) {
         '</div>' +
         '</div>';
     });
-  } else if (vf) {
-    html += '<div class="card" style="text-align:center;padding:24px;color:var(--text4);font-size:13px;">No open work orders for Village ' + vf + '</div>';
   }
 
   if (doneWOs.length) {
@@ -8261,46 +7994,17 @@ function renderCrewWorkOrders(villageFilter) {
       html += '<div class="card-flat" style="margin-bottom:8px;border-left:3px solid var(--green);">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;">' +
           '<div>' +
-            '<div style="font-weight:700;font-size:13px;">' + typeIcon + ' #' + (w.woNumber||'') + ' · ' + (w.ownerName||'') + (w.village ? ' · <span style=\"color:var(--blue);\">Village ' + w.village + '</span>' : '') + '</div>' +
-            '<div style="font-size:11px;color:var(--text3);">' + (w.dateCompleted||w.completedOn||'') + '</div>' +
+            '<div style="font-weight:700;font-size:13px;">' + typeIcon + ' #' + (w.woNumber||'') + ' · ' + (w.ownerName||'') + '</div>' +
+            '<div style="font-size:11px;color:var(--text3);">' + (w.completedOn||'') + '</div>' +
           '</div>' +
           '<span class="badge badge-green">✓</span>' +
         '</div>' +
         (getWOPhoto(w) ? '<img src="' + getWOPhoto(w) + '" style="width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-top:8px;"/>' : '') +
-        '</div>';
-    });
-  }
-
-  // Append crew flags section
-  var crewFlagsHTML = '';
-  var myFlags = (state.flags||[]).filter(function(f) {
-    return !f.resolved && (f.assignedCrewId === crewId || f.assignedCrewId === '__team__');
-  });
-  if (myFlags.length) {
-    crewFlagsHTML += '<div class="sec-title" style="margin-top:20px;">⚑ Flags Assigned to Me (' + myFlags.length + ')</div>';
-    myFlags.forEach(function(f) {
-      var prop = (state.properties||[]).find(function(p) { return p.id === f.propId; });
-      var photo = getFlagPhoto(f);
-      var isTeam = f.assignedCrewId === '__team__';
-      crewFlagsHTML += '<div class="card" style="margin-bottom:10px;border-left:3px solid var(--red);">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">' +
-          '<div>' +
-            '<span class="badge badge-red" style="margin-right:6px;">' + f.priority + '</span>' +
-            '<span style="font-size:12px;color:var(--blue);font-weight:700;">' + f.service + '</span>' +
-            (isTeam ? '<span style="font-size:11px;color:var(--text4);margin-left:6px;">👥 Team</span>' : '') +
-          '</div>' +
-          '<div style="font-size:10px;color:var(--text4);">' + (f.date||'') + '</div>' +
-        '</div>' +
-        (prop ? '<div style="font-size:12px;font-weight:700;margin-bottom:4px;">' + (prop.name||prop.address||'') + '</div>' : '') +
-        '<div style="font-size:13px;color:var(--text2);margin-bottom:8px;">' + (f.note||'') + '</div>' +
-        (photo ? '<img src="' + photo + '" style="width:100%;border-radius:8px;max-height:140px;object-fit:cover;margin-bottom:8px;"/>' : '') +
-        '<button data-flagid="' + f.id + '" data-propid="' + f.propId + '" onclick="crewResolveFlag(this.dataset.flagid,this.dataset.propid)"' +
-          ' style="width:100%;padding:10px;border-radius:10px;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);font-size:13px;font-weight:700;cursor:pointer;">✓ Mark Resolved</button>' +
       '</div>';
     });
   }
 
-  el.innerHTML = html + crewFlagsHTML;
+  el.innerHTML = html;
 }
 
 // ── Crew complete work order (requires photo) ────────────────────────────────
@@ -8821,7 +8525,6 @@ function submitCrewWOComplete(woId, photoData) {
     // Step 3: update WO status
     wo.status = 'completed';
     wo.completedOn = new Date().toLocaleDateString();
-    wo.dateCompleted = wo.completedOn;
     wo.completedBy = crew ? crew.name : 'Crew';
     wo.completedNotes = notes;
 
@@ -9740,9 +9443,29 @@ if ('serviceWorker' in navigator) {
                   location.protocol === 'file:';
   if (!isPreview) {
     window.addEventListener('load', function() {
-      navigator.serviceWorker.register('./sw.js')
-        .then(function(reg) { console.log('SW registered'); })
-        .catch(function(err) { console.warn('SW failed:', err); });
+      navigator.serviceWorker.register('./sw.js').then(function(reg) {
+        console.log('[SW] Registered, scope:', reg.scope);
+
+        // When a new SW is waiting, tell it to activate immediately
+        reg.addEventListener('updatefound', function() {
+          var newWorker = reg.installing;
+          newWorker.addEventListener('statechange', function() {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              // New version available — reload all tabs silently
+              newWorker.postMessage({ type: 'SKIP_WAITING' });
+            }
+          });
+        });
+      }).catch(function(err) { console.warn('[SW] Registration failed:', err); });
+
+      // When SW takes control (after update), reload so users see the new version
+      var refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function() {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
+      });
     });
   }
 }

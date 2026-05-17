@@ -1,69 +1,47 @@
-// Diamond Landscapes Service Worker
-const CACHE = 'diamond-v6';
-const ASSETS = [
-  './',
-  './index.html',
-  './icon-192.png',
-  './icon-512.png',
-  './manifest.json'
-];
+// ─── Service Worker ───────────────────────────────────────────────────────────
+// Strategy:
+//   index.html  → always network-first, never served from cache when online
+//   everything else → cache-first for speed (static assets, images, etc.)
+//
+// You never need to touch this file. Just upload a new index.html and every
+// user's phone fetches it fresh on their next visit — no cache clearing needed.
 
-self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(ASSETS).catch(() => {}))
-  );
+const CACHE_NAME = 'diamond-app-static-v1';
+
+// ── Install: skip waiting so this SW activates immediately ────────────────
+self.addEventListener('install', function(event) {
   self.skipWaiting();
 });
 
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
+// ── Activate: claim all clients right away ────────────────────────────────
+self.addEventListener('activate', function(event) {
+  event.waitUntil(self.clients.claim());
 });
 
-self.addEventListener('fetch', e => {
-  const url = e.request.url;
+// ── Fetch ─────────────────────────────────────────────────────────────────
+self.addEventListener('fetch', function(event) {
+  var req = event.request;
+  var url = new URL(req.url);
 
-  // Skip non-http(s) schemes (chrome-extension, data, etc.)
-  if (!url.startsWith('http://') && !url.startsWith('https://')) return;
-
-  // Skip Google Sheets API calls — never cache these
-  if (url.includes('script.google.com')) return;
-
-  // Skip Google Drive URLs — always fetch fresh
-  if (url.includes('drive.google.com')) return;
-
-  // Network first for icons and manifest
-  if (url.includes('icon-') || url.includes('manifest.json')) {
-    e.respondWith(
-      fetch(e.request)
-        .then(response => {
-          const clone = response.clone();
-          caches.open(CACHE).then(cache => cache.put(e.request, clone));
-          return response;
-        })
-        .catch(() => caches.match(e.request))
+  // Always go to network for the HTML page — every load gets the latest version
+  if (req.mode === 'navigate' ||
+      url.pathname === '/' ||
+      url.pathname.endsWith('/index.html')) {
+    event.respondWith(
+      fetch(req).catch(function() {
+        return caches.match(req); // offline fallback only
+      })
     );
     return;
   }
 
-  // Cache first, network fallback for everything else
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(response => {
-        if (response && response.status === 200 && e.request.method === 'GET') {
-          const clone = response.clone();
-          caches.open(CACHE).then(cache => cache.put(e.request, clone));
-        }
-        return response;
-      }).catch(() => {
-        if (e.request.mode === 'navigate') {
-          return caches.match('./index.html');
-        }
+  // Everything else: cache-first for speed
+  event.respondWith(
+    caches.match(req).then(function(cached) {
+      return cached || fetch(req).then(function(networkRes) {
+        var clone = networkRes.clone();
+        caches.open(CACHE_NAME).then(function(cache) { cache.put(req, clone); });
+        return networkRes;
       });
     })
   );
