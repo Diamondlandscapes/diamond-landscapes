@@ -1236,6 +1236,10 @@ select.inp{cursor:pointer;}
         <select class="inp" id="nc-role">
           <option>Crew Lead</option><option>Crew Member</option><option>Driver</option>
         </select>
+        <div>
+          <input class="inp" id="nc-pin" placeholder="4-digit login PIN" type="tel" maxlength="4" inputmode="numeric" style="letter-spacing:6px;font-weight:800;font-size:18px;"/>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;">Used to access the crew console. Leave blank for no PIN.</div>
+        </div>
         <button class="btn btn-green" onclick="saveCrew()">Add Member</button>
         <button class="btn btn-outline" onclick="closeOverlay('add-crew-overlay')">Cancel</button>
       </div>
@@ -2037,6 +2041,11 @@ function openCrewDetail(id) {
         <select class="inp" id="ce-role-${id}">
           ${['Crew Lead','Crew Member','Driver'].map(r=>`<option ${c.role===r?'selected':''}>${r}</option>`).join('')}
         </select>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">LOGIN PIN ${c.pin ? '<span style="color:var(--green);">● Set</span>' : '<span style="color:var(--red);">● Not set</span>'}</div>
+          <input class="inp" id="ce-pin-${id}" placeholder="Enter new 4-digit PIN" type="tel" maxlength="4" inputmode="numeric" style="letter-spacing:6px;font-weight:800;font-size:18px;"/>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;">${c.pin ? 'Leave blank to keep current PIN, or enter a new one to change it.' : 'Leave blank for no PIN required.'}</div>
+        </div>
         <button class="btn btn-green" onclick="saveCrewEdit('${id}')" style="font-size:13px;">Save Changes</button>
         <button class="btn btn-outline" onclick="toggleCrewEdit('${id}')" style="font-size:13px;">Cancel</button>
       </div>
@@ -2139,6 +2148,13 @@ function saveCrewEdit(id) {
   c.name  = document.getElementById('ce-name-'+id)?.value.trim()  || c.name;
   c.phone = document.getElementById('ce-phone-'+id)?.value.trim() || '';
   c.role  = document.getElementById('ce-role-'+id)?.value         || c.role;
+  const pinVal = (document.getElementById('ce-pin-'+id)?.value || '').trim();
+  if (pinVal) {
+    if (pinVal.length !== 4 || !/^\d{4}$/.test(pinVal)) { toast('PIN must be exactly 4 digits'); return; }
+    const dup = state.crew.find(x => x.id !== id && x.pin === pinVal);
+    if (dup) { toast('That PIN is already used by ' + dup.name); return; }
+    c.pin = pinVal;
+  }
   saveAndSync('crew', c);
   openCrewDetail(id);
   renderCrew();
@@ -3278,13 +3294,19 @@ function openAddCrew() { openOverlay('add-crew-overlay'); }
 function saveCrew() {
   const name = document.getElementById('nc-name').value.trim();
   if (!name) { toast('Enter a name'); return; }
-  state.crew.push({
+  const pin = (document.getElementById('nc-pin')?.value || '').trim();
+  if (pin && (pin.length !== 4 || !/^\d{4}$/.test(pin))) { toast('PIN must be exactly 4 digits'); return; }
+  if (pin && state.crew.some(c => c.pin === pin)) { toast('That PIN is already in use'); return; }
+  const member = {
     id: uid(), name,
-    phone: document.getElementById('nc-phone').value,
-    role: document.getElementById('nc-role').value
-  });
-  save(); closeOverlay('add-crew-overlay');
-  ['nc-name','nc-phone'].forEach(id => document.getElementById(id).value='');
+    phone: document.getElementById('nc-phone')?.value || '',
+    role: document.getElementById('nc-role')?.value || 'Crew Member',
+    pin: pin || ''
+  };
+  state.crew.push(member);
+  saveAndSync('crew', member);
+  closeOverlay('add-crew-overlay');
+  ['nc-name','nc-phone','nc-pin'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   renderCrew(); toast('Crew member added!');
 }
 
@@ -4703,7 +4725,7 @@ function ls_showCrewNames() {
       return;
     }
     list.innerHTML = state.crew.map(c => `
-      <button onclick="ls_selectCrew('${c.id}')" style="display:flex;align-items:center;gap:14px;width:100%;
+      <button onclick="ls_crewSelected('${c.id}')" style="display:flex;align-items:center;gap:14px;width:100%;
         background:#1f281f;border:1px solid #2e3d2e;border-radius:14px;padding:14px 16px;
         cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
         transition:background .15s;margin-bottom:4px;">
@@ -4713,10 +4735,11 @@ function ls_showCrewNames() {
           font-weight:800;font-size:18px;color:white;flex-shrink:0;">
           ${c.name.trim()[0].toUpperCase()}
         </div>
-        <div style="text-align:left;">
+        <div style="text-align:left;flex:1;">
           <div style="font-size:15px;font-weight:800;color:white;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">${c.name}</div>
           <div style="font-size:12px;color:#6b8f6b;margin-top:2px;">${c.role}</div>
         </div>
+        ${c.pin ? '<div style="font-size:18px;">🔒</div>' : ''}
       </button>`).join('');
   }
 
@@ -4729,6 +4752,75 @@ function ls_showCrewNames() {
   }).catch(() => {
     // offline — cached list is already showing, nothing to do
   });
+}
+
+function ls_crewSelected(crewId) {
+  const c = state.crew.find(x => x.id === crewId);
+  if (!c) return;
+  if (!c.pin) { ls_selectCrew(crewId); return; }
+
+  // Show per-crew PIN pad inline
+  const nameArea = document.getElementById('ls-crew-names');
+  window._crewPinBuffer = '';
+  nameArea.innerHTML = `
+    <div style="text-align:center;padding:8px 0 14px;">
+      <div style="width:56px;height:56px;border-radius:50%;
+        background:linear-gradient(135deg,#16a34a,#2dd4bf);
+        display:flex;align-items:center;justify-content:center;
+        font-weight:800;font-size:22px;color:white;margin:0 auto 10px;">
+        ${c.name.trim()[0].toUpperCase()}
+      </div>
+      <div style="font-size:17px;font-weight:800;color:white;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">${c.name}</div>
+      <div style="font-size:12px;color:#6b8f6b;margin-top:2px;">Enter your PIN</div>
+    </div>
+    <div style="display:flex;justify-content:center;gap:16px;margin-bottom:6px;">
+      <div class="pin-dot" id="cpd1"></div>
+      <div class="pin-dot" id="cpd2"></div>
+      <div class="pin-dot" id="cpd3"></div>
+      <div class="pin-dot" id="cpd4"></div>
+    </div>
+    <div id="crew-pin-error" style="font-size:13px;color:#f87171;text-align:center;min-height:18px;font-weight:700;margin-bottom:8px;"></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%;max-width:300px;margin:0 auto;">
+      ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => k===''
+        ? '<div></div>'
+        : `<button onclick="ls_crewPinDigit('${c.id}','${k}')" class="ls-key">${k}</button>`
+      ).join('')}
+    </div>
+    <button onclick="ls_showCrewNames()" style="margin-top:14px;background:none;border:none;color:#6b8f6b;font-size:13px;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;text-decoration:underline;">← Back</button>
+  `;
+}
+
+window._crewPinBuffer = '';
+function ls_crewPinDigit(crewId, k) {
+  if (k === '⌫') {
+    window._crewPinBuffer = window._crewPinBuffer.slice(0, -1);
+  } else if (window._crewPinBuffer.length < 4) {
+    window._crewPinBuffer += String(k);
+  }
+  for (var i = 1; i <= 4; i++) {
+    const d = document.getElementById('cpd' + i);
+    if (d) d.className = 'pin-dot' + (i <= window._crewPinBuffer.length ? ' filled' : '');
+  }
+  if (window._crewPinBuffer.length === 4) {
+    setTimeout(function() {
+      const c = state.crew.find(x => x.id === crewId);
+      if (c && window._crewPinBuffer === c.pin) {
+        ls_selectCrew(crewId);
+      } else {
+        const errEl = document.getElementById('crew-pin-error');
+        if (errEl) errEl.textContent = '✕ Incorrect PIN';
+        window._crewPinBuffer = '';
+        for (var i = 1; i <= 4; i++) {
+          const d = document.getElementById('cpd' + i);
+          if (d) d.className = 'pin-dot';
+        }
+        setTimeout(function() {
+          const e = document.getElementById('crew-pin-error');
+          if (e) e.textContent = '';
+        }, 1500);
+      }
+    }, 80);
+  }
 }
 
 function ls_selectCrew(crewId) {
@@ -8269,10 +8361,10 @@ function renderCrewWorkOrders() {
 
   // Show WOs assigned to this crew member
   var myWOs = allWOs.filter(function(w) {
-    return (w.assignedTo === crewId || (crew && w.assignedTo === crew.name)) && w.status !== 'completed' && w.status !== 'placeholder';
+    return (w.assignedTo === crewId || w.assignedTo === '__team__' || (crew && w.assignedTo === crew.name)) && w.status !== 'completed' && w.status !== 'placeholder';
   });
   var doneWOs = allWOs.filter(function(w) {
-    return (w.completedBy === (crew ? crew.name : '') || w.assignedTo === crewId) && w.status === 'completed';
+    return (w.completedBy === (crew ? crew.name : '') || w.assignedTo === crewId || w.assignedTo === '__team__') && w.status === 'completed';
   }).slice(-10);
 
   if (!crewId) {
