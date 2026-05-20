@@ -765,31 +765,7 @@ select.inp{cursor:pointer;}
     </div>
 
 
-    <div id="ls-crew" style="width:100%;display:none;flex-direction:column;gap:12px;">
-      <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;color:#6b8f6b;letter-spacing:2px;text-transform:uppercase;text-align:center;">Crew PIN</div>
-      <div style="display:flex;gap:16px;justify-content:center;margin:4px 0;" id="ls-crew-dots">
-        <div class="pin-dot" id="lcd1"></div>
-        <div class="pin-dot" id="lcd2"></div>
-        <div class="pin-dot" id="lcd3"></div>
-        <div class="pin-dot" id="lcd4"></div>
-      </div>
-      <div id="ls-crew-error" style="font-size:13px;color:#f87171;min-height:18px;font-weight:700;text-align:center;"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;width:100%;max-width:300px;margin:0 auto;">
-        <button onclick="ls_crewPinKey('1')" class="ls-key">1</button>
-        <button onclick="ls_crewPinKey('2')" class="ls-key">2</button>
-        <button onclick="ls_crewPinKey('3')" class="ls-key">3</button>
-        <button onclick="ls_crewPinKey('4')" class="ls-key">4</button>
-        <button onclick="ls_crewPinKey('5')" class="ls-key">5</button>
-        <button onclick="ls_crewPinKey('6')" class="ls-key">6</button>
-        <button onclick="ls_crewPinKey('7')" class="ls-key">7</button>
-        <button onclick="ls_crewPinKey('8')" class="ls-key">8</button>
-        <button onclick="ls_crewPinKey('9')" class="ls-key">9</button>
-        <div></div>
-        <button onclick="ls_crewPinKey('0')" class="ls-key">0</button>
-        <button onclick="ls_crewPinKey('⌫')" class="ls-key" style="font-size:20px;">⌫</button>
-      </div>
-      <button onclick="ls_showWho()" style="background:none;border:none;color:#6b8f6b;font-size:13px;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">← Back</button>
-    </div>
+    <div id="ls-crew" style="display:none;"></div>
 
 
     <div id="ls-crew-names" style="width:100%;display:none;flex-direction:column;gap:10px;">
@@ -4660,11 +4636,7 @@ function ls_showManager() {
 }
 
 function ls_showCrew() {
-  document.getElementById('ls-who').style.display  = 'none';
-  document.getElementById('ls-crew').style.display = 'flex';
-  ls_crewBuffer = ''; ls_updateDots('lcd', 0);
-  // pre-load fresh crew data in background
-  gsLoad().catch(()=>{});
+  ls_showCrewNames();
 }
 
 function ls_updateDots(prefix, count) {
@@ -4709,8 +4681,10 @@ function ls_crewPinKey(k) {
 }
 
 function ls_showCrewNames() {
+  document.getElementById('ls-who').style.display        = 'none';
   document.getElementById('ls-crew').style.display       = 'none';
   document.getElementById('ls-crew-names').style.display = 'flex';
+  gsLoad().catch(()=>{});
   const list = document.getElementById('ls-crew-name-list');
 
   // Show cached crew IMMEDIATELY — no waiting for network
