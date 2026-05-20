@@ -7338,6 +7338,7 @@ function openCommunityWO(community) {
       +'<button class="pill'+(type==='irrigation'?' active':'')+'" id="wop-irr">&#x1F4A7; Irrigation</button>'
       +'<button id="wop-bulk" style="font-size:12px;padding:5px 11px;border-radius:8px;font-weight:700;cursor:pointer;border:1px solid '+(bulk?'rgba(248,113,113,.4)':'rgba(96,165,250,.3)')+';background:'+(bulk?'rgba(248,113,113,.12)':'rgba(96,165,250,.15)')+';color:'+(bulk?'var(--red)':'var(--blue)')+';">'+(bulk?'&#x2715; Cancel':'&#x2611; Bulk')+'</button>'
       +'<button id="wop-upload" class="btn-sm" style="margin-left:auto;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">&#x2B06; Upload</button>'
+      +'<button id="wop-create" class="btn-sm" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">&#x2795; Create</button>'
       +'<button id="wop-report" class="btn-sm" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">&#x1F4C4; Report</button>'
       +'<button id="wop-archive-btn" class="btn-sm" style="background:rgba(148,163,184,.12);color:var(--text3);border:1px solid var(--border2);">&#x1F4E6; Archive</button>'
       +'</div>'
@@ -7409,6 +7410,7 @@ function openCommunityWO(community) {
     q('wop-irr').onclick   = function(){ window._woType='irrigation';  build(); };
     q('wop-bulk').onclick  = function(){ window._woBulkMode=!window._woBulkMode; window._woBulkSel.clear(); build(); };
     q('wop-upload').onclick      = function(){ openUploadWO(community); };
+    q('wop-create').onclick      = function(){ openCreateWO(community); };
     q('wop-report').onclick      = function(){ openWOReport(community); };
     q('wop-archive-btn').onclick = function(){ openArchiveWOs(community); };
     if(q('wop-upload2'))        q('wop-upload2').onclick = function(){ openUploadWO(community); };
@@ -7527,6 +7529,143 @@ function woUploadClose() {
   if (s) s.remove();
   var f = document.getElementById('wo-hidden-file');
   if (f) f.remove();
+}
+
+function openCreateWO(community) {
+  var existing = document.getElementById('wo-create-sheet');
+  if (existing) existing.remove();
+
+  var sheet = document.createElement('div');
+  sheet.id = 'wo-create-sheet';
+  sheet.className = 'overlay open';
+
+  var crewOpts = '<option value="">— Unassigned —</option>'
+    + '<option value="__team__">&#x1F465; General Team (All Crew)</option>'
+    + (state.crew||[]).map(function(c){
+        return '<option value="'+c.id+'">'+c.name+'</option>';
+      }).join('');
+
+  var inner = document.createElement('div');
+  inner.className = 'sheet';
+  inner.style.maxHeight = '92vh';
+  inner.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
+    + '<div class="sheet-title" style="margin-bottom:0;">&#x2795; New Work Order</div>'
+    + '<button id="woc-close" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">&#x2715;</button>'
+    + '</div>'
+
+    // Type + WO#
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'
+    +   '<div>'
+    +     '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">TYPE</div>'
+    +     '<select id="woc-type" class="inp" style="margin-bottom:0;">'
+    +       '<option value="landscape">&#x1F33F; Landscaping</option>'
+    +       '<option value="irrigation">&#x1F4A7; Irrigation</option>'
+    +     '</select>'
+    +   '</div>'
+    +   '<div>'
+    +     '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">WO # (optional)</div>'
+    +     '<input id="woc-num" class="inp" placeholder="e.g. 670227" style="margin-bottom:0;"/>'
+    +   '</div>'
+    + '</div>'
+
+    // Owner + Address
+    + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">OWNER NAME</div>'
+    + '<input id="woc-owner" class="inp" placeholder="e.g. John Smith"/>'
+    + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">ADDRESS</div>'
+    + '<input id="woc-address" class="inp" placeholder="e.g. 7616A"/>'
+
+    // Village + Request Type
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'
+    +   '<div>'
+    +     '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">VILLAGE</div>'
+    +     '<input id="woc-village" class="inp" placeholder="e.g. 10" style="margin-bottom:0;"/>'
+    +   '</div>'
+    +   '<div>'
+    +     '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">REQUEST TYPE</div>'
+    +     '<input id="woc-reqtype" class="inp" placeholder="e.g. Sprinkler" style="margin-bottom:0;"/>'
+    +   '</div>'
+    + '</div>'
+
+    // Details
+    + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">DETAILS / DESCRIPTION</div>'
+    + '<textarea id="woc-details" class="inp" rows="3" placeholder="Describe the issue..." style="resize:vertical;font-family:inherit;"></textarea>'
+
+    // Date submitted + Due date
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'
+    +   '<div>'
+    +     '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">DATE SUBMITTED</div>'
+    +     '<input id="woc-date" type="date" class="inp" style="margin-bottom:0;" value="'+new Date().toISOString().slice(0,10)+'"/>'
+    +   '</div>'
+    +   '<div>'
+    +     '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">DUE DATE (optional)</div>'
+    +     '<input id="woc-due" type="date" class="inp" style="margin-bottom:0;"/>'
+    +   '</div>'
+    + '</div>'
+
+    // Assign to
+    + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">ASSIGN TO</div>'
+    + '<select id="woc-crew" class="inp">'+crewOpts+'</select>'
+
+    // Status
+    + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">STATUS</div>'
+    + '<select id="woc-status" class="inp">'
+    +   '<option value="open">&#x1F534; Open</option>'
+    +   '<option value="in_progress">&#x1F7E1; In Progress</option>'
+    +   '<option value="completed">&#x1F7E2; Completed</option>'
+    + '</select>'
+
+    // Buttons
+    + '<div style="display:flex;gap:8px;margin-top:4px;">'
+    +   '<button id="woc-save" class="btn btn-green" style="flex:1;">&#x2713; Create Work Order</button>'
+    +   '<button id="woc-cancel" class="btn btn-outline">Cancel</button>'
+    + '</div>';
+
+  sheet.appendChild(inner);
+  document.body.appendChild(sheet);
+
+  document.getElementById('woc-close').onclick  = function(){ sheet.remove(); };
+  document.getElementById('woc-cancel').onclick = function(){ sheet.remove(); };
+  document.getElementById('woc-save').onclick   = function() {
+    var owner = document.getElementById('woc-owner').value.trim();
+    if (!owner) { toast('Owner name is required'); return; }
+
+    var dateVal = document.getElementById('woc-date').value;
+    var dateStr = dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString();
+
+    var wo = {
+      id:          'wo_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+      type:        document.getElementById('woc-type').value,
+      community:   community,
+      date:        dateStr,
+      dateReceived: new Date().toLocaleDateString(),
+      dateCompleted:'',
+      woNumber:    document.getElementById('woc-num').value.trim(),
+      address:     document.getElementById('woc-address').value.trim(),
+      village:     document.getElementById('woc-village').value.trim(),
+      ownerName:   owner,
+      requestType: document.getElementById('woc-reqtype').value.trim(),
+      details:     document.getElementById('woc-details').value.trim(),
+      assignedTo:  document.getElementById('woc-crew').value,
+      status:      document.getElementById('woc-status').value,
+      dueDate:     document.getElementById('woc-due').value,
+      completedOn: '',
+      completedPhoto: '',
+      completedBy: '',
+      createdAt:   new Date().toLocaleDateString()
+    };
+
+    state.workOrders = state.workOrders || [];
+    state.workOrders.push(wo);
+    saveAndSync('workOrders', wo);
+
+    sheet.remove();
+    renderWorkOrders();
+    // Refresh the community panel
+    var panel = document.getElementById('wo-community-panel');
+    if (panel) { panel.remove(); openCommunityWO(community); }
+    toast('Work order created ✓');
+  };
 }
 
 function openUploadWO(community) {
