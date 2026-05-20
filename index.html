@@ -7865,8 +7865,9 @@ function openWODetail(woId) {
   sheet.id = 'wo-detail-sheet';
   sheet.className = 'overlay open';
 
-  var crewOptions = '<option value="">— Unassigned —</option>' +
-    (state.crew || []).map(function(c) {
+  var crewOptions = '<option value="">— Unassigned —</option>'
+    + '<option value="__team__"' + (wo.assignedTo === '__team__' ? ' selected' : '') + '>&#x1F465; General Team (All Crew)</option>'
+    + (state.crew || []).map(function(c) {
       return '<option value="' + c.id + '"' + (wo.assignedTo === c.id ? ' selected' : '') + '>' + c.name + '</option>';
     }).join('');
 
