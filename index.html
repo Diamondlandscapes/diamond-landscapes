@@ -8726,7 +8726,7 @@ function openCrewWOComplete(woId) {
       '<label class="photo-zone" for="wo-photo-input" id="wo-photo-zone" style="margin-bottom:12px;">' +
         '<div style="font-size:28px;margin-bottom:6px;">📷</div>' +
         '<div style="font-size:13px;color:var(--text3);">Tap to take or choose a photo</div>' +
-        '<input type="file" id="wo-photo-input" accept="image/*"  style="display:none;"/>' +
+        '<input type="file" id="wo-photo-input" accept="image/*" capture="environment" style="display:none;"/>' +
       '</label>' +
       '<img id="wo-photo-preview" style="display:none;width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;"/>' +
       '<textarea id="wo-complete-notes" class="inp" rows="2" placeholder="Completion notes (optional)..." style="margin-bottom:12px;"></textarea>' +
@@ -8895,18 +8895,78 @@ function clearOldPhotos() {
 
 function getWOPhoto(wo) {
   if (!wo) return null;
-  // Check dlphotos localStorage first (full quality on originating device)
+
+  // 1. Individual localStorage key (most reliable, set first on completing device)
+  try {
+    var local = localStorage.getItem('dlphoto_' + wo.id);
+    if (local && local.length > 100) return local;
+  } catch(e) {}
+
+  // 2. dlphotos map (secondary cache)
   try {
     var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
     var lp = photos[wo.id];
-    if (lp && lp.length > 5) return lp;
+    if (lp && lp.length > 100) return lp;
   } catch(e) {}
-  var local = localStorage.getItem('dlphoto_' + wo.id);
-  if (local && local.length > 5) return local;
-  // Return completedPhoto from Sheets (ImgBB URL or data:)
-  if (wo.completedPhoto && wo.completedPhoto.length > 5 &&
-      !wo.completedPhoto.startsWith('[')) return wo.completedPhoto;
+
+  // 3. completedPhoto field — could be ImgBB URL, data:, or local: reference
+  if (wo.completedPhoto) {
+    if (wo.completedPhoto.startsWith('local:')) {
+      // Photo is in localStorage under the referenced key
+      var refKey = wo.completedPhoto.slice(6); // strip 'local:'
+      try {
+        var stored = localStorage.getItem('dlphoto_' + refKey);
+        if (stored && stored.length > 100) return stored;
+      } catch(e) {}
+      return null;
+    }
+    if (!wo.completedPhoto.startsWith('[') && wo.completedPhoto.length > 10) {
+      return wo.completedPhoto;
+    }
+  }
   return null;
+}
+
+// Retry uploading any WOs stuck with '[uploading]' status
+function retryPendingWOPhotos() {
+  var pending = (state.workOrders||[]).filter(function(w) {
+    return w.completedPhoto === '[uploading]' || (w.completedPhoto && w.completedPhoto.startsWith('local:'));
+  });
+  if (!pending.length) return;
+  console.log('[Retry] Found', pending.length, 'WO(s) with pending photos');
+  pending.forEach(function(wo) {
+    var photo = getWOPhoto(wo);
+    if (!photo) { console.warn('[Retry] No local photo for', wo.id); return; }
+
+    var woFilename = 'WO_' + (wo.woNumber||wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_retry';
+    var raw = photo;
+    var comma = photo.indexOf(',');
+    if (comma !== -1) raw = photo.slice(comma + 1);
+
+    var form = new FormData();
+    form.append('image', raw);
+    form.append('name', woFilename);
+
+    fetch('https://api.imgbb.com/1/upload?key=' + IMGBB_API_KEY, {
+      method: 'POST',
+      body: form
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data && data.success && data.data && data.data.url) {
+        console.log('[Retry] Uploaded photo for WO', wo.id);
+        wo.completedPhoto = data.data.url;
+        try {
+          var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+          photos[wo.id] = data.data.url;
+          localStorage.setItem('dlphotos', JSON.stringify(photos));
+        } catch(e) {}
+        save();
+        gsSave('workOrders', wo);
+      }
+    })
+    .catch(function(err) { console.warn('[Retry] Photo retry failed for', wo.id, err); });
+  });
 }
 
 
@@ -8971,107 +9031,115 @@ function readFileAsDataUrl(file, callback) {
 }
 
 function submitCrewWOComplete(woId, photoData) {
-  var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
+  var wo = (state.workOrders||[]).find(function(w){ return w.id===woId; });
   if (!wo) return;
 
-  var crew = state.loggedInCrewId ? (state.crew || []).find(function(c) { return c.id === state.loggedInCrewId; }) : null;
+  var crew = state.loggedInCrewId ? (state.crew||[]).find(function(c){ return c.id===state.loggedInCrewId; }) : null;
   var notes = document.getElementById('wo-complete-notes')?.value || '';
+  var btn = document.getElementById('wo-complete-btn');
+  if (btn) { btn.disabled=true; btn.style.opacity='0.6'; btn.textContent='Saving...'; }
 
-  // Step 1: compress to good quality (matches flag photo pipeline)
-  compressPhoto(photoData, 800, 0.82, function(compressed) {
-    toast('📷 Photo ready - saving...');
+  // ── Step 1: compress photo (higher quality for WO records) ────────────────
+  compressPhoto(photoData, 1200, 0.88, function(compressed) {
 
-    // Step 2: save locally for immediate display
-    wo.completedPhoto = compressed;
+    // ── Step 2: save to localStorage immediately (two locations for safety) ──
+    var photoSaved = false;
     try {
+      // Primary: per-WO key (never hits quota issues from bulk storage)
+      localStorage.setItem('dlphoto_' + woId, compressed);
+      photoSaved = true;
+    } catch(e) { console.warn('Photo local save failed (dlphoto_):', e); }
+
+    try {
+      // Secondary: dlphotos map (for getWOPhoto lookup on same device)
       var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
       photos[woId] = compressed;
       localStorage.setItem('dlphotos', JSON.stringify(photos));
-    } catch(pe) {
-      try { localStorage.setItem('dlphoto_' + woId, compressed); } catch(e2) {}
+    } catch(e) {
+      // dlphotos map too large — that's ok, dlphoto_ key is the real source
+      console.warn('dlphotos map full, using individual key only');
     }
 
-    // Step 3: update WO status
-    wo.status = 'completed';
-    wo.completedOn = new Date().toLocaleDateString();
-    wo.completedBy = crew ? crew.name : 'Crew';
+    // ── Step 3: update WO fields ──────────────────────────────────────────────
+    wo.status         = 'completed';
+    wo.completedOn    = new Date().toLocaleDateString();
+    wo.dateCompleted  = new Date().toLocaleDateString();
+    wo.completedBy    = crew ? crew.name : 'Crew';
     wo.completedNotes = notes;
+    wo.completedPhoto = photoSaved ? 'local:' + woId : compressed; // track where it lives
 
-    // Step 4: save state and close sheet
+    // ── Step 4: save state & update UI immediately ────────────────────────────
     save();
     var completeSheet = document.getElementById('crew-wo-complete-sheet');
     if (completeSheet) completeSheet.remove();
     renderCrewWorkOrders();
-    if (document.getElementById('wo-community-list')) renderWorkOrders();
-    toast('✓ Work order completed');
+    toast('✓ Work order completed — uploading photo...');
 
-    // Step 5: save WO to Sheets with placeholder while upload runs
-    var woForSheets = Object.assign({}, wo, { completedPhoto: '[uploading]' });
-    gsSave('workOrders', woForSheets);
+    // ── Step 5: save WO to Sheets with placeholder, then replace with URL ─────
+    var woSlim = Object.assign({}, wo, { completedPhoto: '[uploading]' });
+    gsSave('workOrders', woSlim);
 
-    // Step 6: upload to ImgBB - same as flag photos
-    toast('📤 Uploading photo...');
-    var woFilename = 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now();
-    uploadPhotoViaPost(compressed, woFilename,
-      function(imgbbUrl) {
-        wo.completedPhoto = imgbbUrl;
-        try {
-          var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-          photos[wo.id] = imgbbUrl;
-          localStorage.setItem('dlphotos', JSON.stringify(photos));
-        } catch(e) {}
-        save();
-        gsSave('workOrders', wo);
-        renderCrewWorkOrders();
-        if (document.getElementById('wo-community-list')) renderWorkOrders();
-        toast('✓ Photo uploaded — visible on all devices');
-      },
-      function(err) {
-        console.warn('WO photo upload failed:', err);
-        // Fallback: save compressed locally, sync without photo
-        gsSave('workOrders', wo);
-        toast('Photo saved locally');
-      }
-    );
-    var photoDisabled = null;
-    if (photoDisabled) {
-      console.log('disabled');
-      var uploadPayload = JSON.stringify({
-        secret: GS_SECRET,
-        action: 'uploadWOPhoto',
-        woId: wo.id,
-        photo: photo,
-        filename: 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now()
-      });
+    // ── Step 6: upload to ImgBB with retry ────────────────────────────────────
+    var woFilename = 'WO_' + (wo.woNumber||wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now();
 
-      // Try regular POST first (works if CORS configured)
-      fetch(GS_URL, {
+    function doUpload(attempt) {
+      var raw = compressed;
+      var comma = compressed.indexOf(',');
+      if (comma !== -1) raw = compressed.slice(comma + 1);
+
+      var form = new FormData();
+      form.append('image', raw);
+      form.append('name', woFilename);
+
+      fetch('https://api.imgbb.com/1/upload?key=' + IMGBB_API_KEY, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: uploadPayload
+        body: form
       })
-      .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(function(result) {
-        console.log('Photo upload result:', result);
-        if (result && result.photoUrl) {
-          wo.completedPhoto = result.photoUrl;
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data && data.success && data.data && data.data.url) {
+          var imgUrl = data.data.url;
+          console.log('WO photo uploaded:', imgUrl);
+
+          // Update WO with real URL
+          wo.completedPhoto = imgUrl;
           try {
             var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-            photos[wo.id] = result.photoUrl;
+            photos[woId] = imgUrl;
             localStorage.setItem('dlphotos', JSON.stringify(photos));
           } catch(e) {}
           save();
-          toast('✓ Photo uploaded to Drive');
+          gsSave('workOrders', wo); // save again with real URL replacing [uploading]
           renderCrewWorkOrders();
-          if (document.getElementById('wo-community-list')) renderWorkOrders();
+          toast('✓ Photo uploaded — visible on all devices');
         } else {
-          toast('✓ Completed (photo upload issue: ' + JSON.stringify(result) + ')');
+          var errMsg = (data && data.error && data.error.message) || 'unknown';
+          console.warn('ImgBB error (attempt ' + attempt + '):', errMsg);
+          if (attempt < 3) {
+            setTimeout(function(){ doUpload(attempt + 1); }, 3000 * attempt);
+          } else {
+            // After 3 attempts: keep base64 in WO so it at least shows locally
+            wo.completedPhoto = compressed;
+            save();
+            gsSave('workOrders', wo);
+            toast('Photo saved locally — will upload next sync');
+          }
         }
       })
-    } // end photoDisabled block
+      .catch(function(err) {
+        console.warn('ImgBB fetch error (attempt ' + attempt + '):', err);
+        if (attempt < 3) {
+          setTimeout(function(){ doUpload(attempt + 1); }, 3000 * attempt);
+        } else {
+          wo.completedPhoto = compressed;
+          save();
+          gsSave('workOrders', wo);
+          toast('Photo saved locally — will upload next sync');
+        }
+      });
+    }
+
+    doUpload(1);
   });
 }
 
@@ -9896,6 +9964,8 @@ ls_showWho();
 // load live data from Google Sheets
 gsLoad().then(() => {
   startAutoSync();
+  // Retry any photos that failed to upload in a previous session
+  setTimeout(retryPendingWOPhotos, 3000);
 });
 document.title = 'Diamond Landscapes';
 var tdEl2 = document.getElementById('topbar-date'); if(tdEl2) tdEl2.textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
