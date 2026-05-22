@@ -765,31 +765,7 @@ select.inp{cursor:pointer;}
     </div>
 
 
-    <div id="ls-crew" style="width:100%;display:none;flex-direction:column;gap:12px;">
-      <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;color:#6b8f6b;letter-spacing:2px;text-transform:uppercase;text-align:center;">Crew PIN</div>
-      <div style="display:flex;gap:16px;justify-content:center;margin:4px 0;" id="ls-crew-dots">
-        <div class="pin-dot" id="lcd1"></div>
-        <div class="pin-dot" id="lcd2"></div>
-        <div class="pin-dot" id="lcd3"></div>
-        <div class="pin-dot" id="lcd4"></div>
-      </div>
-      <div id="ls-crew-error" style="font-size:13px;color:#f87171;min-height:18px;font-weight:700;text-align:center;"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;width:100%;max-width:300px;margin:0 auto;">
-        <button onclick="ls_crewPinKey('1')" class="ls-key">1</button>
-        <button onclick="ls_crewPinKey('2')" class="ls-key">2</button>
-        <button onclick="ls_crewPinKey('3')" class="ls-key">3</button>
-        <button onclick="ls_crewPinKey('4')" class="ls-key">4</button>
-        <button onclick="ls_crewPinKey('5')" class="ls-key">5</button>
-        <button onclick="ls_crewPinKey('6')" class="ls-key">6</button>
-        <button onclick="ls_crewPinKey('7')" class="ls-key">7</button>
-        <button onclick="ls_crewPinKey('8')" class="ls-key">8</button>
-        <button onclick="ls_crewPinKey('9')" class="ls-key">9</button>
-        <div></div>
-        <button onclick="ls_crewPinKey('0')" class="ls-key">0</button>
-        <button onclick="ls_crewPinKey('⌫')" class="ls-key" style="font-size:20px;">⌫</button>
-      </div>
-      <button onclick="ls_showWho()" style="background:none;border:none;color:#6b8f6b;font-size:13px;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">← Back</button>
-    </div>
+    <div id="ls-crew" style="display:none;"></div>
 
 
     <div id="ls-crew-names" style="width:100%;display:none;flex-direction:column;gap:10px;">
@@ -1236,6 +1212,10 @@ select.inp{cursor:pointer;}
         <select class="inp" id="nc-role">
           <option>Crew Lead</option><option>Crew Member</option><option>Driver</option>
         </select>
+        <div>
+          <input class="inp" id="nc-pin" placeholder="4-digit login PIN (optional)" type="tel" maxlength="4" inputmode="numeric" style="letter-spacing:6px;font-weight:800;font-size:18px;"/>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;">Used to access the crew console. Leave blank for no PIN.</div>
+        </div>
         <button class="btn btn-green" onclick="saveCrew()">Add Member</button>
         <button class="btn btn-outline" onclick="closeOverlay('add-crew-overlay')">Cancel</button>
       </div>
@@ -2037,6 +2017,11 @@ function openCrewDetail(id) {
         <select class="inp" id="ce-role-${id}">
           ${['Crew Lead','Crew Member','Driver'].map(r=>`<option ${c.role===r?'selected':''}>${r}</option>`).join('')}
         </select>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">LOGIN PIN ${c.pin?'<span style="color:var(--green);">● Set</span>':'<span style="color:var(--red);">● Not set</span>'}</div>
+          <input class="inp" id="ce-pin-${id}" placeholder="Enter new 4-digit PIN" type="tel" maxlength="4" inputmode="numeric" style="letter-spacing:6px;font-weight:800;font-size:18px;"/>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;">${c.pin?'Leave blank to keep current PIN.':'Leave blank for no PIN required.'}</div>
+        </div>
         <button class="btn btn-green" onclick="saveCrewEdit('${id}')" style="font-size:13px;">Save Changes</button>
         <button class="btn btn-outline" onclick="toggleCrewEdit('${id}')" style="font-size:13px;">Cancel</button>
       </div>
@@ -2139,10 +2124,14 @@ function saveCrewEdit(id) {
   c.name  = document.getElementById('ce-name-'+id)?.value.trim()  || c.name;
   c.phone = document.getElementById('ce-phone-'+id)?.value.trim() || '';
   c.role  = document.getElementById('ce-role-'+id)?.value         || c.role;
-  saveAndSync('crew', c);
-  openCrewDetail(id);
-  renderCrew();
-  toast('Saved ✓');
+  const pinVal = (document.getElementById('ce-pin-'+id)?.value||'').trim();
+  if (pinVal) {
+    if (pinVal.length!==4||!/^\d{4}$/.test(pinVal)) { toast('PIN must be 4 digits'); return; }
+    const dup = state.crew.find(x=>x.id!==id&&x.pin===pinVal);
+    if (dup) { toast('PIN already used by '+dup.name); return; }
+    c.pin = pinVal;
+  }
+  saveAndSync('crew',c); openCrewDetail(id); renderCrew(); toast('Saved ✓');
 }
 
 function assignCrewToRoute(crewId) {
@@ -3278,13 +3267,14 @@ function openAddCrew() { openOverlay('add-crew-overlay'); }
 function saveCrew() {
   const name = document.getElementById('nc-name').value.trim();
   if (!name) { toast('Enter a name'); return; }
-  state.crew.push({
-    id: uid(), name,
-    phone: document.getElementById('nc-phone').value,
-    role: document.getElementById('nc-role').value
-  });
-  save(); closeOverlay('add-crew-overlay');
-  ['nc-name','nc-phone'].forEach(id => document.getElementById(id).value='');
+  const pin = (document.getElementById('nc-pin')?.value||'').trim();
+  if (pin && (pin.length!==4||!/^\d{4}$/.test(pin))) { toast('PIN must be exactly 4 digits'); return; }
+  if (pin && state.crew.some(c=>c.pin===pin)) { toast('That PIN is already in use'); return; }
+  const member = { id:uid(), name, phone:document.getElementById('nc-phone')?.value||'', role:document.getElementById('nc-role')?.value||'Crew Member', pin:pin||'' };
+  state.crew.push(member);
+  saveAndSync('crew',member);
+  closeOverlay('add-crew-overlay');
+  ['nc-name','nc-phone','nc-pin'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   renderCrew(); toast('Crew member added!');
 }
 
@@ -4638,11 +4628,7 @@ function ls_showManager() {
 }
 
 function ls_showCrew() {
-  document.getElementById('ls-who').style.display  = 'none';
-  document.getElementById('ls-crew').style.display = 'flex';
-  ls_crewBuffer = ''; ls_updateDots('lcd', 0);
-  // pre-load fresh crew data in background
-  gsLoad().catch(()=>{});
+  ls_showCrewNames();
 }
 
 function ls_updateDots(prefix, count) {
@@ -4687,8 +4673,10 @@ function ls_crewPinKey(k) {
 }
 
 function ls_showCrewNames() {
+  document.getElementById('ls-who').style.display        = 'none';
   document.getElementById('ls-crew').style.display       = 'none';
   document.getElementById('ls-crew-names').style.display = 'flex';
+  gsLoad().catch(()=>{});
   const list = document.getElementById('ls-crew-name-list');
 
   // Show cached crew IMMEDIATELY — no waiting for network
@@ -4703,7 +4691,7 @@ function ls_showCrewNames() {
       return;
     }
     list.innerHTML = state.crew.map(c => `
-      <button onclick="ls_selectCrew('${c.id}')" style="display:flex;align-items:center;gap:14px;width:100%;
+      <button onclick="ls_crewSelected('${c.id}')" style="display:flex;align-items:center;gap:14px;width:100%;
         background:#1f281f;border:1px solid #2e3d2e;border-radius:14px;padding:14px 16px;
         cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
         transition:background .15s;margin-bottom:4px;">
@@ -4713,10 +4701,11 @@ function ls_showCrewNames() {
           font-weight:800;font-size:18px;color:white;flex-shrink:0;">
           ${c.name.trim()[0].toUpperCase()}
         </div>
-        <div style="text-align:left;">
+        <div style="text-align:left;flex:1;">
           <div style="font-size:15px;font-weight:800;color:white;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">${c.name}</div>
           <div style="font-size:12px;color:#6b8f6b;margin-top:2px;">${c.role}</div>
         </div>
+        ${c.pin ? '<div style="font-size:18px;">🔒</div>' : ''}
       </button>`).join('');
   }
 
@@ -4729,6 +4718,51 @@ function ls_showCrewNames() {
   }).catch(() => {
     // offline — cached list is already showing, nothing to do
   });
+}
+
+function ls_crewSelected(crewId) {
+  const c = state.crew.find(x => x.id === crewId);
+  if (!c) return;
+  if (!c.pin) { ls_selectCrew(crewId); return; }
+  const nameArea = document.getElementById('ls-crew-names');
+  window._crewPinBuffer = '';
+  nameArea.innerHTML = `
+    <div style="text-align:center;padding:8px 0 14px;">
+      <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#16a34a,#2dd4bf);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;color:white;margin:0 auto 10px;">${c.name.trim()[0].toUpperCase()}</div>
+      <div style="font-size:17px;font-weight:800;color:white;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">${c.name}</div>
+      <div style="font-size:12px;color:#6b8f6b;margin-top:2px;">Enter your PIN</div>
+    </div>
+    <div style="display:flex;justify-content:center;gap:16px;margin-bottom:6px;">
+      <div class="pin-dot" id="cpd1"></div><div class="pin-dot" id="cpd2"></div>
+      <div class="pin-dot" id="cpd3"></div><div class="pin-dot" id="cpd4"></div>
+    </div>
+    <div id="crew-pin-error" style="font-size:13px;color:#f87171;text-align:center;min-height:18px;font-weight:700;margin-bottom:8px;"></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%;max-width:300px;margin:0 auto;">
+      ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => k===''?'<div></div>':`<button onclick="ls_crewPinDigit('${c.id}','${k}')" class="ls-key">${k}</button>`).join('')}
+    </div>
+    <button onclick="ls_showCrewNames()" style="margin-top:14px;background:none;border:none;color:#6b8f6b;font-size:13px;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;text-decoration:underline;">← Back</button>
+  `;
+}
+
+window._crewPinBuffer = '';
+function ls_crewPinDigit(crewId, k) {
+  if (k === '⌫') { window._crewPinBuffer = window._crewPinBuffer.slice(0,-1); }
+  else if (window._crewPinBuffer.length < 4) { window._crewPinBuffer += String(k); }
+  for (var i=1;i<=4;i++) { const d=document.getElementById('cpd'+i); if(d) d.className='pin-dot'+(i<=window._crewPinBuffer.length?' filled':''); }
+  if (window._crewPinBuffer.length === 4) {
+    setTimeout(function() {
+      const c = state.crew.find(x => x.id === crewId);
+      if (c && window._crewPinBuffer === c.pin) {
+        ls_selectCrew(crewId);
+      } else {
+        const e = document.getElementById('crew-pin-error');
+        if(e) e.textContent='✕ Incorrect PIN';
+        window._crewPinBuffer='';
+        for(var i=1;i<=4;i++){const d=document.getElementById('cpd'+i);if(d)d.className='pin-dot';}
+        setTimeout(function(){const e=document.getElementById('crew-pin-error');if(e)e.textContent='';},1500);
+      }
+    },80);
+  }
 }
 
 function ls_selectCrew(crewId) {
@@ -7135,8 +7169,9 @@ function renderWorkOrders() {
     var open = commWOs.filter(function(w) { return w.status === 'open'; }).length;
     var inProgress = commWOs.filter(function(w) { return w.status === 'in_progress'; }).length;
     var completed = commWOs.filter(function(w) { return w.status === 'completed'; }).length;
-    var landscape = commWOs.filter(function(w) { return w.type === 'landscape'; }).length;
-    var irrigation = commWOs.filter(function(w) { return w.type === 'irrigation'; }).length;
+    var archived = commWOs.filter(function(w) { return w.status === 'archived'; }).length;
+    var landscape = commWOs.filter(function(w) { return w.type === 'landscape' && w.status !== 'archived'; }).length;
+    var irrigation = commWOs.filter(function(w) { return w.type === 'irrigation' && w.status !== 'archived'; }).length;
 
     html += '<div class="card" style="cursor:pointer;margin-bottom:12px;" onclick="openCommunityWO(\'' + comm.replace(/'/g,"\\'") + '\')">' +
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">' +
@@ -7154,6 +7189,7 @@ function renderWorkOrders() {
         (open ? '<span class="badge badge-red">' + open + ' open</span>' : '') +
         (inProgress ? '<span class="badge badge-yellow">' + inProgress + ' in progress</span>' : '') +
         (completed ? '<span class="badge badge-green">' + completed + ' completed</span>' : '') +
+        (archived ? '<span class="badge" style="background:rgba(148,163,184,.15);color:var(--text3);border:1px solid var(--border2);">&#x1F4E6; ' + archived + ' archived</span>' : '') +
       '</div>' +
       '</div>';
   });
@@ -7163,111 +7199,239 @@ function renderWorkOrders() {
 
 // ── Open community detail ─────────────────────────────────────────────────────
 function openCommunityWO(community) {
-  window._woVillage = ''; // reset village filter for new community
-  window._woType = 'all';
-  var wos = (state.workOrders || []).filter(function(w) { return w.community === community; });
+  window._woVillage=''; window._woType='all'; window._woDateFrom=''; window._woDateTo='';
+  window._woBulkMode=false; window._woBulkSel=new Set();
+  window._woShowArch=false; window._woArchVillage=''; window._woArchDateFrom=''; window._woArchDateTo='';
 
-  var panel = document.createElement('div');
-  panel.id = 'wo-community-panel';
-  panel.className = 'panel open';
-
-  var tabs = ['all', 'landscape', 'irrigation'];
-  var activeType = 'all';
-
-  function buildPanel(type, villageFilter) {
-    var vf = (villageFilter !== undefined ? villageFilter : (window._woVillage || '')).toString().trim();
-    var filtered = type === 'all' ? wos : wos.filter(function(w) { return w.type === type; });
-    if (vf !== '') {
-      filtered = filtered.filter(function(w) { return (w.village||'').toString().trim() === vf; });
-    }
-    function sortByVillage(arr) {
-      return arr.slice().sort(function(a, b) {
-        var va = parseInt(a.village) || 0;
-        var vb = parseInt(b.village) || 0;
-        return va - vb;
-      });
-    }
-    var open   = sortByVillage(filtered.filter(function(w) { return w.status === 'open'; }));
-    var inProg = sortByVillage(filtered.filter(function(w) { return w.status === 'in_progress'; }));
-    var done   = sortByVillage(filtered.filter(function(w) { return w.status === 'completed'; }));
-
-    var woRows = '';
-    [['🔴 Open', open, 'red'], ['🟡 In Progress', inProg, 'yellow'], ['🟢 Completed', done, 'green']].forEach(function(group) {
-      var label = group[0]; var items = group[1]; var color = group[2];
-      if (!items.length) return;
-      woRows += '<div class="sec-title" style="margin-top:14px;">' + label + ' (' + items.length + ')</div>';
-      items.forEach(function(w) {
-        var crew = (state.crew || []).find(function(c) { return c.id === w.assignedTo; });
-        woRows += '<div class="card-flat" style="margin-bottom:8px;cursor:pointer;border-left:3px solid var(--' + color + ');" onclick="openWODetail(\'' + w.id + '\')">' +
-          '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
-            '<div style="flex:1;min-width:0;">' +
-              '<div style="font-weight:700;font-size:13px;">#' + (w.woNumber||w.id.slice(-4)) + ' · ' + (w.ownerName||'') + '</div>' +
-              '<div style="font-size:11px;color:var(--text3);">' + (w.address||'') + '</div>' +
-              '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + (w.requestType||'') + '</div>' +
-            '</div>' +
-            '<div style="text-align:right;flex-shrink:0;">' +
-              (crew ? '<div style="font-size:11px;color:var(--teal);">👷 ' + crew.name + '</div>' : '<div style="font-size:11px;color:var(--text4);">Unassigned</div>') +
-              (w.completedOn ? '<div style="font-size:10px;color:var(--green);">✓ ' + w.completedOn + '</div>' : '') +
-            '</div>' +
-          '</div>' +
-          (w.details ? '<div style="font-size:11px;color:var(--text3);margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">' + w.details + '</div>' : '') +
-        '</div>';
-      });
-    });
-
-    panel.innerHTML =
-      '<div class="panel-head">' +
-        '<button class="close-btn" onclick="document.getElementById(\'wo-community-panel\').remove();renderWorkOrders();">✕</button>' +
-        '<div class="panel-title">' + community + '</div>' +
-      '</div>' +
-      '<div style="padding:14px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;">' +
-        '<button class="pill' + (type==='all'?' active':'') + '" onclick="woCommType(\'all\')">All (' + wos.length + ')</button>' +
-        '<button class="pill' + (type==='landscape'?' active':'') + '" onclick="woCommType(\'landscape\')">🌿 Landscaping</button>' +
-        '<button class="pill' + (type==='irrigation'?' active':'') + '" onclick="woCommType(\'irrigation\')">💧 Irrigation</button>' +
-        '<button class="btn-sm" onclick="openUploadWO(\'' + community.replace(/'/g,"\\'") + '\')" style="margin-left:auto;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">⬆ Upload List</button>' +
-        '<button class="btn-sm" onclick="openWOReport(\'' + community.replace(/'/g,"\\'") + '\')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">📄 Report</button>' +
-      '</div>' +
-      (function() {
-        var villages = [];
-        wos.forEach(function(w) {
-          var v = (w.village||'').toString().trim();
-          if (v && !villages.includes(v)) villages.push(v);
-        });
-        villages.sort(function(a,b) { return (parseInt(a)||0) - (parseInt(b)||0); });
-        var opts = '<option value="">All Villages</option>';
-        villages.forEach(function(v) { opts += '<option value="' + v + '"' + (window._woVillage===v?' selected':'') + '>Village ' + v + '</option>'; });
-        return '<div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">' +
-          '<div style="font-size:12px;font-weight:700;color:var(--text3);white-space:nowrap;">🏘 Village</div>' +
-          '<select id="wo-village-filter" onchange="woFilterVillage(this.value)"' +
-            ' style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;font-weight:700;">' +
-            opts +
-          '</select>' +
-          '<div style="font-size:11px;color:var(--text4);white-space:nowrap;">' + (window._woVillage ? filtered.length + ' result' + (filtered.length!==1?'s':'') : wos.length + ' total') + '</div>';
-      })() +
-      '</div>' +
-      '<div style="flex:1;overflow-y:auto;padding:14px;" id="wo-comm-body">' +
-        (filtered.length ? woRows : '<div style="text-align:center;color:var(--text4);font-size:13px;padding:32px;">No work orders yet.<br><button class="btn btn-green" style="margin-top:12px;" onclick="openUploadWO(\'' + community.replace(/'/g,"\\'") + '\')">⬆ Upload List</button></div>') +
-      '</div>';
-    window._woCommunity = community;
-    window._woType = type;
-  }
-
-  buildPanel('all');
+  var panel=document.createElement('div'); panel.id='wo-community-panel'; panel.className='panel open';
   document.body.appendChild(panel);
 
-  window.woCommType = function(t) {
-    window._woType = t;
-    buildPanel(t, window._woVillage || '');
-  };
-  window.woFilterVillage = function(v) {
-    window._woVillage = v.toString().trim();
-    buildPanel(window._woType || 'all', window._woVillage);
-    // Re-select the option after re-render
-    setTimeout(function() {
-      var sel = document.getElementById('wo-village-filter');
-      if (sel) sel.value = window._woVillage || '';
-    }, 10);
-  };
+  function allWOs(){return (state.workOrders||[]).filter(function(w){return w.community===community;});}
+  function activeWOs(){return allWOs().filter(function(w){return w.status!=='archived'&&w.status!=='placeholder';});}
+  function archivedWOs(){return allWOs().filter(function(w){return w.status==='archived';});}
+  function sortV(a){return a.slice().sort(function(a,b){return (parseInt(a.village)||0)-(parseInt(b.village)||0);});}
+  function aLabel(w){
+    var c=(state.crew||[]).find(function(c){return c.id===w.assignedTo;});
+    if(w.assignedTo==='__team__') return '<div style="font-size:11px;color:var(--blue);font-weight:700;">&#x1F465; General Team</div>';
+    if(c) return '<div style="font-size:11px;color:var(--teal);">&#x1F477; '+c.name+'</div>';
+    return '<div style="font-size:11px;color:var(--text4);">Unassigned</div>';
+  }
+  function vTag(w){return w.village?' <span style="color:var(--blue);font-weight:700;">V'+w.village+'</span>':'';}
+  function vOpts(pool,cur){
+    var vs=[];pool.forEach(function(w){var v=(w.village||'').toString().trim();if(v&&!vs.includes(v))vs.push(v);});
+    vs.sort(function(a,b){return (parseInt(a)||0)-(parseInt(b)||0);});
+    var o='<option value="">All Villages</option>';
+    vs.forEach(function(v){o+='<option value="'+v+'"'+(cur===v?' selected':'')+'>Village '+v+'</option>';});
+    return o;
+  }
+  function crewOpts(){
+    return '<option value="">-- Select --</option><option value="__team__">&#x1F465; General Team</option>'
+      +(state.crew||[]).map(function(c){return '<option value="'+c.id+'">'+c.name+'</option>';}).join('');
+  }
+  function applyDF(arr,df,dt){
+    if(!df&&!dt)return arr;
+    return arr.filter(function(w){
+      var dc=w.dateCompleted||w.completedOn||'';if(!dc)return false;
+      var d=new Date(dc);
+      if(df&&d<new Date(df))return false;
+      if(dt&&d>new Date(dt+'T23:59:59'))return false;
+      return true;
+    });
+  }
+
+  function woCard(w,color){
+    var bulk=window._woBulkMode,sel=window._woBulkSel;
+    var hdr='#'+(w.woNumber||w.id.slice(-4))+' &middot; '+(w.ownerName||'');
+    var sub=(w.address||'')+vTag(w);
+    if(bulk){
+      var chk=sel.has(w.id);
+      return '<label style="display:flex;align-items:flex-start;gap:10px;background:var(--bg3);border-radius:10px;padding:10px 12px;margin-bottom:8px;border-left:3px solid var(--'+color+');cursor:pointer;'+(chk?'outline:2px solid var(--blue);outline-offset:-2px;':'')+'box-sizing:border-box;">'
+        +'<input type="checkbox" data-woid="'+w.id+'" '+(chk?'checked ':'')+' onchange="woBulkToggle(this)" style="width:18px;height:18px;accent-color:var(--blue);flex-shrink:0;margin-top:2px;cursor:pointer;"/>'
+        +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;">'+hdr+'</div>'
+        +'<div style="font-size:11px;color:var(--text3);">'+sub+'</div>'
+        +'<div style="font-size:11px;color:var(--text3);">'+(w.requestType||'')+'</div>'+aLabel(w)+'</div></label>';
+    }
+    return '<div class="card-flat" style="margin-bottom:8px;cursor:pointer;border-left:3px solid var(--'+color+');" onclick="openWODetail(\''+w.id+'\')">'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+      +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;">'+hdr+'</div>'
+      +'<div style="font-size:11px;color:var(--text3);">'+sub+'</div>'
+      +'<div style="font-size:11px;color:var(--text3);margin-top:2px;">'+(w.requestType||'')+'</div></div>'
+      +'<div style="text-align:right;flex-shrink:0;">'+aLabel(w)
+      +(w.dateCompleted||w.completedOn?'<div style="font-size:10px;color:var(--green);">&#x2713; '+(w.dateCompleted||w.completedOn)+'</div>':'')
+      +'</div></div>'+(w.details?'<div style="font-size:11px;color:var(--text3);margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">'+w.details+'</div>':'')+'</div>';
+  }
+
+  function archCard(w){
+    return '<div class="card-flat" style="margin-bottom:8px;border-left:3px solid var(--text4);opacity:0.85;">'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+      +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;color:var(--text3);">#'+(w.woNumber||w.id.slice(-4))+' &middot; '+(w.ownerName||'')+'</div>'
+      +'<div style="font-size:11px;color:var(--text4);">'+(w.address||'')+vTag(w)+'</div>'
+      +'<div style="font-size:11px;color:var(--text4);">'+(w.requestType||'')+(w.archivedAt?' &middot; archived '+w.archivedAt:'')+'</div></div>'
+      +'<button data-woid="'+w.id+'" onclick="unarchiveWO(this.dataset.woid)" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.3);cursor:pointer;white-space:nowrap;flex-shrink:0;">&#x21A9; Restore</button>'
+      +'</div></div>';
+  }
+
+  function build(){
+    var type=window._woType||'all',vf=window._woVillage||'',df=window._woDateFrom||'',dt=window._woDateTo||'';
+    var bulk=window._woBulkMode,sel=window._woBulkSel;
+    var avf=window._woArchVillage||'',adf=window._woArchDateFrom||'',adt=window._woArchDateTo||'';
+    var base=activeWOs().filter(function(w){return w.status!=='placeholder';});
+    var typed=type==='all'?base:base.filter(function(w){return w.type===type;});
+    var filtered=typed;
+    if(vf)filtered=filtered.filter(function(w){return (w.village||'').toString().trim()===vf;});
+    filtered=applyDF(filtered,df,dt);
+    var openWOs=sortV(filtered.filter(function(w){return w.status==='open';}));
+    var inProg=sortV(filtered.filter(function(w){return w.status==='in_progress';}));
+    var done=sortV(filtered.filter(function(w){return w.status==='completed';}));
+    var woRows='';
+    [['Open',openWOs,'red'],['In Progress',inProg,'yellow'],['Completed',done,'green']].forEach(function(g){
+      if(!g[1].length)return;
+      woRows+='<div class="sec-title" style="margin-top:14px;">'+g[0]+' ('+g[1].length+')</div>';
+      g[1].forEach(function(w){woRows+=woCard(w,g[2]);});
+    });
+    var arch=archivedWOs();
+    var archF=arch;
+    if(avf)archF=archF.filter(function(w){return (w.village||'').toString().trim()===avf;});
+    archF=applyDF(archF,adf,adt);
+    archF.sort(function(a,b){return new Date(b.archivedAt||0)-new Date(a.archivedAt||0);});
+    var hasF=vf||df||dt,hasAF=avf||adf||adt;
+    var commStr=community.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    var bulkBar=bulk
+      ?'<div style="background:var(--bg2);border-top:2px solid var(--blue);padding:10px 14px;">'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+        +'<div style="font-size:13px;font-weight:800;color:var(--blue);" id="wo-bulk-count">'+sel.size+' selected</div>'
+        +'<button id="woba-all" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);cursor:pointer;font-weight:700;">Select All</button>'
+        +'<button id="woba-clr" style="font-size:11px;padding:4px 10px;border-radius:8px;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);cursor:pointer;">Clear</button>'
+        +'<button id="woba-del" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);cursor:pointer;font-weight:700;margin-left:auto;">&#x1F5D1; Delete</button>'
+        +'</div>'
+        +'<div style="display:flex;gap:8px;">'
+        +'<select id="wo-bulk-crew" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:8px 10px;color:var(--text);font-size:13px;">'+crewOpts()+'</select>'
+        +'<button id="woba-asgn" style="padding:8px 18px;border-radius:10px;background:var(--blue);color:#fff;border:none;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">Assign</button>'
+        +'</div></div>'
+      :'';
+    panel.innerHTML=
+      '<div class="panel-head"><button class="close-btn" id="wop-close">&#x2715;</button><div class="panel-title">'+community+'</div></div>'
+      +'<div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'
+      +'<button class="pill'+(type==='all'?' active':'')+'" id="wop-all">All ('+base.length+')</button>'
+      +'<button class="pill'+(type==='landscape'?' active':'')+'" id="wop-land">&#x1F33F; Land</button>'
+      +'<button class="pill'+(type==='irrigation'?' active':'')+'" id="wop-irr">&#x1F4A7; Irr</button>'
+      +'<button id="wop-bulk" style="font-size:12px;padding:5px 11px;border-radius:8px;font-weight:700;cursor:pointer;border:1px solid '+(bulk?'rgba(248,113,113,.4)':'rgba(96,165,250,.3)')+';background:'+(bulk?'rgba(248,113,113,.12)':'rgba(96,165,250,.15)')+';color:'+(bulk?'var(--red)':'var(--blue)')+';">'+(bulk?'&#x2715; Cancel':'&#x2611; Bulk')+'</button>'
+      +'<button id="wop-create" class="btn-sm" style="margin-left:auto;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">&#x2795; Create</button>'
+      +'<button id="wop-upload" class="btn-sm" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">&#x2B06; Upload</button>'
+      +'<button id="wop-report" class="btn-sm" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">&#x1F4C4; Report</button>'
+      +'<button id="wop-arch-btn" class="btn-sm" style="background:rgba(148,163,184,.12);color:var(--text3);border:1px solid var(--border2);">&#x1F4E6; Archive</button>'
+      +'</div>'
+      +'<div style="padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg2);">'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">'
+      +'<div style="font-size:11px;font-weight:700;color:var(--text3);white-space:nowrap;">&#x1F3D8; Village</div>'
+      +'<select id="wo-village-filter" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;font-weight:700;">'+vOpts(base,vf)+'</select>'
+      +'</div>'
+      +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">'
+      +'<div style="font-size:11px;font-weight:700;color:var(--text3);white-space:nowrap;">&#x1F4C5; Dates</div>'
+      +'<input type="date" id="wo-date-from" value="'+df+'" style="flex:1;min-width:90px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;"/>'
+      +'<span style="font-size:11px;color:var(--text4);">to</span>'
+      +'<input type="date" id="wo-date-to" value="'+dt+'" style="flex:1;min-width:90px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;"/>'
+      +(hasF?'<button id="wo-filter-clear" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);cursor:pointer;font-weight:700;white-space:nowrap;">&#x2715; Clear</button>':'')
+      +'</div>'
+      +(hasF?'<div style="font-size:11px;color:var(--teal);margin-top:4px;font-weight:700;">'+filtered.length+' result'+(filtered.length!==1?'s':'')+' matching filters</div>':'')
+      +'</div>'
+      +'<div style="flex:1;overflow-y:auto;padding:14px;" id="wo-comm-body">'
+      +(filtered.length?woRows:'<div style="text-align:center;color:var(--text4);font-size:13px;padding:32px;">'+(hasF?'No WOs match these filters.<br><button id="wo-filter-clear2" class="btn btn-outline" style="margin-top:12px;font-size:13px;">Clear Filters</button>':'No work orders yet.<br><button id="wop-upload2" class="btn btn-green" style="margin-top:12px;">&#x2B06; Upload List</button>')+'</div>')
+      +(arch.length
+        ?'<div style="margin-top:16px;">'
+          +'<button id="wop-arch-toggle" style="display:flex;justify-content:space-between;align-items:center;width:100%;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer;box-sizing:border-box;">'
+          +'<div style="display:flex;align-items:center;gap:8px;"><span>&#x1F4E6;</span><span style="font-size:13px;font-weight:700;color:var(--text3);">Archived ('+arch.length+')</span></div>'
+          +'<span style="font-size:13px;color:var(--text4);">'+(window._woShowArch?'&#x25B2; Hide':'&#x25BC; Show')+'</span>'
+          +'</button>'
+          +(window._woShowArch
+            ?'<div style="margin-top:10px;background:var(--bg2);border-radius:10px;padding:10px;">'
+              +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border);">'
+              +'<div style="font-size:11px;font-weight:700;color:var(--text3);">&#x1F3D8;</div>'
+              +'<select id="wo-arch-village" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;">'+vOpts(arch,avf)+'</select>'
+              +'<div style="font-size:11px;font-weight:700;color:var(--text3);">&#x1F4C5;</div>'
+              +'<input type="date" id="wo-arch-from" value="'+adf+'" style="flex:1;min-width:80px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;"/>'
+              +'<span style="font-size:11px;color:var(--text4);">to</span>'
+              +'<input type="date" id="wo-arch-to" value="'+adt+'" style="flex:1;min-width:80px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;"/>'
+              +(hasAF?'<button id="wo-arch-clear" style="font-size:11px;padding:4px 8px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);cursor:pointer;font-weight:700;">&#x2715;</button>':'')
+              +'</div>'
+              +(hasAF?'<div style="font-size:11px;color:var(--teal);margin-bottom:8px;font-weight:700;">'+archF.length+' of '+arch.length+' archived</div>':'')
+              +(archF.length?archF.map(archCard).join(''):'<div style="text-align:center;color:var(--text4);font-size:12px;padding:16px;">No archived WOs match</div>')
+              +'</div>'
+            :'')
+          +'</div>'
+        :'')
+      +bulkBar
+      +'</div>';
+
+    window._woCommunity=community; window._woType=type;
+    function q(id){return document.getElementById(id);}
+    q('wop-close').onclick=function(){panel.remove();renderWorkOrders();};
+    q('wop-all').onclick=function(){window._woType='all';build();};
+    q('wop-land').onclick=function(){window._woType='landscape';build();};
+    q('wop-irr').onclick=function(){window._woType='irrigation';build();};
+    q('wop-bulk').onclick=function(){window._woBulkMode=!window._woBulkMode;window._woBulkSel.clear();build();};
+    q('wop-create').onclick=function(){openCreateWO(community);};
+    q('wop-upload').onclick=function(){openUploadWO(community);};
+    q('wop-report').onclick=function(){openWOReport(community);};
+    q('wop-arch-btn').onclick=function(){openArchiveWOs(community);};
+    if(q('wop-upload2'))q('wop-upload2').onclick=function(){openUploadWO(community);};
+    if(q('wo-filter-clear'))q('wo-filter-clear').onclick=function(){window._woDateFrom='';window._woDateTo='';window._woVillage='';build();};
+    if(q('wo-filter-clear2'))q('wo-filter-clear2').onclick=function(){window._woDateFrom='';window._woDateTo='';window._woVillage='';build();};
+    q('wo-village-filter').onchange=function(){window._woVillage=this.value;build();};
+    q('wo-date-from').onchange=function(){window._woDateFrom=this.value;build();};
+    q('wo-date-to').onchange=function(){window._woDateTo=this.value;build();};
+    if(q('wop-arch-toggle'))q('wop-arch-toggle').onclick=function(){window._woShowArch=!window._woShowArch;build();};
+    if(q('wo-arch-village'))q('wo-arch-village').onchange=function(){window._woArchVillage=this.value;build();};
+    if(q('wo-arch-from'))q('wo-arch-from').onchange=function(){window._woArchDateFrom=this.value;build();};
+    if(q('wo-arch-to'))q('wo-arch-to').onchange=function(){window._woArchDateTo=this.value;build();};
+    if(q('wo-arch-clear'))q('wo-arch-clear').onclick=function(){window._woArchVillage='';window._woArchDateFrom='';window._woArchDateTo='';build();};
+    if(bulk){
+      window.woBulkToggle=function(cb){
+        if(cb.checked)sel.add(cb.dataset.woid);else sel.delete(cb.dataset.woid);
+        var c=q('wo-bulk-count');if(c)c.textContent=sel.size+' selected';
+        var l=cb.closest('label');if(l){l.style.outline=cb.checked?'2px solid var(--blue)':'';l.style.outlineOffset=cb.checked?'-2px':'';}
+      };
+      q('woba-all').onclick=function(){
+        document.querySelectorAll('#wo-comm-body input[type=checkbox]').forEach(function(cb){
+          cb.checked=true;sel.add(cb.dataset.woid);
+          var l=cb.closest('label');if(l){l.style.outline='2px solid var(--blue)';l.style.outlineOffset='-2px';}
+        });
+        var c=q('wo-bulk-count');if(c)c.textContent=sel.size+' selected';
+      };
+      q('woba-clr').onclick=function(){
+        sel.clear();
+        document.querySelectorAll('#wo-comm-body input[type=checkbox]').forEach(function(cb){
+          cb.checked=false;var l=cb.closest('label');if(l){l.style.outline='';l.style.outlineOffset='';}
+        });
+        var c=q('wo-bulk-count');if(c)c.textContent='0 selected';
+      };
+      q('woba-del').onclick=function(){
+        if(!sel.size){toast('Select at least one WO');return;}
+        if(!confirm('Delete '+sel.size+' work order'+(sel.size!==1?'s':'')+' permanently?'))return;
+        Array.from(sel).forEach(function(id){
+          state.workOrders=(state.workOrders||[]).filter(function(w){return w.id!==id;});
+          gsDelete('workOrders',id);
+        });
+        save();toast(sel.size+' WO'+(sel.size!==1?'s':'')+' deleted');
+        window._woBulkMode=false;window._woBulkSel.clear();
+        renderWorkOrders();panel.remove();openCommunityWO(community);
+      };
+      q('woba-asgn').onclick=function(){
+        var crewId=q('wo-bulk-crew').value;
+        if(!crewId){toast('Select a crew member first');return;}
+        if(!sel.size){toast('Select at least one WO');return;}
+        Array.from(sel).forEach(function(id){
+          var wo=(state.workOrders||[]).find(function(w){return w.id===id;});
+          if(wo){wo.assignedTo=crewId;saveAndSync('workOrders',wo);}
+        });
+        var name=crewId==='__team__'?'General Team':((state.crew||[]).find(function(c){return c.id===crewId;})||{}).name||'Crew';
+        toast(sel.size+' WO'+(sel.size!==1?'s':'')+' assigned to '+name+' \u2713');
+        window._woBulkMode=false;window._woBulkSel.clear();
+        renderWorkOrders();panel.remove();openCommunityWO(community);
+      };
+    }
+  }
+  build();
 }
 
 // ── Upload work order CSV/list ─────────────────────────────────────────────────
@@ -7518,8 +7682,9 @@ function openWODetail(woId) {
   sheet.id = 'wo-detail-sheet';
   sheet.className = 'overlay open';
 
-  var crewOptions = '<option value="">— Unassigned —</option>' +
-    (state.crew || []).map(function(c) {
+  var crewOptions = '<option value="">— Unassigned —</option>'
+    + '<option value="__team__"' + (wo.assignedTo === '__team__' ? ' selected' : '') + '>&#x1F465; General Team (All Crew)</option>'
+    + (state.crew || []).map(function(c) {
       return '<option value="' + c.id + '"' + (wo.assignedTo === c.id ? ' selected' : '') + '>' + c.name + '</option>';
     }).join('');
 
@@ -7625,6 +7790,70 @@ function deleteWO(woId) {
 }
 
 // ── Work Order Report ─────────────────────────────────────────────────────────
+// ── Archive Work Orders ───────────────────────────────────────────────────────────
+function openArchiveWOs(community) {
+  var existing=document.getElementById('wo-archive-sheet');if(existing)existing.remove();
+  var sheet=document.createElement('div');sheet.id='wo-archive-sheet';sheet.className='overlay open';
+  var completedWOs=(state.workOrders||[]).filter(function(w){return w.community===community&&w.status==='completed';});
+  var presets=[{label:'Older than 7 days',days:7},{label:'Older than 30 days',days:30},{label:'Older than 60 days',days:60},{label:'Older than 90 days',days:90}];
+  function countEl(days){var cutoff=new Date(Date.now()-days*864e5);cutoff.setHours(23,59,59,999);return completedWOs.filter(function(w){var dc=w.dateCompleted||w.completedOn||'';if(!dc)return false;return new Date(dc)<=cutoff;}).length;}
+  var presetBtns=presets.map(function(p){
+    var n=countEl(p.days);
+    var btn=document.createElement('button');
+    btn.style.cssText='display:flex;justify-content:space-between;align-items:center;width:100%;padding:12px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer;margin-bottom:8px;box-sizing:border-box;'+(n===0?'opacity:0.45;':'');
+    btn.innerHTML='<span style="font-size:13px;font-weight:700;color:var(--text);">'+p.label+'</span><span class="badge '+(n>0?'badge-yellow':'')+'" style="'+(n===0?'background:var(--bg4);color:var(--text4);':'')+'">'+n+' WO'+(n!==1?'s':'')+'</span>';
+    btn.onclick=function(){confirmArchiveWOs(community,p.days,null);};
+    return btn.outerHTML;
+  }).join('');
+  var closeBtn='<button id="wo-archive-close" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">&#x2715;</button>';
+  var archBtn='<button id="wo-archive-date-btn" style="padding:8px 16px;border-radius:8px;background:var(--blue);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;">Archive</button>';
+  sheet.innerHTML='<div class="sheet" style="max-height:90vh;">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
+    +'<div class="sheet-title" style="margin-bottom:0;">&#x1F4E6; Archive Completed WOs</div>'+closeBtn+'</div>'
+    +'<div style="font-size:13px;color:var(--text3);margin-bottom:14px;">Archived WOs are hidden from the main view but never deleted. Restore them anytime.</div>'
+    +'<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">ARCHIVE BY AGE</div>'
+    +presetBtns
+    +'<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin:14px 0 8px;">ARCHIVE COMPLETED BEFORE DATE</div>'
+    +'<div style="display:flex;gap:8px;align-items:center;">'
+    +'<input type="date" id="wo-archive-before" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px;color:var(--text);font-size:13px;"/>'+archBtn
+    +'</div></div>';
+  document.body.appendChild(sheet);
+  document.getElementById('wo-archive-close').onclick=function(){sheet.remove();};
+  document.getElementById('wo-archive-date-btn').onclick=function(){
+    var d=document.getElementById('wo-archive-before').value;
+    if(!d){toast('Pick a date first');return;}
+    confirmArchiveWOs(community,null,d);
+  };
+}
+
+function confirmArchiveWOs(community,days,before) {
+  var cutoff=before?new Date(before):new Date(Date.now()-days*864e5);
+  cutoff.setHours(23,59,59,999);
+  var toArchive=(state.workOrders||[]).filter(function(w){
+    if(w.community!==community||w.status!=='completed')return false;
+    var dc=w.dateCompleted||w.completedOn||'';if(!dc)return false;
+    return new Date(dc)<=cutoff;
+  });
+  if(!toArchive.length){toast('No completed WOs match that range');return;}
+  var label=before?'completed before '+new Date(before).toLocaleDateString():'older than '+days+' days';
+  if(!confirm('Archive '+toArchive.length+' work order'+(toArchive.length!==1?'s':'')+' '+label+'? They will be hidden but never deleted.'))return;
+  toArchive.forEach(function(w){w.status='archived';w.archivedAt=new Date().toLocaleDateString();saveAndSync('workOrders',w);});
+  document.getElementById('wo-archive-sheet')?.remove();
+  var panel=document.getElementById('wo-community-panel');
+  if(panel&&window._woCommunity){panel.remove();openCommunityWO(window._woCommunity);}
+  renderWorkOrders();
+  toast(toArchive.length+' WO'+(toArchive.length!==1?'s':'')+' archived &#x2713;');
+}
+
+function unarchiveWO(woId) {
+  var wo=(state.workOrders||[]).find(function(w){return w.id===woId;});
+  if(!wo)return;
+  wo.status='completed';wo.archivedAt='';saveAndSync('workOrders',wo);
+  var panel=document.getElementById('wo-community-panel');
+  if(panel&&window._woCommunity){panel.remove();openCommunityWO(window._woCommunity);}
+  renderWorkOrders();toast('Restored to completed &#x2713;');
+}
+
 function openWOReport(community) {
   var wos = (state.workOrders || []).filter(function(w) { return w.community === community; });
   var completed = wos.filter(function(w) { return w.status === 'completed'; });
@@ -7676,7 +7905,7 @@ function openWOReport(community) {
           '<div style="font-size:11px;color:var(--text3);">Remaining</div>' +
         '</div>' +
         '<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;">' +
-          '<div style="font-size:24px;font-weight:800;color:var(--teal);">' + (completed.length + open.length) + '</div>' +
+          '<div style="font-size:24px;font-weight:800;color:var(--teal);">' + wos.length + '</div>' +
           '<div style="font-size:11px;color:var(--text3);">Total</div>' +
         '</div>' +
       '</div>' +
@@ -7794,13 +8023,12 @@ function exportWOPDF(community) {
     openHTML += '</div>';
   }
 
-  overlay.style.paddingBottom = '80px'; // make room for sticky bar
   overlay.innerHTML =
-    // Sticky bottom bar — always visible above URL bar
+    // Buttons (hidden on print)
     '<div id="pdf-btns" style="position:fixed;bottom:0;left:0;right:0;z-index:10000;background:#fff;border-top:2px solid #e5e7eb;padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">' +
       '<button onclick="exportWOPDFDownload()" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;flex:1;max-width:180px;">⬇ Download</button>' +
       '<button onclick="pdfSaveAllPhotos()" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;flex:1;max-width:180px;">⬇ Photos</button>' +
-      '<button onclick="pdfClose()" style="background:#6b7280;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;flex:0 0 auto;">✕ Close</button>' +
+      '<button onclick="pdfClose()" style="background:#6b7280;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;">✕ Close</button>' +
     '</div>' +
     '<div style="text-align:center;margin-bottom:16px;font-size:12px;color:#6b7280;">' +
       '📱 iPhone: tap Share (↑) → Print to save as PDF' +
@@ -7913,75 +8141,102 @@ function exportWOReport(community) {
 function renderCrewWorkOrders() {
   var el = document.getElementById('wo-crew-list');
   if (!el) return;
-
   var crewId = state.loggedInCrewId;
-  var crew = crewId ? (state.crew || []).find(function(c) { return c.id === crewId; }) : null;
-  var allWOs = state.workOrders || [];
-
-  // Show WOs assigned to this crew member
-  var myWOs = allWOs.filter(function(w) {
-    return (w.assignedTo === crewId || (crew && w.assignedTo === crew.name)) && w.status !== 'completed' && w.status !== 'placeholder';
-  });
-  var doneWOs = allWOs.filter(function(w) {
-    return (w.completedBy === (crew ? crew.name : '') || w.assignedTo === crewId) && w.status === 'completed';
-  }).slice(-10);
-
+  var crew = crewId ? (state.crew||[]).find(function(c){return c.id===crewId;}) : null;
   if (!crewId) {
     el.innerHTML = '<div class="card" style="text-align:center;color:var(--text4);font-size:13px;padding:24px;">Log in as a crew member to see your work orders</div>';
     return;
   }
-
+  var allWOs = state.workOrders || [];
+  var myCommunities = [];
+  allWOs.forEach(function(w){
+    if(w.assignedTo===crewId&&w.community&&!myCommunities.includes(w.community)) myCommunities.push(w.community);
+  });
+  var myWOs = allWOs.filter(function(w){
+    if(w.status==='completed'||w.status==='placeholder'||w.status==='archived') return false;
+    if(w.assignedTo===crewId) return true;
+    if(crew&&w.assignedTo===crew.name) return true;
+    if(w.assignedTo==='__team__') return myCommunities.length===0||myCommunities.includes(w.community);
+    return false;
+  });
+  var doneWOs = allWOs.filter(function(w){
+    return w.status==='completed'&&(w.completedBy===(crew?crew.name:'')||w.assignedTo===crewId||(w.assignedTo==='__team__'&&(myCommunities.length===0||myCommunities.includes(w.community))));
+  }).slice(-10);
   if (!myWOs.length && !doneWOs.length) {
-    el.innerHTML = '<div class="card" style="text-align:center;padding:32px;">' +
-      '<div style="font-size:40px;margin-bottom:12px;">✅</div>' +
-      '<div style="font-weight:700;font-size:15px;">All caught up!</div>' +
-      '<div style="font-size:13px;color:var(--text3);margin-top:6px;">No work orders assigned to you</div>' +
-      '</div>';
+    el.innerHTML = '<div class="card" style="text-align:center;padding:32px;"><div style="font-size:40px;margin-bottom:12px;">&#x2705;</div><div style="font-weight:700;font-size:15px;">All caught up!</div><div style="font-size:13px;color:var(--text3);margin-top:6px;">No work orders assigned to you</div></div>';
     return;
   }
-
+  var vf = window._crewWOVillage || '';
+  var villages = [];
+  myWOs.forEach(function(w){var v=(w.village||'').toString().trim();if(v&&!villages.includes(v))villages.push(v);});
+  villages.sort(function(a,b){return (parseInt(a)||0)-(parseInt(b)||0);});
+  var filteredWOs = vf ? myWOs.filter(function(w){return (w.village||'').toString().trim()===vf;}) : myWOs;
   var html = '';
-
-  if (myWOs.length) {
-    html += '<div class="sec-title">Assigned to Me (' + myWOs.length + ')</div>';
-    myWOs.forEach(function(w) {
-      var typeIcon = w.type === 'irrigation' ? '💧' : '🌿';
-      var statusColor = w.status === 'in_progress' ? 'yellow' : 'red';
-      html += '<div class="card" style="margin-bottom:10px;cursor:pointer;border-left:3px solid var(--' + statusColor + ');" onclick="openCrewWODetail(\'' + w.id + '\')">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
-          '<div>' +
-            '<div style="font-weight:800;font-size:14px;">' + typeIcon + ' #' + (w.woNumber||w.id.slice(-4)) + ' · ' + (w.ownerName||'') + '</div>' +
-            '<div style="font-size:12px;color:var(--text3);">' + (w.address||'') + '</div>' +
-          '</div>' +
-          '<span class="badge badge-' + statusColor + '">' + (w.status==='in_progress'?'In Progress':'Open') + '</span>' +
-        '</div>' +
-        '<div style="font-size:12px;color:var(--text2);"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details.slice(0,80) + (w.details.length>80?'…':'') : '') + '</div>' +
-        (w.community ? '<div style="font-size:11px;color:var(--text4);margin-top:4px;">' + w.community + '</div>' : '') +
-        (w.dueDate ? '<div style="font-size:11px;color:var(--red);margin-top:4px;font-weight:700;">⏰ Due: ' + w.dueDate + '</div>' : '') +
-        '<div style="margin-top:10px;">' +
-          '<button class="btn btn-green" style="font-size:12px;padding:8px 14px;" onclick="event.stopPropagation();openCrewWOComplete(\'' + w.id + '\')">📷 Complete with Photo</button>' +
-        '</div>' +
-        '</div>';
+  if (villages.length > 1) {
+    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">';
+    html += '<button class="pill'+(!vf?' active':'')+'" onclick="window._crewWOVillage=\'\';renderCrewWorkOrders()">All ('+myWOs.length+')</button>';
+    villages.forEach(function(v){
+      var cnt=myWOs.filter(function(w){return (w.village||'').toString().trim()===v;}).length;
+      html += '<button class="pill'+(vf===v?' active':'')+'" onclick="window._crewWOVillage=\''+v+'\';renderCrewWorkOrders()">V'+v+' ('+cnt+')</button>';
     });
+    html += '</div>';
   }
-
+  if (filteredWOs.length) {
+    html += '<div class="sec-title">Assigned to Me ('+filteredWOs.length+(vf?' &middot; Village '+vf:'')+')</div>';
+    filteredWOs.forEach(function(w){
+      var typeIcon = w.type==='irrigation' ? '&#x1F4A7;' : '&#x1F33F;';
+      var statusColor = w.status==='in_progress'?'yellow':'red';
+      var isTeam = w.assignedTo==='__team__';
+      html += '<div class="card" style="margin-bottom:10px;cursor:pointer;border-left:3px solid var(--'+statusColor+');" onclick="openCrewWODetail(\''+w.id+'\')">'
+        +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">'
+        +'<div style="flex:1;min-width:0;">'
+        +'<div style="font-weight:800;font-size:14px;">'+typeIcon+' #'+(w.woNumber||w.id.slice(-4))+' &middot; '+(w.ownerName||'')+'</div>'
+        +'<div style="font-size:12px;color:var(--text3);">'+(w.address||'')
+        +(w.village?' <span style="background:rgba(96,165,250,.15);color:var(--blue);font-weight:700;font-size:11px;padding:1px 6px;border-radius:6px;">V'+w.village+'</span>':'')
+        +'</div></div>'
+        +'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">'
+        +'<span class="badge badge-'+statusColor+'">'+(w.status==='in_progress'?'In Progress':'Open')+'</span>'
+        +(isTeam?'<span style="font-size:10px;color:var(--blue);font-weight:700;">&#x1F465; Team</span>':'')
+        +'</div></div>'
+        +'<div style="font-size:12px;color:var(--text2);"><strong>'+(w.requestType||'')+'</strong>'+(w.details?': '+w.details.slice(0,80)+(w.details.length>80?'&hellip;':''):'')+'</div>'
+        +(w.community?'<div style="font-size:11px;color:var(--text4);margin-top:3px;">'+w.community+'</div>':'')
+        +(w.dueDate?'<div style="font-size:11px;color:var(--red);margin-top:4px;font-weight:700;">&#x23F0; Due: '+w.dueDate+'</div>':'')
+        +'<div style="margin-top:10px;"><button class="btn btn-green" style="font-size:12px;padding:8px 14px;" onclick="event.stopPropagation();openCrewWOComplete(\''+w.id+'\')">&#x1F4F7; Complete with Photo</button></div>'
+        +'</div>';
+    });
+  } else if (vf) {
+    html += '<div style="text-align:center;color:var(--text4);padding:20px;font-size:13px;">No open WOs for Village '+vf+'</div>';
+  }
   if (doneWOs.length) {
     html += '<div class="sec-title" style="margin-top:16px;">Recently Completed</div>';
-    doneWOs.forEach(function(w) {
-      var typeIcon = w.type === 'irrigation' ? '💧' : '🌿';
-      html += '<div class="card-flat" style="margin-bottom:8px;border-left:3px solid var(--green);">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;">' +
-          '<div>' +
-            '<div style="font-weight:700;font-size:13px;">' + typeIcon + ' #' + (w.woNumber||'') + ' · ' + (w.ownerName||'') + '</div>' +
-            '<div style="font-size:11px;color:var(--text3);">' + (w.completedOn||'') + '</div>' +
-          '</div>' +
-          '<span class="badge badge-green">✓</span>' +
-        '</div>' +
-        (getWOPhoto(w) ? '<img src="' + getWOPhoto(w) + '" style="width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-top:8px;"/>' : '') +
-      '</div>';
+    doneWOs.forEach(function(w){
+      var typeIcon=w.type==='irrigation'?'&#x1F4A7;':'&#x1F33F;';
+      html += '<div class="card-flat" style="margin-bottom:8px;border-left:3px solid var(--green);">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;">'
+        +'<div><div style="font-weight:700;font-size:13px;">'+typeIcon+' #'+(w.woNumber||'')+' &middot; '+(w.ownerName||'')+(w.village?' <span style="color:var(--blue);font-size:11px;">V'+w.village+'</span>':'')+'</div>'
+        +'<div style="font-size:11px;color:var(--text3);">'+(w.dateCompleted||w.completedOn||'')+'</div></div>'
+        +'<span class="badge badge-green">&#x2713;</span></div>'
+        +(getWOPhoto(w)?'<img src="'+getWOPhoto(w)+'" style="width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-top:8px;"/>':'')
+        +'</div>';
     });
   }
-
+  var myFlags=(state.flags||[]).filter(function(f){return !f.resolved&&(f.assignedCrewId===crewId||f.assignedCrewId==='__team__');});
+  if (myFlags.length) {
+    html += '<div class="sec-title" style="margin-top:20px;">&#x2691; Flags Assigned to Me ('+myFlags.length+')</div>';
+    myFlags.forEach(function(f){
+      var prop=(state.properties||[]).find(function(p){return p.id===f.propId;});
+      var photo=getFlagPhoto(f);
+      html += '<div class="card" style="margin-bottom:10px;border-left:3px solid var(--red);">'
+        +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">'
+        +'<div><span class="badge badge-red">'+(f.priority||'')+'</span> <span style="font-size:12px;color:var(--blue);font-weight:700;">'+(f.service||'')+'</span></div>'
+        +'<div style="font-size:10px;color:var(--text4);">'+(f.date||'')+'</div></div>'
+        +(prop?'<div style="font-size:12px;font-weight:700;margin-bottom:4px;">'+(prop.name||prop.address||'')+'</div>':'')
+        +'<div style="font-size:13px;margin-bottom:8px;">'+(f.note||'')+'</div>'
+        +(photo?'<img src="'+photo+'" style="width:100%;border-radius:8px;max-height:140px;object-fit:cover;margin-bottom:8px;"/>':'')
+        +'<button data-flagid="'+f.id+'" data-propid="'+f.propId+'" onclick="crewResolveFlag(this.dataset.flagid,this.dataset.propid)" style="width:100%;padding:10px;border-radius:10px;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);font-size:13px;font-weight:700;cursor:pointer;">&#x2713; Mark Resolved</button>'
+        +'</div>';
+    });
+  }
   el.innerHTML = html;
 }
 
@@ -8235,7 +8490,7 @@ function openCrewWOComplete(woId) {
       '<label class="photo-zone" for="wo-photo-input" id="wo-photo-zone" style="margin-bottom:12px;">' +
         '<div style="font-size:28px;margin-bottom:6px;">📷</div>' +
         '<div style="font-size:13px;color:var(--text3);">Tap to take or choose a photo</div>' +
-        '<input type="file" id="wo-photo-input" accept="image/*"  style="display:none;"/>' +
+        '<input type="file" id="wo-photo-input" accept="image/*" capture="environment" style="display:none;"/>' +
       '</label>' +
       '<img id="wo-photo-preview" style="display:none;width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;"/>' +
       '<textarea id="wo-complete-notes" class="inp" rows="2" placeholder="Completion notes (optional)..." style="margin-bottom:12px;"></textarea>' +
@@ -8404,18 +8659,38 @@ function clearOldPhotos() {
 
 function getWOPhoto(wo) {
   if (!wo) return null;
-  // Check dlphotos localStorage first (full quality on originating device)
-  try {
-    var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-    var lp = photos[wo.id];
-    if (lp && lp.length > 5) return lp;
-  } catch(e) {}
-  var local = localStorage.getItem('dlphoto_' + wo.id);
-  if (local && local.length > 5) return local;
-  // Return completedPhoto from Sheets (ImgBB URL or data:)
-  if (wo.completedPhoto && wo.completedPhoto.length > 5 &&
-      !wo.completedPhoto.startsWith('[')) return wo.completedPhoto;
+  try { var local=localStorage.getItem('dlphoto_'+wo.id); if(local&&local.length>100)return local; } catch(e){}
+  try { var photos=JSON.parse(localStorage.getItem('dlphotos')||'{}'); var lp=photos[wo.id]; if(lp&&lp.length>100)return lp; } catch(e){}
+  if (wo.completedPhoto) {
+    if (wo.completedPhoto.startsWith('local:')) {
+      try { var s=localStorage.getItem('dlphoto_'+wo.completedPhoto.slice(6)); if(s&&s.length>100)return s; } catch(e){}
+      return null;
+    }
+    if (!wo.completedPhoto.startsWith('[') && wo.completedPhoto.length>10) return wo.completedPhoto;
+  }
   return null;
+}
+
+function retryPendingWOPhotos() {
+  var pending=(state.workOrders||[]).filter(function(w){return w.completedPhoto==='[uploading]'||(w.completedPhoto&&w.completedPhoto.startsWith('local:'));});
+  if(!pending.length)return;
+  console.log('[Retry]',pending.length,'WO(s) with pending photos');
+  pending.forEach(function(wo){
+    var photo=getWOPhoto(wo);
+    if(!photo){console.warn('[Retry] No local photo for',wo.id);return;}
+    var raw=photo,comma=photo.indexOf(',');if(comma!==-1)raw=photo.slice(comma+1);
+    var form=new FormData();form.append('image',raw);form.append('name','WO_'+(wo.woNumber||wo.id.slice(-4))+'_retry');
+    fetch('https://api.imgbb.com/1/upload?key='+IMGBB_API_KEY,{method:'POST',body:form})
+    .then(function(r){return r.json();})
+    .then(function(data){
+      if(data&&data.success&&data.data&&data.data.url){
+        console.log('[Retry] Uploaded photo for WO',wo.id);
+        wo.completedPhoto=data.data.url;
+        try{var photos=JSON.parse(localStorage.getItem('dlphotos')||'{}');photos[wo.id]=data.data.url;localStorage.setItem('dlphotos',JSON.stringify(photos));}catch(e){}
+        save();gsSave('workOrders',wo);
+      }
+    }).catch(function(err){console.warn('[Retry] Failed for',wo.id,err);});
+  });
 }
 
 
@@ -8480,111 +8755,53 @@ function readFileAsDataUrl(file, callback) {
 }
 
 function submitCrewWOComplete(woId, photoData) {
-  var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
-  if (!wo) return;
-
-  var crew = state.loggedInCrewId ? (state.crew || []).find(function(c) { return c.id === state.loggedInCrewId; }) : null;
-  var notes = document.getElementById('wo-complete-notes')?.value || '';
-
-  // Step 1: compress to good quality (matches flag photo pipeline)
-  compressPhoto(photoData, 800, 0.82, function(compressed) {
-    toast('📷 Photo ready - saving...');
-
-    // Step 2: save locally for immediate display
-    wo.completedPhoto = compressed;
-    try {
-      var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-      photos[woId] = compressed;
-      localStorage.setItem('dlphotos', JSON.stringify(photos));
-    } catch(pe) {
-      try { localStorage.setItem('dlphoto_' + woId, compressed); } catch(e2) {}
-    }
-
-    // Step 3: update WO status
-    wo.status = 'completed';
-    wo.completedOn = new Date().toLocaleDateString();
-    wo.completedBy = crew ? crew.name : 'Crew';
-    wo.completedNotes = notes;
-
-    // Step 4: save state and close sheet
+  var wo=(state.workOrders||[]).find(function(w){return w.id===woId;});
+  if(!wo)return;
+  var crew=state.loggedInCrewId?(state.crew||[]).find(function(c){return c.id===state.loggedInCrewId;}):null;
+  var notes=document.getElementById('wo-complete-notes')?.value||'';
+  var btn=document.getElementById('wo-complete-btn');
+  if(btn){btn.disabled=true;btn.style.opacity='0.6';btn.textContent='Saving...';}
+  compressPhoto(photoData,1200,0.88,function(compressed){
+    var photoSaved=false;
+    try{localStorage.setItem('dlphoto_'+woId,compressed);photoSaved=true;}catch(e){console.warn('dlphoto_ save failed:',e);}
+    try{var photos=JSON.parse(localStorage.getItem('dlphotos')||'{}');photos[woId]=compressed;localStorage.setItem('dlphotos',JSON.stringify(photos));}catch(e){console.warn('dlphotos map full');}
+    wo.status='completed';
+    wo.completedOn=new Date().toLocaleDateString();
+    wo.dateCompleted=new Date().toLocaleDateString();
+    wo.completedBy=crew?crew.name:'Crew';
+    wo.completedNotes=notes;
+    wo.completedPhoto=photoSaved?'local:'+woId:compressed;
     save();
-    var completeSheet = document.getElementById('crew-wo-complete-sheet');
-    if (completeSheet) completeSheet.remove();
+    var completeSheet=document.getElementById('crew-wo-complete-sheet');if(completeSheet)completeSheet.remove();
     renderCrewWorkOrders();
-    if (document.getElementById('wo-community-list')) renderWorkOrders();
-    toast('✓ Work order completed — uploading photo...');
-    // Immediately push to Sheets so manager sees it without waiting for auto-sync
-    if (typeof syncOnline !== 'undefined' && syncOnline) {
-      setTimeout(function() { gsLoad().catch(function(){}); }, 1500);
-    }
-
-    // Step 5: save WO to Sheets with placeholder while upload runs
-    var woForSheets = Object.assign({}, wo, { completedPhoto: '[uploading]' });
-    gsSave('workOrders', woForSheets);
-
-    // Step 6: upload to ImgBB - same as flag photos
-    toast('📤 Uploading photo...');
-    var woFilename = 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now();
-    uploadPhotoViaPost(compressed, woFilename,
-      function(imgbbUrl) {
-        wo.completedPhoto = imgbbUrl;
-        try {
-          var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-          photos[wo.id] = imgbbUrl;
-          localStorage.setItem('dlphotos', JSON.stringify(photos));
-        } catch(e) {}
-        save();
-        gsSave('workOrders', wo);
-        renderCrewWorkOrders();
-        if (document.getElementById('wo-community-list')) renderWorkOrders();
-        toast('✓ Photo uploaded — visible on all devices');
-      },
-      function(err) {
-        console.warn('WO photo upload failed:', err);
-        // Fallback: save compressed locally, sync without photo
-        gsSave('workOrders', wo);
-        toast('Photo saved locally');
-      }
-    );
-    var photoDisabled = null;
-    if (photoDisabled) {
-      console.log('disabled');
-      var uploadPayload = JSON.stringify({
-        secret: GS_SECRET,
-        action: 'uploadWOPhoto',
-        woId: wo.id,
-        photo: photo,
-        filename: 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now()
-      });
-
-      // Try regular POST first (works if CORS configured)
-      fetch(GS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: uploadPayload
-      })
-      .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(function(result) {
-        console.log('Photo upload result:', result);
-        if (result && result.photoUrl) {
-          wo.completedPhoto = result.photoUrl;
-          try {
-            var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-            photos[wo.id] = result.photoUrl;
-            localStorage.setItem('dlphotos', JSON.stringify(photos));
-          } catch(e) {}
-          save();
-          toast('✓ Photo uploaded to Drive');
-          renderCrewWorkOrders();
-          if (document.getElementById('wo-community-list')) renderWorkOrders();
+    toast('&#x2713; Work order completed — uploading photo...');
+    if(typeof syncOnline!=='undefined'&&syncOnline){setTimeout(function(){gsLoad().catch(function(){});},1500);}
+    var woSlim=Object.assign({},wo,{completedPhoto:'[uploading]'});gsSave('workOrders',woSlim);
+    var woFilename='WO_'+(wo.woNumber||wo.id.slice(-4))+'_'+(wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_')+'_'+Date.now();
+    function doUpload(attempt){
+      var raw=compressed,comma=compressed.indexOf(',');if(comma!==-1)raw=compressed.slice(comma+1);
+      var form=new FormData();form.append('image',raw);form.append('name',woFilename);
+      fetch('https://api.imgbb.com/1/upload?key='+IMGBB_API_KEY,{method:'POST',body:form})
+      .then(function(r){return r.json();})
+      .then(function(data){
+        if(data&&data.success&&data.data&&data.data.url){
+          var imgUrl=data.data.url;
+          wo.completedPhoto=imgUrl;
+          try{var photos=JSON.parse(localStorage.getItem('dlphotos')||'{}');photos[woId]=imgUrl;localStorage.setItem('dlphotos',JSON.stringify(photos));}catch(e){}
+          save();gsSave('workOrders',wo);renderCrewWorkOrders();
+          toast('&#x2713; Photo uploaded — visible on all devices');
         } else {
-          toast('✓ Completed (photo upload issue: ' + JSON.stringify(result) + ')');
+          console.warn('ImgBB error attempt '+attempt+':',(data&&data.error&&data.error.message)||'unknown');
+          if(attempt<3){setTimeout(function(){doUpload(attempt+1);},3000*attempt);}
+          else{wo.completedPhoto=compressed;save();gsSave('workOrders',wo);toast('Photo saved locally — will upload next sync');}
         }
-      })
-    } // end photoDisabled block
+      }).catch(function(err){
+        console.warn('ImgBB fetch error attempt '+attempt+':',err);
+        if(attempt<3){setTimeout(function(){doUpload(attempt+1);},3000*attempt);}
+        else{wo.completedPhoto=compressed;save();gsSave('workOrders',wo);toast('Photo saved locally — will upload next sync');}
+      });
+    }
+    doUpload(1);
   });
 }
 
@@ -9409,6 +9626,7 @@ ls_showWho();
 // load live data from Google Sheets
 gsLoad().then(() => {
   startAutoSync();
+  setTimeout(retryPendingWOPhotos, 3000);
 });
 document.title = 'Diamond Landscapes';
 var tdEl2 = document.getElementById('topbar-date'); if(tdEl2) tdEl2.textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
