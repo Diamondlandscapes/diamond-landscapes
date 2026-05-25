@@ -4993,6 +4993,8 @@ function gsLoad() {
         merge('equipment');
         merge('workOrders');
         merge('attendance');
+        // Ensure attendance is always a proper array after merge
+        if (!Array.isArray(state.attendance)) state.attendance = [];
         // Fix any JSON string fields that came back from Sheets as strings
         (state.routes||[]).forEach(function(r) {
           if (typeof r.stops === 'string') { try { r.stops = JSON.parse(r.stops); } catch(e) { r.stops = []; } }
@@ -9730,11 +9732,12 @@ function todayStr() {
 }
 
 function getAttendanceDay(dateStr) {
-  return (state.attendance||[]).filter(function(r){ return r.date===dateStr; });
+  var att = Array.isArray(state.attendance) ? state.attendance : [];
+  return att.filter(function(r){ return r && r.date===dateStr; });
 }
 
 function saveAttendanceRecord(record) {
-  if (!state.attendance) state.attendance = [];
+  if (!Array.isArray(state.attendance)) state.attendance = [];
   var idx = state.attendance.findIndex(function(r){ return r.id===record.id; });
   if (idx>=0) state.attendance[idx]=record; else state.attendance.push(record);
   save();
@@ -9766,8 +9769,8 @@ function renderAttendance() {
   var root = document.getElementById('attendance-root');
   if (!root) return;
   try {
-  // Make sure attendance array exists
-  if (!state.attendance) state.attendance = [];
+  // Make sure attendance is always a proper array
+  if (!Array.isArray(state.attendance)) state.attendance = [];
 
   var isManager = state.role === 'manager';
   var dateStr   = window._attDate || todayStr();
