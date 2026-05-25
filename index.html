@@ -1480,7 +1480,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-25-v12';
+var APP_VERSION='2026-05-25-v13';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -4996,7 +4996,12 @@ function gsLoad() {
         }
         merge('equipment');
         merge('workOrders');
-        if(remote&&Array.isArray(remote['attendance'])){state.attendance=remote['attendance'];}
+        if(remote&&Array.isArray(remote['attendance'])){
+          state.attendance=remote['attendance'].map(function(r){
+            if(r&&r.date) r.date=normalizeAttDate(r.date);
+            return r;
+          });
+        }
         if(!Array.isArray(state.attendance))state.attendance=[];
         // Fix any JSON string fields that came back from Sheets as strings
         (state.routes||[]).forEach(function(r) {
@@ -9735,8 +9740,22 @@ function todayStr() {
   return new Date().toISOString().slice(0,10);
 }
 
+function normalizeAttDate(d) {
+  if (!d) return '';
+  // Already ISO format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(d))) return String(d);
+  // Try to parse and convert to ISO
+  try {
+    var dt = new Date(d);
+    if (!isNaN(dt.getTime())) return dt.toISOString().slice(0,10);
+  } catch(e) {}
+  return String(d);
+}
 function getAttendanceDay(dateStr) {
-  return (state.attendance||[]).filter(function(r){ return r.date===dateStr; });
+  var norm = normalizeAttDate(dateStr);
+  return (state.attendance||[]).filter(function(r){
+    return r && normalizeAttDate(r.date) === norm;
+  });
 }
 
 function saveAttendanceRecord(record) {
@@ -9788,7 +9807,7 @@ function renderAttendance() {
     // Build roster: permanent crew merged with saved records
     var roster = [];
     crew.filter(function(c){return c.id&&c.name&&String(c.name).toLowerCase()!=='name'&&String(c.id).toLowerCase()!=='id';}).forEach(function(c) {
-      var saved = dayRecords.find(function(r){ return r.crewId===c.id; });
+      var saved = dayRecords.find(function(r){ return String(r.crewId)===String(c.id); });
       roster.push(saved || {
         id: 'att_' + c.id + '_' + dateStr.replace(/-/g,''),
         date: dateStr, crewId: c.id,
