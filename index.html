@@ -1498,6 +1498,10 @@ let state = {
 
 function load() {
   try { const s = localStorage.getItem('diamondlandscapes_v1'); if(s) Object.assign(state, JSON.parse(s)); } catch(e) {}
+  // Always ensure arrays are proper arrays after loading from localStorage
+  if (!Array.isArray(state.attendance)) state.attendance = [];
+  if (!Array.isArray(state.workOrders)) state.workOrders = [];
+  if (!Array.isArray(state.crew)) state.crew = [];
 }
 function save() {
   try {
@@ -4992,8 +4996,9 @@ function gsLoad() {
         }
         merge('equipment');
         merge('workOrders');
+        // Always ensure attendance is a clean array before and after merge
+        if (!Array.isArray(state.attendance)) state.attendance = [];
         merge('attendance');
-        // Ensure attendance is always a proper array after merge
         if (!Array.isArray(state.attendance)) state.attendance = [];
         // Fix any JSON string fields that came back from Sheets as strings
         (state.routes||[]).forEach(function(r) {
