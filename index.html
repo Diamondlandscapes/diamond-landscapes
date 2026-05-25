@@ -1480,7 +1480,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION = '2026-05-25-v10';
+var APP_VERSION='2026-05-25-v11';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1685,6 +1685,7 @@ function applyRole(r) {
     <button class="nb" onclick="switchTab('crew-week')" data-tab="crew-week"><span class="ni">📅</span><span class="nl">My Week</span></button>
     <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni">🏡</span><span class="nl">Properties</span></button>
     <button class="nb" onclick="switchTab('wo-crew')" data-tab="wo-crew"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
+    <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni">📅</span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
       <button class="nb" onclick="signOut()"><span class="ni">🔒</span><span class="nl">Sign Out</span></button>
@@ -5125,7 +5126,7 @@ function startAutoSync() {
     if (activeScreen) {
       var tab = activeScreen.id.replace('screen-','');
       var r = { dashboard:renderDashboard, workorders:renderWorkOrders,
-        'wo-crew':renderCrewWorkOrders, 'attendance':renderAttendance, attendance:renderAttendance,
+        'wo-crew':renderCrewWorkOrders, attendance:renderAttendance,
         crew:renderCrew, reports:renderReports };
       if (r[tab]) try { r[tab](); } catch(e){}
     }
@@ -5458,12 +5459,14 @@ const MANAGER_MENU = [
   { tab:'reports',   icon:'📊', label:'Reports' },
   { tab:'schedule',  icon:'📅', label:'Schedule' },
   { tab:'workorders', icon:'📋', label:'Work Orders' },
+  { tab:'attendance',  icon:'📅', label:'Attendance' },
 ];
 const CREW_MENU = [
   { tab:'field',       icon:'📋', label:'My Jobs' },
   { tab:'crew-week',   icon:'📅', label:'My Week' },
   { tab:'properties',  icon:'🏡', label:'Properties' },
   { tab:'wo-crew',     icon:'📋', label:'Work Orders' },
+  { tab:'attendance',  icon:'📅', label:'Attendance' },
 ];
 
 function buildDrawerItems(menuItems, activeTab) {
@@ -9783,7 +9786,7 @@ function renderAttendance() {
 
     // Build roster: permanent crew merged with saved records
     var roster = [];
-    crew.filter(function(c){ return c.id && c.name && String(c.name).toLowerCase()!=='name' && String(c.id).toLowerCase()!=='id'; }).forEach(function(c) {
+    crew.filter(function(c){return c.id&&c.name&&String(c.name).toLowerCase()!=='name'&&String(c.id).toLowerCase()!=='id';}).forEach(function(c) {
       var saved = dayRecords.find(function(r){ return r.crewId===c.id; });
       roster.push(saved || {
         id: 'att_' + c.id + '_' + dateStr.replace(/-/g,''),
@@ -9895,17 +9898,16 @@ function renderAttendance() {
     dates.sort();
 
     var people = {};
-    filtered.forEach(function(r){ if(!r.name||r.name.toLowerCase()==='name') return;
+    filtered.forEach(function(r){ if(!r.name||String(r.name).toLowerCase()==='name') return;
       if (!people[r.name]) people[r.name] = { name:r.name, role:r.role||'', records:{} };
       people[r.name].records[r.date] = r;
     });
     var peopleList = Object.values(people).sort(function(a,b){ return a.name.localeCompare(b.name); });
 
     var dateHdrs = dates.map(function(d){
-      var dt = new Date(d.includes('T') ? d : d+'T12:00:00');
-      var dtLabel = isNaN(dt.getTime()) ? d : dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+      var dt=new Date(d.indexOf('T')>=0?d:d+'T12:00:00');var isValidDt=!isNaN(dt.getTime());
       return '<th style="font-size:10px;font-weight:700;color:var(--text3);padding:4px 3px;text-align:center;white-space:nowrap;">'
-        + dtLabel + '</th>';
+        + isValidDt?dt.toLocaleDateString('en-US',{month:'short',day:'numeric'}):d + '</th>';
     }).join('');
 
     var tableRows = peopleList.map(function(p){
@@ -9914,8 +9916,7 @@ function renderAttendance() {
         var rec = p.records[d];
         if (!rec) return '<td style="text-align:center;color:var(--text4);font-size:11px;">—</td>';
         var sm = statusMeta(rec.status||'present');
-        var validStatus = rec.status && ['present','absent','late','halfday'].includes(rec.status) ? rec.status : 'present';
-        totals[validStatus] = (totals[validStatus]||0)+1;
+        totals[rec.status||'present'] = (totals[rec.status||'present']||0)+1;
         return '<td style="text-align:center;padding:3px;">'
           + '<div title="' + (rec.note||'') + '" style="width:28px;height:28px;border-radius:50%;'
           + 'background:' + sm.bg + ';border:1.5px solid ' + sm.border + ';'
@@ -9957,6 +9958,7 @@ function renderAttendance() {
       + '<div style="display:flex;gap:8px;">'
       +   '<button onclick="attApplyReport()"'
       +     ' style="flex:1;padding:8px;border-radius:8px;background:var(--blue);color:#fff;border:none;'
+      +     'font-size:13px;font-weight:700;cursor:pointer;">Apply</button>'
       +     'font-size:13px;font-weight:700;cursor:pointer;">Apply</button>'
       +   (rFrom||rTo ? '<button onclick="attClearReport()"'
       +     ' style="padding:8px 14px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);'
