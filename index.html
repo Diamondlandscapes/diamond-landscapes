@@ -765,7 +765,31 @@ select.inp{cursor:pointer;}
     </div>
 
 
-    <div id="ls-crew" style="display:none;"></div>
+    <div id="ls-crew" style="width:100%;display:none;flex-direction:column;gap:12px;">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;color:#6b8f6b;letter-spacing:2px;text-transform:uppercase;text-align:center;">Crew PIN</div>
+      <div style="display:flex;gap:16px;justify-content:center;margin:4px 0;" id="ls-crew-dots">
+        <div class="pin-dot" id="lcd1"></div>
+        <div class="pin-dot" id="lcd2"></div>
+        <div class="pin-dot" id="lcd3"></div>
+        <div class="pin-dot" id="lcd4"></div>
+      </div>
+      <div id="ls-crew-error" style="font-size:13px;color:#f87171;min-height:18px;font-weight:700;text-align:center;"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;width:100%;max-width:300px;margin:0 auto;">
+        <button onclick="ls_crewPinKey('1')" class="ls-key">1</button>
+        <button onclick="ls_crewPinKey('2')" class="ls-key">2</button>
+        <button onclick="ls_crewPinKey('3')" class="ls-key">3</button>
+        <button onclick="ls_crewPinKey('4')" class="ls-key">4</button>
+        <button onclick="ls_crewPinKey('5')" class="ls-key">5</button>
+        <button onclick="ls_crewPinKey('6')" class="ls-key">6</button>
+        <button onclick="ls_crewPinKey('7')" class="ls-key">7</button>
+        <button onclick="ls_crewPinKey('8')" class="ls-key">8</button>
+        <button onclick="ls_crewPinKey('9')" class="ls-key">9</button>
+        <div></div>
+        <button onclick="ls_crewPinKey('0')" class="ls-key">0</button>
+        <button onclick="ls_crewPinKey('⌫')" class="ls-key" style="font-size:20px;">⌫</button>
+      </div>
+      <button onclick="ls_showWho()" style="background:none;border:none;color:#6b8f6b;font-size:13px;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">← Back</button>
+    </div>
 
 
     <div id="ls-crew-names" style="width:100%;display:none;flex-direction:column;gap:10px;">
@@ -1105,7 +1129,7 @@ select.inp{cursor:pointer;}
 
     <!-- ══════ ATTENDANCE ══════ -->
     <div id="screen-attendance" class="screen">
-      <div id="attendance-root"></div>
+      <div id="attendance-root" style="padding-bottom:20px;"></div>
     </div>
 
     <!-- ══════ WORK ORDERS — CREW ══════ -->
@@ -1217,10 +1241,6 @@ select.inp{cursor:pointer;}
         <select class="inp" id="nc-role">
           <option>Crew Lead</option><option>Crew Member</option><option>Driver</option>
         </select>
-        <div>
-          <input class="inp" id="nc-pin" placeholder="4-digit login PIN (optional)" type="tel" maxlength="4" inputmode="numeric" style="letter-spacing:6px;font-weight:800;font-size:18px;"/>
-          <div style="font-size:11px;color:var(--text3);margin-top:4px;">Used to access the crew console. Leave blank for no PIN.</div>
-        </div>
         <button class="btn btn-green" onclick="saveCrew()">Add Member</button>
         <button class="btn btn-outline" onclick="closeOverlay('add-crew-overlay')">Cancel</button>
       </div>
@@ -1681,7 +1701,6 @@ function applyRole(r) {
     <button class="nb" onclick="switchTab('crew-week')" data-tab="crew-week"><span class="ni">📅</span><span class="nl">My Week</span></button>
     <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni">🏡</span><span class="nl">Properties</span></button>
     <button class="nb" onclick="switchTab('wo-crew')" data-tab="wo-crew"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
-    <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni">📅</span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
       <button class="nb" onclick="signOut()"><span class="ni">🔒</span><span class="nl">Sign Out</span></button>
@@ -2028,11 +2047,6 @@ function openCrewDetail(id) {
         <select class="inp" id="ce-role-${id}">
           ${['Crew Lead','Crew Member','Driver'].map(r=>`<option ${c.role===r?'selected':''}>${r}</option>`).join('')}
         </select>
-        <div>
-          <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">LOGIN PIN ${c.pin?'<span style="color:var(--green);">● Set</span>':'<span style="color:var(--red);">● Not set</span>'}</div>
-          <input class="inp" id="ce-pin-${id}" placeholder="Enter new 4-digit PIN" type="tel" maxlength="4" inputmode="numeric" style="letter-spacing:6px;font-weight:800;font-size:18px;"/>
-          <div style="font-size:11px;color:var(--text3);margin-top:4px;">${c.pin?'Leave blank to keep current PIN.':'Leave blank for no PIN required.'}</div>
-        </div>
         <button class="btn btn-green" onclick="saveCrewEdit('${id}')" style="font-size:13px;">Save Changes</button>
         <button class="btn btn-outline" onclick="toggleCrewEdit('${id}')" style="font-size:13px;">Cancel</button>
       </div>
@@ -2135,14 +2149,10 @@ function saveCrewEdit(id) {
   c.name  = document.getElementById('ce-name-'+id)?.value.trim()  || c.name;
   c.phone = document.getElementById('ce-phone-'+id)?.value.trim() || '';
   c.role  = document.getElementById('ce-role-'+id)?.value         || c.role;
-  const pinVal = (document.getElementById('ce-pin-'+id)?.value||'').trim();
-  if (pinVal) {
-    if (pinVal.length!==4||!/^\d{4}$/.test(pinVal)) { toast('PIN must be 4 digits'); return; }
-    const dup = state.crew.find(x=>x.id!==id&&x.pin===pinVal);
-    if (dup) { toast('PIN already used by '+dup.name); return; }
-    c.pin = pinVal;
-  }
-  saveAndSync('crew',c); openCrewDetail(id); renderCrew(); toast('Saved ✓');
+  saveAndSync('crew', c);
+  openCrewDetail(id);
+  renderCrew();
+  toast('Saved ✓');
 }
 
 function assignCrewToRoute(crewId) {
@@ -3278,14 +3288,13 @@ function openAddCrew() { openOverlay('add-crew-overlay'); }
 function saveCrew() {
   const name = document.getElementById('nc-name').value.trim();
   if (!name) { toast('Enter a name'); return; }
-  const pin = (document.getElementById('nc-pin')?.value||'').trim();
-  if (pin && (pin.length!==4||!/^\d{4}$/.test(pin))) { toast('PIN must be exactly 4 digits'); return; }
-  if (pin && state.crew.some(c=>c.pin===pin)) { toast('That PIN is already in use'); return; }
-  const member = { id:uid(), name, phone:document.getElementById('nc-phone')?.value||'', role:document.getElementById('nc-role')?.value||'Crew Member', pin:pin||'' };
-  state.crew.push(member);
-  saveAndSync('crew',member);
-  closeOverlay('add-crew-overlay');
-  ['nc-name','nc-phone','nc-pin'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  state.crew.push({
+    id: uid(), name,
+    phone: document.getElementById('nc-phone').value,
+    role: document.getElementById('nc-role').value
+  });
+  save(); closeOverlay('add-crew-overlay');
+  ['nc-name','nc-phone'].forEach(id => document.getElementById(id).value='');
   renderCrew(); toast('Crew member added!');
 }
 
@@ -4639,7 +4648,11 @@ function ls_showManager() {
 }
 
 function ls_showCrew() {
-  ls_showCrewNames();
+  document.getElementById('ls-who').style.display  = 'none';
+  document.getElementById('ls-crew').style.display = 'flex';
+  ls_crewBuffer = ''; ls_updateDots('lcd', 0);
+  // pre-load fresh crew data in background
+  gsLoad().catch(()=>{});
 }
 
 function ls_updateDots(prefix, count) {
@@ -4684,10 +4697,8 @@ function ls_crewPinKey(k) {
 }
 
 function ls_showCrewNames() {
-  document.getElementById('ls-who').style.display        = 'none';
   document.getElementById('ls-crew').style.display       = 'none';
   document.getElementById('ls-crew-names').style.display = 'flex';
-  gsLoad().catch(()=>{});
   const list = document.getElementById('ls-crew-name-list');
 
   // Show cached crew IMMEDIATELY — no waiting for network
@@ -4702,7 +4713,7 @@ function ls_showCrewNames() {
       return;
     }
     list.innerHTML = state.crew.map(c => `
-      <button onclick="ls_crewSelected('${c.id}')" style="display:flex;align-items:center;gap:14px;width:100%;
+      <button onclick="ls_selectCrew('${c.id}')" style="display:flex;align-items:center;gap:14px;width:100%;
         background:#1f281f;border:1px solid #2e3d2e;border-radius:14px;padding:14px 16px;
         cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
         transition:background .15s;margin-bottom:4px;">
@@ -4712,11 +4723,10 @@ function ls_showCrewNames() {
           font-weight:800;font-size:18px;color:white;flex-shrink:0;">
           ${c.name.trim()[0].toUpperCase()}
         </div>
-        <div style="text-align:left;flex:1;">
+        <div style="text-align:left;">
           <div style="font-size:15px;font-weight:800;color:white;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">${c.name}</div>
           <div style="font-size:12px;color:#6b8f6b;margin-top:2px;">${c.role}</div>
         </div>
-        ${c.pin ? '<div style="font-size:18px;">🔒</div>' : ''}
       </button>`).join('');
   }
 
@@ -4725,9 +4735,9 @@ function ls_showCrewNames() {
 
   // Then sync in background silently — if crew updates, refresh list
   
-// ══════════════════════════════════════════════════════════════
-// ATTENDANCE
-// ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// ATTENDANCE MODULE
+// ══════════════════════════════════════════════════════════════════════════════
 
 function todayStr() {
   return new Date().toISOString().slice(0,10);
@@ -4751,321 +4761,393 @@ function deleteAttendanceRecord(id) {
   gsDelete('attendance', id);
 }
 
-// ── Status cycle: present → absent → late → half → present ──
 var ATT_STATUSES = [
-  { key:'present',  label:'Present',  color:'var(--green)',  bg:'rgba(74,222,128,.15)',  border:'rgba(74,222,128,.35)'  },
-  { key:'absent',   label:'Absent',   color:'var(--red)',    bg:'rgba(248,113,113,.15)', border:'rgba(248,113,113,.35)' },
-  { key:'late',     label:'Late',     color:'var(--yellow)', bg:'rgba(250,204,21,.15)',  border:'rgba(250,204,21,.35)'  },
-  { key:'halfday',  label:'Half Day', color:'var(--orange)', bg:'rgba(251,146,60,.15)',  border:'rgba(251,146,60,.35)'  },
+  { key:'present',  label:'Present',  color:'var(--green)',  bg:'rgba(74,222,128,.18)',  border:'rgba(74,222,128,.4)'  },
+  { key:'absent',   label:'Absent',   color:'var(--red)',    bg:'rgba(248,113,113,.18)', border:'rgba(248,113,113,.4)' },
+  { key:'late',     label:'Late',     color:'#f59e0b',       bg:'rgba(245,158,11,.18)',  border:'rgba(245,158,11,.4)'  },
+  { key:'halfday',  label:'Half Day', color:'#f97316',       bg:'rgba(249,115,22,.18)',  border:'rgba(249,115,22,.4)'  },
 ];
+
 function nextStatus(current) {
-  var idx = ATT_STATUSES.findIndex(function(s){return s.key===current;});
-  return ATT_STATUSES[(idx+1)%ATT_STATUSES.length].key;
+  var idx = ATT_STATUSES.findIndex(function(s){ return s.key===current; });
+  return ATT_STATUSES[(idx+1) % ATT_STATUSES.length].key;
 }
 function statusMeta(key) {
-  return ATT_STATUSES.find(function(s){return s.key===key;})||ATT_STATUSES[0];
+  return ATT_STATUSES.find(function(s){ return s.key===key; }) || ATT_STATUSES[0];
 }
 
 function renderAttendance() {
   var root = document.getElementById('attendance-root');
   if (!root) return;
-  var isManager = state.role==='manager';
-  var dateStr = window._attDate || todayStr();
+
+  // Make sure attendance array exists
+  if (!state.attendance) state.attendance = [];
+
+  var isManager = state.role === 'manager';
+  var dateStr   = window._attDate || todayStr();
   window._attDate = dateStr;
-  var mode = window._attMode || 'day'; // 'day' or 'report'
+  var mode = window._attMode || 'day';
   window._attMode = mode;
 
-  // Build today's roster: permanent crew + day laborers already added
-  var dayRecords = getAttendanceDay(dateStr);
-  var crew = state.crew||[];
+  if (mode === 'report' && !isManager) {
+    window._attMode = 'day'; mode = 'day';
+  }
 
-  // Merge permanent crew with existing records for this day
-  var roster = [];
-  crew.forEach(function(c){
-    var rec = dayRecords.find(function(r){return r.crewId===c.id;});
-    roster.push(rec || { id:'att_'+c.id+'_'+dateStr.replace(/-/g,''), date:dateStr, crewId:c.id, name:c.name, role:c.role||'', status:'present', note:'' });
-  });
-  // Add day laborers (crewId='temp')
-  dayRecords.filter(function(r){return r.crewId==='temp';}).forEach(function(r){ roster.push(r); });
+  // ── Day view ────────────────────────────────────────────────
+  if (mode === 'day') {
+    var dayRecords = getAttendanceDay(dateStr);
+    var crew = state.crew || [];
 
-  // ── Day view ─────────────────────────────────────────────────
-  if (mode==='day') {
-    var rows = roster.map(function(rec){
-      var sm = statusMeta(rec.status||'present');
-      var isPast = dateStr < todayStr();
-      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">'
-        // Avatar
-        +'<div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--green),var(--teal));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#fff;flex-shrink:0;">'
-        +(rec.name?rec.name.trim()[0].toUpperCase():'?')+'</div>'
-        // Name + role
-        +'<div style="flex:1;min-width:0;">'
-        +'<div style="font-weight:700;font-size:14px;">'+(rec.name||'')+'</div>'
-        +(rec.role?'<div style="font-size:11px;color:var(--text3);">'+rec.role+'</div>':'')
-        +(rec.crewId==='temp'?'<div style="font-size:10px;color:var(--orange);font-weight:700;">Day Laborer</div>':'')
-        +'</div>'
-        // Status pill (tap to cycle)
-        +'<button data-recid="'+rec.id+'" onclick="attCycleStatus(this)" '
-        +'style="padding:6px 14px;border-radius:20px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;border:1px solid '+sm.border+';background:'+sm.bg+';color:'+sm.color+';transition:all .15s;">'
-        +sm.label+'</button>'
-        // Note button
-        +'<button data-recid="'+rec.id+'" onclick="attEditNote(this)" title="Add note" '
-        +'style="width:32px;height:32px;border-radius:50%;background:var(--bg3);border:1px solid var(--border2);cursor:pointer;font-size:14px;flex-shrink:0;">'
-        +(rec.note?'📝':'➕')+'</button>'
-        // Delete (day laborers only)
-        +(rec.crewId==='temp'?'<button data-recid="'+rec.id+'" onclick="attDeleteTemp(this)" style="width:32px;height:32px;border-radius:50%;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);cursor:pointer;font-size:14px;flex-shrink:0;">🗑</button>':'')
-        +'</div>';
+    // Build roster: permanent crew merged with saved records
+    var roster = [];
+    crew.forEach(function(c) {
+      var saved = dayRecords.find(function(r){ return r.crewId===c.id; });
+      roster.push(saved || {
+        id: 'att_' + c.id + '_' + dateStr.replace(/-/g,''),
+        date: dateStr, crewId: c.id,
+        name: c.name, role: c.role||'', status: 'present', note: ''
+      });
+    });
+    // Add day laborers for this date
+    dayRecords.filter(function(r){ return r.crewId==='temp'; })
+      .forEach(function(r){ roster.push(r); });
+
+    window._attRoster = roster;
+
+    // Counts
+    var counts = { present:0, absent:0, late:0, halfday:0 };
+    roster.forEach(function(r){ var k=r.status||'present'; if(counts[k]!==undefined) counts[k]++; });
+
+    var rows = roster.map(function(rec) {
+      var sm = statusMeta(rec.status || 'present');
+      var initials = (rec.name||'?').trim()[0].toUpperCase();
+      return '<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);">'
+        + '<div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--green),var(--teal));'
+        +   'display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;color:#fff;flex-shrink:0;">'
+        +   initials
+        + '</div>'
+        + '<div style="flex:1;min-width:0;">'
+        +   '<div style="font-weight:700;font-size:14px;line-height:1.2;">' + (rec.name||'') + '</div>'
+        +   (rec.role ? '<div style="font-size:11px;color:var(--text3);">' + rec.role + '</div>' : '')
+        +   (rec.crewId==='temp' ? '<div style="font-size:10px;color:#f97316;font-weight:700;">Day Laborer</div>' : '')
+        + '</div>'
+        + '<button data-recid="' + rec.id + '" onclick="attCycleStatus(this)"'
+        +   ' style="padding:7px 16px;border-radius:20px;font-size:12px;font-weight:800;cursor:pointer;'
+        +   'white-space:nowrap;border:1.5px solid ' + sm.border + ';background:' + sm.bg + ';color:' + sm.color + ';'
+        +   'transition:all .15s;flex-shrink:0;">' + sm.label + '</button>'
+        + '<button data-recid="' + rec.id + '" onclick="attEditNote(this)" title="Note"'
+        +   ' style="width:34px;height:34px;border-radius:50%;background:var(--bg3);border:1px solid var(--border2);'
+        +   'cursor:pointer;font-size:15px;flex-shrink:0;">' + (rec.note ? '📝' : '➕') + '</button>'
+        + (rec.crewId==='temp'
+          ? '<button data-recid="' + rec.id + '" onclick="attDeleteTemp(this)"'
+          +   ' style="width:34px;height:34px;border-radius:50%;background:rgba(248,113,113,.12);'
+          +   'border:1px solid rgba(248,113,113,.3);cursor:pointer;font-size:15px;flex-shrink:0;">🗑</button>'
+          : '')
+        + '</div>';
     }).join('');
 
-    // Summary counts
-    var counts = { present:0, absent:0, late:0, halfday:0 };
-    roster.forEach(function(r){ counts[r.status||'present']=(counts[r.status||'present']||0)+1; });
+    var pillBar = ATT_STATUSES.map(function(s) {
+      return '<span style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;'
+        + 'background:' + s.bg + ';color:' + s.color + ';border:1px solid ' + s.border + ';">'
+        + s.label + ': ' + (counts[s.key]||0) + '</span>';
+    }).join('');
 
     root.innerHTML =
       // Header
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'
-      +'<div style="font-size:20px;font-weight:800;">Attendance</div>'
-      +(isManager?'<button onclick="window._attMode=\'report\';renderAttendance()" style="font-size:12px;padding:6px 14px;border-radius:8px;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);cursor:pointer;font-weight:700;">📊 Payroll Report</button>':'')
-      +'</div>'
+      + '<div style="font-size:20px;font-weight:800;">Attendance</div>'
+      + (isManager
+        ? '<button onclick="window._attMode=&quot;report&quot;;renderAttendance()"'
+        +   ' style="font-size:12px;padding:6px 14px;border-radius:8px;background:rgba(96,165,250,.15);'
+        +   'color:var(--blue);border:1px solid rgba(96,165,250,.3);cursor:pointer;font-weight:700;">📊 Payroll Report</button>'
+        : '')
+      + '</div>'
 
-      // Date picker
-      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">'
-      +'<button onclick="attChangeDate(-1)" style="width:36px;height:36px;border-radius:50%;background:var(--bg3);border:1px solid var(--border2);cursor:pointer;font-size:18px;font-weight:700;">‹</button>'
-      +'<input type="date" id="att-date-picker" value="'+dateStr+'" onchange="window._attDate=this.value;renderAttendance()" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:8px 12px;color:var(--text);font-size:14px;font-weight:700;text-align:center;"/>'
-      +'<button onclick="attChangeDate(1)" style="width:36px;height:36px;border-radius:50%;background:var(--bg3);border:1px solid var(--border2);cursor:pointer;font-size:18px;font-weight:700;">›</button>'
-      +'</div>'
+      // Date nav
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">'
+      + '<button onclick="attChangeDate(-1)"'
+      +   ' style="width:38px;height:38px;border-radius:50%;background:var(--bg3);border:1px solid var(--border2);'
+      +   'cursor:pointer;font-size:20px;font-weight:700;display:flex;align-items:center;justify-content:center;">‹</button>'
+      + '<input type="date" value="' + dateStr + '" onchange="window._attDate=this.value;renderAttendance()"'
+      +   ' style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;'
+      +   'padding:9px 12px;color:var(--text);font-size:14px;font-weight:700;text-align:center;"/>'
+      + '<button onclick="attChangeDate(1)"'
+      +   ' style="width:38px;height:38px;border-radius:50%;background:var(--bg3);border:1px solid var(--border2);'
+      +   'cursor:pointer;font-size:20px;font-weight:700;display:flex;align-items:center;justify-content:center;">›</button>'
+      + '</div>'
 
       // Summary pills
-      +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">'
-      +ATT_STATUSES.map(function(s){
-        return '<div style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;background:'+s.bg+';color:'+s.color+';border:1px solid '+s.border+';">'+s.label+': '+( counts[s.key]||0)+'</div>';
-      }).join('')
-      +'</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">' + pillBar + '</div>'
 
-      // Roster
-      +'<div class="card" style="padding:0 14px;">'
-      +(roster.length?rows:'<div style="text-align:center;padding:24px;color:var(--text4);font-size:13px;">No crew members yet</div>')
-      +'</div>'
+      // Roster card
+      + '<div class="card" style="padding:0 14px;">'
+      + (roster.length
+        ? rows
+        : '<div style="text-align:center;padding:32px;color:var(--text4);font-size:13px;">No crew members found.<br>Add crew members in the Crew tab first.</div>')
+      + '</div>'
 
       // Add day laborer
-      +'<div style="margin-top:14px;">'
-      +'<button onclick="attAddLaborer()" style="width:100%;padding:12px;border-radius:12px;background:rgba(251,146,60,.12);color:var(--orange);border:1px solid rgba(251,146,60,.3);font-size:14px;font-weight:700;cursor:pointer;">+ Add Day Laborer</button>'
-      +'</div>'
+      + '<button onclick="attAddLaborer()"'
+      +   ' style="width:100%;margin-top:12px;padding:12px;border-radius:12px;background:rgba(249,115,22,.12);'
+      +   'color:#f97316;border:1.5px solid rgba(249,115,22,.3);font-size:14px;font-weight:700;cursor:pointer;">'
+      +   '+ Add Day Laborer</button>'
 
-      // Save button
-      +'<div style="margin-top:10px;">'
-      +'<button onclick="attSaveDay()" style="width:100%;padding:14px;border-radius:12px;background:var(--green);color:#fff;border:none;font-size:15px;font-weight:800;cursor:pointer;">✓ Save Attendance</button>'
-      +'</div>';
-
-    // Store roster in window for save access
-    window._attRoster = roster;
+      // Save
+      + '<button onclick="attSaveDay()"'
+      +   ' style="width:100%;margin-top:10px;padding:14px;border-radius:12px;background:var(--green);'
+      +   'color:#fff;border:none;font-size:15px;font-weight:800;cursor:pointer;">✓ Save Attendance</button>';
   }
 
-  // ── Report view (manager only) ───────────────────────────────
-  if (mode==='report') {
+  // ── Report view (manager only) ──────────────────────────────
+  if (mode === 'report') {
     var rFrom = window._attRptFrom || '';
     var rTo   = window._attRptTo   || '';
-    var recs  = state.attendance||[];
+    var recs  = state.attendance || [];
+    var filtered = recs.slice();
+    if (rFrom) filtered = filtered.filter(function(r){ return r.date >= rFrom; });
+    if (rTo)   filtered = filtered.filter(function(r){ return r.date <= rTo; });
 
-    // Filter by date range
-    var filtered = recs;
-    if (rFrom) filtered = filtered.filter(function(r){return r.date>=rFrom;});
-    if (rTo)   filtered = filtered.filter(function(r){return r.date<=rTo;});
-
-    // Get all unique dates in range (sorted)
     var dates = [];
-    filtered.forEach(function(r){if(!dates.includes(r.date))dates.push(r.date);});
+    filtered.forEach(function(r){ if (!dates.includes(r.date)) dates.push(r.date); });
     dates.sort();
 
-    // Get all unique people
     var people = {};
     filtered.forEach(function(r){
-      if(!people[r.name]) people[r.name]={name:r.name,role:r.role||'',records:{}};
-      people[r.name].records[r.date]=r;
+      if (!people[r.name]) people[r.name] = { name:r.name, role:r.role||'', records:{} };
+      people[r.name].records[r.date] = r;
     });
-    var peopleList = Object.values(people).sort(function(a,b){return a.name.localeCompare(b.name);});
+    var peopleList = Object.values(people).sort(function(a,b){ return a.name.localeCompare(b.name); });
 
-    // Summary table
-    var tableRows = peopleList.map(function(p){
-      var totals={present:0,absent:0,late:0,halfday:0};
-      dates.forEach(function(d){
-        var rec=p.records[d];
-        var st=rec?rec.status||'present':'—';
-        if(totals[st]!==undefined) totals[st]++;
-      });
-      var cells = dates.map(function(d){
-        var rec=p.records[d];
-        if(!rec) return '<td style="text-align:center;color:var(--text4);font-size:11px;">—</td>';
-        var sm=statusMeta(rec.status||'present');
-        var tip=rec.note?(' title="'+rec.note+'"'):'';
-        return '<td'+tip+' style="text-align:center;padding:4px 2px;">'
-          +'<div style="width:28px;height:28px;border-radius:50%;background:'+sm.bg+';border:1px solid '+sm.border+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:'+sm.color+';margin:0 auto;">'+sm.label[0]+'</div>'
-          +'</td>';
-      }).join('');
-      return '<tr>'
-        +'<td style="font-weight:700;font-size:13px;padding:8px 6px;white-space:nowrap;">'+p.name+'<br><span style="font-size:10px;color:var(--text3);font-weight:400;">'+p.role+'</span></td>'
-        +cells
-        +'<td style="text-align:center;font-size:12px;font-weight:700;color:var(--green);padding:4px 6px;">'+totals.present+'</td>'
-        +'<td style="text-align:center;font-size:12px;font-weight:700;color:var(--red);padding:4px 6px;">'+totals.absent+'</td>'
-        +'<td style="text-align:center;font-size:12px;font-weight:700;color:var(--yellow);padding:4px 6px;">'+totals.late+'</td>'
-        +'<td style="text-align:center;font-size:12px;font-weight:700;color:var(--orange);padding:4px 6px;">'+totals.halfday+'</td>'
-        +'</tr>';
+    var dateHdrs = dates.map(function(d){
+      var dt = new Date(d+'T12:00:00');
+      return '<th style="font-size:10px;font-weight:700;color:var(--text3);padding:4px 3px;text-align:center;white-space:nowrap;">'
+        + dt.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + '</th>';
     }).join('');
 
-    var dateHeaders = dates.map(function(d){
-      var dt=new Date(d+'T12:00:00');
-      return '<th style="font-size:10px;font-weight:700;color:var(--text3);padding:4px 2px;text-align:center;white-space:nowrap;">'+dt.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</th>';
+    var tableRows = peopleList.map(function(p){
+      var totals = { present:0, absent:0, late:0, halfday:0 };
+      var cells = dates.map(function(d){
+        var rec = p.records[d];
+        if (!rec) return '<td style="text-align:center;color:var(--text4);font-size:11px;">—</td>';
+        var sm = statusMeta(rec.status||'present');
+        totals[rec.status||'present'] = (totals[rec.status||'present']||0)+1;
+        return '<td style="text-align:center;padding:3px;">'
+          + '<div title="' + (rec.note||'') + '" style="width:28px;height:28px;border-radius:50%;'
+          + 'background:' + sm.bg + ';border:1.5px solid ' + sm.border + ';'
+          + 'display:flex;align-items:center;justify-content:center;'
+          + 'font-size:11px;font-weight:800;color:' + sm.color + ';margin:0 auto;">'
+          + sm.label[0] + '</div>'
+          + (rec.note ? '<div style="font-size:9px;text-align:center;">📝</div>' : '')
+          + '</td>';
+      }).join('');
+      return '<tr style="border-bottom:1px solid var(--border);">'
+        + '<td style="padding:8px 6px;font-weight:700;font-size:13px;white-space:nowrap;">'
+        +   p.name + (p.role?'<br><span style="font-size:10px;color:var(--text3);font-weight:400;">'+p.role+'</span>':'')
+        + '</td>'
+        + cells
+        + '<td style="text-align:center;font-weight:800;color:var(--green);font-size:13px;">' + (totals.present||0) + '</td>'
+        + '<td style="text-align:center;font-weight:800;color:var(--red);font-size:13px;">'    + (totals.absent||0)  + '</td>'
+        + '<td style="text-align:center;font-weight:800;color:#f59e0b;font-size:13px;">'       + (totals.late||0)    + '</td>'
+        + '<td style="text-align:center;font-weight:800;color:#f97316;font-size:13px;">'       + (totals.halfday||0) + '</td>'
+        + '</tr>';
     }).join('');
 
     root.innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'
-      +'<div style="font-size:20px;font-weight:800;">Payroll Report</div>'
-      +'<button onclick="window._attMode=\'day\';renderAttendance()" style="font-size:12px;padding:6px 14px;border-radius:8px;background:var(--bg3);color:var(--text2);border:1px solid var(--border2);cursor:pointer;font-weight:700;">← Back</button>'
-      +'</div>'
+      + '<div style="font-size:20px;font-weight:800;">Payroll Report</div>'
+      + '<button onclick="attSetMode(&quot;day&quot;)"'
+      +   ' style="font-size:12px;padding:6px 14px;border-radius:8px;background:var(--bg3);'
+      +   'color:var(--text2);border:1px solid var(--border2);cursor:pointer;font-weight:700;">← Back</button>'
+      + '</div>'
 
-      // Date range filter
-      +'<div class="card" style="margin-bottom:14px;">'
-      +'<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">DATE RANGE</div>'
-      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
-      +'<input type="date" id="rpt-from" value="'+rFrom+'" style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:7px 8px;color:var(--text);font-size:13px;"/>'
-      +'<span style="font-size:12px;color:var(--text4);">to</span>'
-      +'<input type="date" id="rpt-to" value="'+rTo+'" style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:7px 8px;color:var(--text);font-size:13px;"/>'
-      +'</div>'
-      +'<div style="display:flex;gap:8px;">'
-      +'<button onclick="window._attRptFrom=document.getElementById(\'rpt-from\').value;window._attRptTo=document.getElementById(\'rpt-to\').value;renderAttendance()" style="flex:1;padding:8px;border-radius:8px;background:var(--blue);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;">Apply</button>'
-      +(rFrom||rTo?'<button onclick="window._attRptFrom=\'\';window._attRptTo=\'\';renderAttendance()" style="padding:8px 14px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);font-size:13px;font-weight:700;cursor:pointer;">✕ Clear</button>':'')
-      +'</div>'
-      +'</div>'
+      + '<div class="card" style="margin-bottom:14px;">'
+      + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">DATE RANGE</div>'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+      +   '<input type="date" id="rpt-from" value="' + rFrom + '"'
+      +     ' style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:7px 8px;color:var(--text);font-size:13px;"/>'
+      +   '<span style="font-size:12px;color:var(--text4);">to</span>'
+      +   '<input type="date" id="rpt-to" value="' + rTo + '"'
+      +     ' style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:7px 8px;color:var(--text);font-size:13px;"/>'
+      + '</div>'
+      + '<div style="display:flex;gap:8px;">'
+      +   '<button onclick="attApplyReport()"'
+      +     ' style="flex:1;padding:8px;border-radius:8px;background:var(--blue);color:#fff;border:none;'
+      +     'font-size:13px;font-weight:700;cursor:pointer;">Apply</button>'
+      +   (rFrom||rTo ? '<button onclick="attClearReport()"'
+      +     ' style="padding:8px 14px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);'
+      +     'border:1px solid rgba(248,113,113,.3);font-size:13px;font-weight:700;cursor:pointer;">✕ Clear</button>' : '')
+      + '</div>'
+      + '</div>'
 
-      +(peopleList.length && dates.length
-        ? '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">'
-          +'<thead><tr>'
-          +'<th style="text-align:left;padding:6px;font-size:12px;font-weight:700;color:var(--text3);">Name</th>'
-          +dateHeaders
-          +'<th style="text-align:center;font-size:11px;padding:4px 2px;color:var(--green);">✓</th>'
-          +'<th style="text-align:center;font-size:11px;padding:4px 2px;color:var(--red);">✗</th>'
-          +'<th style="text-align:center;font-size:11px;padding:4px 2px;color:var(--yellow);">L</th>'
-          +'<th style="text-align:center;font-size:11px;padding:4px 2px;color:var(--orange);">½</th>'
-          +'</tr></thead>'
-          +'<tbody>'+tableRows+'</tbody>'
-          +'</table></div>'
-          +'<button onclick="attExportReport()" style="width:100%;margin-top:14px;padding:12px;border-radius:12px;background:var(--green);color:#fff;border:none;font-size:14px;font-weight:800;cursor:pointer;">📄 Export PDF Report</button>'
-        : '<div style="text-align:center;color:var(--text4);padding:32px;font-size:13px;">No attendance records found'+(rFrom||rTo?' in that date range':'')+'. Select a date range or mark attendance first.</div>')
-      +'</div>';
+      + (peopleList.length && dates.length
+        ? '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">'
+          + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+          + '<thead><tr>'
+          + '<th style="text-align:left;padding:6px;font-size:12px;font-weight:700;color:var(--text3);">Name</th>'
+          + dateHdrs
+          + '<th style="text-align:center;font-size:11px;padding:4px 3px;color:var(--green);">✓</th>'
+          + '<th style="text-align:center;font-size:11px;padding:4px 3px;color:var(--red);">✗</th>'
+          + '<th style="text-align:center;font-size:11px;padding:4px 3px;color:#f59e0b;">L</th>'
+          + '<th style="text-align:center;font-size:11px;padding:4px 3px;color:#f97316;">½</th>'
+          + '</tr></thead>'
+          + '<tbody>' + tableRows + '</tbody>'
+          + '</table></div>'
+          + '<button onclick="attExportPDF()" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;'
+          +   'background:var(--green);color:#fff;border:none;font-size:14px;font-weight:800;cursor:pointer;">'
+          +   '📄 Export PDF Report</button>'
+        : '<div style="text-align:center;color:var(--text4);padding:32px;font-size:13px;">'
+          + 'No attendance records'+(rFrom||rTo?' in that date range':'')+'. '
+          + 'Mark and save attendance for a few days first.</div>');
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────
+
+function attSetMode(m){ window._attMode=m; renderAttendance(); }
+function attClosePDFOverlay(){var el=document.querySelector("[data-att-pdf]");if(el)el.remove();}
+function attApplyReport(){window._attRptFrom=document.getElementById("rpt-from")?.value||"";window._attRptTo=document.getElementById("rpt-to")?.value||"";renderAttendance();}
+function attClearReport(){ window._attRptFrom=''; window._attRptTo=''; renderAttendance(); }
+function attShowReport(){window._attMode="report";renderAttendance();}
 function attChangeDate(delta) {
-  var d=new Date((window._attDate||todayStr())+'T12:00:00');
-  d.setDate(d.getDate()+delta);
-  window._attDate=d.toISOString().slice(0,10);
+  var d = new Date((window._attDate || todayStr()) + 'T12:00:00');
+  d.setDate(d.getDate() + delta);
+  window._attDate = d.toISOString().slice(0,10);
   renderAttendance();
 }
 
 function attCycleStatus(btn) {
-  var recId=btn.dataset.recid;
-  var rec=window._attRoster.find(function(r){return r.id===recId;});
-  if(!rec)return;
-  rec.status=nextStatus(rec.status||'present');
-  var sm=statusMeta(rec.status);
-  btn.textContent=sm.label;
-  btn.style.background=sm.bg;
-  btn.style.color=sm.color;
-  btn.style.borderColor=sm.border;
+  var recId = btn.dataset.recid;
+  var roster = window._attRoster || [];
+  var rec = roster.find(function(r){ return r.id===recId; });
+  if (!rec) return;
+  rec.status = nextStatus(rec.status || 'present');
+  var sm = statusMeta(rec.status);
+  btn.textContent = sm.label;
+  btn.style.background = sm.bg;
+  btn.style.color = sm.color;
+  btn.style.borderColor = sm.border;
 }
 
 function attEditNote(btn) {
-  var recId=btn.dataset.recid;
-  var rec=window._attRoster.find(function(r){return r.id===recId;});
-  if(!rec)return;
-  var note=prompt('Note for '+rec.name+' ('+(rec.date||'')+')\nLeave blank to remove note:',rec.note||'');
-  if(note===null)return; // cancelled
-  rec.note=note.trim();
-  btn.textContent=rec.note?'📝':'➕';
+  var recId = btn.dataset.recid;
+  var rec = (window._attRoster||[]).find(function(r){ return r.id===recId; });
+  if (!rec) return;
+  var note = prompt('Note for ' + rec.name + ' (leave blank to remove):', rec.note||'');
+  if (note === null) return;
+  rec.note = note.trim();
+  btn.textContent = rec.note ? '📝' : '➕';
 }
 
 function attDeleteTemp(btn) {
-  var recId=btn.dataset.recid;
-  if(!confirm('Remove this day laborer from today\'s attendance?'))return;
-  window._attRoster=window._attRoster.filter(function(r){return r.id!==recId;});
+  var recId = btn.dataset.recid;
+  if (!confirm('Remove this day laborer?')) return;
+  window._attRoster = (window._attRoster||[]).filter(function(r){ return r.id!==recId; });
   deleteAttendanceRecord(recId);
   renderAttendance();
 }
 
 function attAddLaborer() {
-  var name=(prompt('Day laborer name:')||'').trim();
-  if(!name)return;
-  var dateStr=window._attDate||todayStr();
-  var rec={id:'att_temp_'+Date.now(),date:dateStr,crewId:'temp',name:name,role:'Day Laborer',status:'present',note:''};
-  if(!window._attRoster)window._attRoster=[];
+  var name = (prompt('Day laborer name:')||'').trim();
+  if (!name) return;
+  var dateStr = window._attDate || todayStr();
+  var rec = { id:'att_temp_'+Date.now(), date:dateStr, crewId:'temp', name:name, role:'Day Laborer', status:'present', note:'' };
+  if (!window._attRoster) window._attRoster = [];
   window._attRoster.push(rec);
   renderAttendance();
 }
 
 function attSaveDay() {
-  if(!window._attRoster||!window._attRoster.length){toast('Nothing to save');return;}
-  window._attRoster.forEach(function(rec){ saveAttendanceRecord(rec); });
+  var roster = window._attRoster || [];
+  if (!roster.length) { toast('No crew to save'); return; }
+  roster.forEach(function(rec){ saveAttendanceRecord(rec); });
   toast('Attendance saved ✓');
 }
 
-function attExportReport() {
-  var rFrom=window._attRptFrom||'';
-  var rTo=window._attRptTo||'';
-  var recs=state.attendance||[];
-  var filtered=recs;
-  if(rFrom)filtered=filtered.filter(function(r){return r.date>=rFrom;});
-  if(rTo)filtered=filtered.filter(function(r){return r.date<=rTo;});
-  var dates=[]; filtered.forEach(function(r){if(!dates.includes(r.date))dates.push(r.date);}); dates.sort();
-  var people={}; filtered.forEach(function(r){if(!people[r.name])people[r.name]={name:r.name,role:r.role||'',records:{}}; people[r.name].records[r.date]=r;});
-  var peopleList=Object.values(people).sort(function(a,b){return a.name.localeCompare(b.name);});
-  var rangeLabel=(rFrom&&rTo)?rFrom+' to '+rTo:(rFrom?'From '+rFrom:(rTo?'To '+rTo:'All dates'));
+function attExportPDF() {
+  var rFrom = window._attRptFrom || '';
+  var rTo   = window._attRptTo   || '';
+  var recs  = (state.attendance||[]).slice();
+  if (rFrom) recs = recs.filter(function(r){ return r.date>=rFrom; });
+  if (rTo)   recs = recs.filter(function(r){ return r.date<=rTo; });
 
-  var rows=peopleList.map(function(p){
+  var dates = [];
+  recs.forEach(function(r){ if(!dates.includes(r.date)) dates.push(r.date); });
+  dates.sort();
+
+  var people = {};
+  recs.forEach(function(r){
+    if(!people[r.name]) people[r.name]={name:r.name,role:r.role||'',records:{}};
+    people[r.name].records[r.date]=r;
+  });
+  var peopleList=Object.values(people).sort(function(a,b){return a.name.localeCompare(b.name);});
+
+  var rangeLabel = (rFrom&&rTo) ? (rFrom+' to '+rTo) : (rFrom?'From '+rFrom:(rTo?'To '+rTo:'All dates'));
+
+  var statusColors = { present:'#16a34a', absent:'#dc2626', late:'#d97706', halfday:'#ea580c' };
+  var statusBgs    = { present:'#dcfce7', absent:'#fee2e2', late:'#fef3c7', halfday:'#ffedd5' };
+
+  var dateHdrs = dates.map(function(d){
+    var dt=new Date(d+'T12:00:00');
+    return '<th style="font-size:10px;color:#6b7280;padding:4px;text-align:center;white-space:nowrap;border:1px solid #e5e7eb;">'
+      +dt.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</th>';
+  }).join('');
+
+  var tableRows = peopleList.map(function(p){
     var totals={present:0,absent:0,late:0,halfday:0};
-    dates.forEach(function(d){var rec=p.records[d];var st=rec?rec.status||'present':'';if(totals[st]!==undefined)totals[st]++;});
     var cells=dates.map(function(d){
       var rec=p.records[d];
-      if(!rec)return '<td style="text-align:center;color:#9ca3af;font-size:12px;">—</td>';
-      var sm=statusMeta(rec.status||'present');
-      return '<td style="text-align:center;padding:4px;">'
-        +'<div style="width:26px;height:26px;border-radius:50%;background:'+sm.bg.replace('var(--green)','#dcfce7').replace('var(--red)','#fee2e2').replace('var(--yellow)','#fef9c3').replace('var(--orange)','#ffedd5')+';border:1px solid #e5e7eb;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:'+sm.color.replace('var(--green)','#16a34a').replace('var(--red)','#dc2626').replace('var(--yellow)','#ca8a04').replace('var(--orange)','#ea580c')+';margin:0 auto;">'
-        +sm.label[0]+'</div>'
-        +(rec.note?'<div style="font-size:9px;color:#6b7280;margin-top:2px;" title="'+rec.note+'">📝</div>':'')
+      if(!rec) return '<td style="text-align:center;color:#9ca3af;font-size:11px;border:1px solid #e5e7eb;">—</td>';
+      var st=rec.status||'present'; totals[st]=(totals[st]||0)+1;
+      var sm=statusMeta(st);
+      return '<td style="text-align:center;padding:4px;border:1px solid #e5e7eb;">'
+        +'<div title="'+(rec.note||'')+'" style="width:26px;height:26px;border-radius:50%;'
+        +'background:'+(statusBgs[st]||'#f3f4f6')+';display:flex;align-items:center;justify-content:center;'
+        +'font-size:11px;font-weight:800;color:'+(statusColors[st]||'#374151')+';margin:0 auto;">'
+        +sm.label[0]+'</div>'+(rec.note?'<div style="font-size:9px;">📝</div>':'')
         +'</td>';
     }).join('');
     return '<tr style="border-bottom:1px solid #f3f4f6;">'
-      +'<td style="padding:8px 6px;font-weight:700;font-size:13px;white-space:nowrap;">'+p.name+'<br><span style="font-size:10px;color:#6b7280;font-weight:400;">'+p.role+'</span></td>'
+      +'<td style="padding:8px 6px;font-weight:700;font-size:13px;white-space:nowrap;border:1px solid #e5e7eb;">'+p.name
+      +(p.role?'<div style="font-size:10px;color:#6b7280;font-weight:400;">'+p.role+'</div>':'')+'</td>'
       +cells
-      +'<td style="text-align:center;font-weight:800;color:#16a34a;font-size:13px;">'+totals.present+'</td>'
-      +'<td style="text-align:center;font-weight:800;color:#dc2626;font-size:13px;">'+totals.absent+'</td>'
-      +'<td style="text-align:center;font-weight:800;color:#ca8a04;font-size:13px;">'+totals.late+'</td>'
-      +'<td style="text-align:center;font-weight:800;color:#ea580c;font-size:13px;">'+totals.halfday+'</td>'
+      +'<td style="text-align:center;font-weight:800;color:#16a34a;border:1px solid #e5e7eb;">'+(totals.present||0)+'</td>'
+      +'<td style="text-align:center;font-weight:800;color:#dc2626;border:1px solid #e5e7eb;">'+(totals.absent||0)+'</td>'
+      +'<td style="text-align:center;font-weight:800;color:#d97706;border:1px solid #e5e7eb;">'+(totals.late||0)+'</td>'
+      +'<td style="text-align:center;font-weight:800;color:#ea580c;border:1px solid #e5e7eb;">'+(totals.halfday||0)+'</td>'
       +'</tr>';
   }).join('');
 
-  var dateHdrs=dates.map(function(d){var dt=new Date(d+'T12:00:00');return '<th style="font-size:10px;color:#6b7280;padding:4px 2px;text-align:center;white-space:nowrap;">'+dt.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</th>';}).join('');
-
   var html='<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Attendance Report</title>'
-    +'<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;padding:24px;color:#111;}table{width:100%;border-collapse:collapse;}th{text-align:left;padding:6px;background:#f9fafb;font-size:11px;}tr:hover{background:#f9fafb;}@media print{body{padding:8px;}}</style>'
-    +'</head><body>'
-    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;">'
-    +'<div><div style="font-size:22px;font-weight:800;">Diamond Landscapes</div><div style="font-size:15px;color:#6b7280;">Attendance Report &middot; '+rangeLabel+'</div></div>'
-    +'<div style="text-align:right;font-size:12px;color:#6b7280;">Generated '+new Date().toLocaleDateString()+'</div></div>'
-    +'<div style="display:flex;gap:16px;margin-bottom:16px;">'
-    +ATT_STATUSES.map(function(s){return '<div style="font-size:12px;"><strong>'+s.label[0]+'</strong> = '+s.label+'</div>';}).join('')
-    +'</div>'
-    +'<table><thead><tr><th>Name</th>'+dateHdrs
-    +'<th style="text-align:center;color:#16a34a;">✓</th><th style="text-align:center;color:#dc2626;">✗</th><th style="text-align:center;color:#ca8a04;">L</th><th style="text-align:center;color:#ea580c;">½</th>'
-    +'</tr></thead><tbody>'+rows+'</tbody></table>'
-    +'<div style="margin-top:20px;font-size:11px;color:#9ca3af;text-align:center;">Diamond Landscapes &middot; Attendance Report &middot; '+new Date().toLocaleDateString()+'</div>'
+    +'<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:24px;color:#111;}'
+    +'table{border-collapse:collapse;width:100%;}th{background:#f9fafb;padding:6px;font-size:11px;}'
+    +'@media print{.no-print{display:none!important;}body{padding:8px;}}</style></head><body>'
+    +'<div style="display:flex;justify-content:space-between;margin-bottom:20px;">'
+    +'<div><div style="font-size:22px;font-weight:800;">Diamond Landscapes</div>'
+    +'<div style="color:#6b7280;">Attendance Report &middot; '+rangeLabel+'</div></div>'
+    +'<div style="font-size:11px;color:#6b7280;">Generated '+new Date().toLocaleDateString()+'</div></div>'
+    +'<div style="display:flex;gap:16px;margin-bottom:12px;font-size:12px;">'
+    +'<span><b>P</b> = Present</span><span><b>A</b> = Absent</span><span><b>L</b> = Late</span><span><b>H</b> = Half Day</span></div>'
+    +'<table><thead><tr><th style="text-align:left;padding:6px;border:1px solid #e5e7eb;">Name</th>'
+    +dateHdrs
+    +'<th style="text-align:center;color:#16a34a;border:1px solid #e5e7eb;font-size:12px;">✓</th>'
+    +'<th style="text-align:center;color:#dc2626;border:1px solid #e5e7eb;font-size:12px;">✗</th>'
+    +'<th style="text-align:center;color:#d97706;border:1px solid #e5e7eb;font-size:12px;">L</th>'
+    +'<th style="text-align:center;color:#ea580c;border:1px solid #e5e7eb;font-size:12px;">½</th>'
+    +'</tr></thead><tbody>'+tableRows+'</tbody></table>'
+    +'<div style="margin-top:20px;font-size:11px;color:#9ca3af;text-align:center;">Diamond Landscapes &middot; Attendance &middot; '+new Date().toLocaleDateString()+'</div>'
     +'</body></html>';
 
   var overlay=document.createElement('div');
-  overlay.style.cssText='position:fixed;inset:0;background:#fff;z-index:9999;overflow-y:auto;padding:16px 16px 100px;';
+  overlay.style.cssText='position:fixed;inset:0;background:#fff;z-index:9999;overflow-y:auto;padding:16px 16px 90px;';
+  overlay.setAttribute('data-att-pdf','1');
   overlay.innerHTML=html;
-  var bar='<div style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:2px solid #e5e7eb;padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;z-index:10000;">'
-    +'<button onclick="window.print()" style="flex:1;padding:10px;border-radius:10px;background:#16a34a;color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;">🖨 Print / Save PDF</button>'
-    +'<button onclick="this.closest(\'div\').parentElement.remove()" style="padding:10px 18px;border-radius:10px;background:#6b7280;color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;">✕ Close</button>'
+  var bar='<div class="no-print" style="position:fixed;bottom:0;left:0;right:0;background:#fff;'
+    +'border-top:2px solid #e5e7eb;padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom));'
+    +'display:flex;gap:8px;z-index:10000;">'
+    +'<button onclick="window.print()" style="flex:1;padding:10px;border-radius:10px;background:#16a34a;'
+    +'color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;">🖨 Print / Save PDF</button>'
+    +'<button onclick="attClosePDFOverlay()" style="padding:10px 18px;'
+    +'border-radius:10px;background:#6b7280;color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;">✕ Close</button>'
     +'</div>';
   overlay.innerHTML+=bar;
   document.body.appendChild(overlay);
@@ -5076,51 +5158,6 @@ gsLoad().then(() => {
   }).catch(() => {
     // offline — cached list is already showing, nothing to do
   });
-}
-
-function ls_crewSelected(crewId) {
-  const c = state.crew.find(x => x.id === crewId);
-  if (!c) return;
-  if (!c.pin) { ls_selectCrew(crewId); return; }
-  const nameArea = document.getElementById('ls-crew-names');
-  window._crewPinBuffer = '';
-  nameArea.innerHTML = `
-    <div style="text-align:center;padding:8px 0 14px;">
-      <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#16a34a,#2dd4bf);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;color:white;margin:0 auto 10px;">${c.name.trim()[0].toUpperCase()}</div>
-      <div style="font-size:17px;font-weight:800;color:white;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">${c.name}</div>
-      <div style="font-size:12px;color:#6b8f6b;margin-top:2px;">Enter your PIN</div>
-    </div>
-    <div style="display:flex;justify-content:center;gap:16px;margin-bottom:6px;">
-      <div class="pin-dot" id="cpd1"></div><div class="pin-dot" id="cpd2"></div>
-      <div class="pin-dot" id="cpd3"></div><div class="pin-dot" id="cpd4"></div>
-    </div>
-    <div id="crew-pin-error" style="font-size:13px;color:#f87171;text-align:center;min-height:18px;font-weight:700;margin-bottom:8px;"></div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%;max-width:300px;margin:0 auto;">
-      ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => k===''?'<div></div>':`<button onclick="ls_crewPinDigit('${c.id}','${k}')" class="ls-key">${k}</button>`).join('')}
-    </div>
-    <button onclick="ls_showCrewNames()" style="margin-top:14px;background:none;border:none;color:#6b8f6b;font-size:13px;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;text-decoration:underline;">← Back</button>
-  `;
-}
-
-window._crewPinBuffer = '';
-function ls_crewPinDigit(crewId, k) {
-  if (k === '⌫') { window._crewPinBuffer = window._crewPinBuffer.slice(0,-1); }
-  else if (window._crewPinBuffer.length < 4) { window._crewPinBuffer += String(k); }
-  for (var i=1;i<=4;i++) { const d=document.getElementById('cpd'+i); if(d) d.className='pin-dot'+(i<=window._crewPinBuffer.length?' filled':''); }
-  if (window._crewPinBuffer.length === 4) {
-    setTimeout(function() {
-      const c = state.crew.find(x => x.id === crewId);
-      if (c && window._crewPinBuffer === c.pin) {
-        ls_selectCrew(crewId);
-      } else {
-        const e = document.getElementById('crew-pin-error');
-        if(e) e.textContent='✕ Incorrect PIN';
-        window._crewPinBuffer='';
-        for(var i=1;i<=4;i++){const d=document.getElementById('cpd'+i);if(d)d.className='pin-dot';}
-        setTimeout(function(){const e=document.getElementById('crew-pin-error');if(e)e.textContent='';},1500);
-      }
-    },80);
-  }
 }
 
 function ls_selectCrew(crewId) {
@@ -5467,9 +5504,21 @@ function deleteAndSync(table, id) {
 
 // ── auto-refresh every 30 seconds (so manager sees crew updates live) ─────
 function startAutoSync() {
+  // Poll every 8 seconds so work order completions appear quickly
   setInterval(async () => {
-    if (syncOnline) await gsLoad();
-  }, 15000); // 15s — fast enough to see crew completions quickly
+    if (syncOnline) {
+      await gsLoad();
+      // Re-render active tab silently after sync
+      var activeScreen = document.querySelector('.screen.active');
+      if (activeScreen) {
+        var tab = activeScreen.id.replace('screen-','');
+        var renders = { dashboard: renderDashboard, workorders: renderWorkOrders,
+          'wo-crew': renderCrewWorkOrders, attendance: renderAttendance,
+          crew: renderCrew, reports: renderReports };
+        if (renders[tab]) renders[tab]();
+      }
+    }
+  }, 8000);
 }
 
 
@@ -7529,9 +7578,8 @@ function renderWorkOrders() {
     var open = commWOs.filter(function(w) { return w.status === 'open'; }).length;
     var inProgress = commWOs.filter(function(w) { return w.status === 'in_progress'; }).length;
     var completed = commWOs.filter(function(w) { return w.status === 'completed'; }).length;
-    var archived = commWOs.filter(function(w) { return w.status === 'archived'; }).length;
-    var landscape = commWOs.filter(function(w) { return w.type === 'landscape' && w.status !== 'archived'; }).length;
-    var irrigation = commWOs.filter(function(w) { return w.type === 'irrigation' && w.status !== 'archived'; }).length;
+    var landscape = commWOs.filter(function(w) { return w.type === 'landscape'; }).length;
+    var irrigation = commWOs.filter(function(w) { return w.type === 'irrigation'; }).length;
 
     html += '<div class="card" style="cursor:pointer;margin-bottom:12px;" onclick="openCommunityWO(\'' + comm.replace(/'/g,"\\'") + '\')">' +
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">' +
@@ -7549,7 +7597,6 @@ function renderWorkOrders() {
         (open ? '<span class="badge badge-red">' + open + ' open</span>' : '') +
         (inProgress ? '<span class="badge badge-yellow">' + inProgress + ' in progress</span>' : '') +
         (completed ? '<span class="badge badge-green">' + completed + ' completed</span>' : '') +
-        (archived ? '<span class="badge" style="background:rgba(148,163,184,.15);color:var(--text3);border:1px solid var(--border2);">&#x1F4E6; ' + archived + ' archived</span>' : '') +
       '</div>' +
       '</div>';
   });
@@ -7559,239 +7606,111 @@ function renderWorkOrders() {
 
 // ── Open community detail ─────────────────────────────────────────────────────
 function openCommunityWO(community) {
-  window._woVillage=''; window._woType='all'; window._woDateFrom=''; window._woDateTo='';
-  window._woBulkMode=false; window._woBulkSel=new Set();
-  window._woShowArch=false; window._woArchVillage=''; window._woArchDateFrom=''; window._woArchDateTo='';
+  window._woVillage = ''; // reset village filter for new community
+  window._woType = 'all';
+  var wos = (state.workOrders || []).filter(function(w) { return w.community === community; });
 
-  var panel=document.createElement('div'); panel.id='wo-community-panel'; panel.className='panel open';
+  var panel = document.createElement('div');
+  panel.id = 'wo-community-panel';
+  panel.className = 'panel open';
+
+  var tabs = ['all', 'landscape', 'irrigation'];
+  var activeType = 'all';
+
+  function buildPanel(type, villageFilter) {
+    var vf = (villageFilter !== undefined ? villageFilter : (window._woVillage || '')).toString().trim();
+    var filtered = type === 'all' ? wos : wos.filter(function(w) { return w.type === type; });
+    if (vf !== '') {
+      filtered = filtered.filter(function(w) { return (w.village||'').toString().trim() === vf; });
+    }
+    function sortByVillage(arr) {
+      return arr.slice().sort(function(a, b) {
+        var va = parseInt(a.village) || 0;
+        var vb = parseInt(b.village) || 0;
+        return va - vb;
+      });
+    }
+    var open   = sortByVillage(filtered.filter(function(w) { return w.status === 'open'; }));
+    var inProg = sortByVillage(filtered.filter(function(w) { return w.status === 'in_progress'; }));
+    var done   = sortByVillage(filtered.filter(function(w) { return w.status === 'completed'; }));
+
+    var woRows = '';
+    [['🔴 Open', open, 'red'], ['🟡 In Progress', inProg, 'yellow'], ['🟢 Completed', done, 'green']].forEach(function(group) {
+      var label = group[0]; var items = group[1]; var color = group[2];
+      if (!items.length) return;
+      woRows += '<div class="sec-title" style="margin-top:14px;">' + label + ' (' + items.length + ')</div>';
+      items.forEach(function(w) {
+        var crew = (state.crew || []).find(function(c) { return c.id === w.assignedTo; });
+        woRows += '<div class="card-flat" style="margin-bottom:8px;cursor:pointer;border-left:3px solid var(--' + color + ');" onclick="openWODetail(\'' + w.id + '\')">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
+            '<div style="flex:1;min-width:0;">' +
+              '<div style="font-weight:700;font-size:13px;">#' + (w.woNumber||w.id.slice(-4)) + ' · ' + (w.ownerName||'') + '</div>' +
+              '<div style="font-size:11px;color:var(--text3);">' + (w.address||'') + '</div>' +
+              '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + (w.requestType||'') + '</div>' +
+            '</div>' +
+            '<div style="text-align:right;flex-shrink:0;">' +
+              (crew ? '<div style="font-size:11px;color:var(--teal);">👷 ' + crew.name + '</div>' : '<div style="font-size:11px;color:var(--text4);">Unassigned</div>') +
+              (w.completedOn ? '<div style="font-size:10px;color:var(--green);">✓ ' + w.completedOn + '</div>' : '') +
+            '</div>' +
+          '</div>' +
+          (w.details ? '<div style="font-size:11px;color:var(--text3);margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">' + w.details + '</div>' : '') +
+        '</div>';
+      });
+    });
+
+    panel.innerHTML =
+      '<div class="panel-head">' +
+        '<button class="close-btn" onclick="document.getElementById(\'wo-community-panel\').remove();renderWorkOrders();">✕</button>' +
+        '<div class="panel-title">' + community + '</div>' +
+      '</div>' +
+      '<div style="padding:14px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;">' +
+        '<button class="pill' + (type==='all'?' active':'') + '" onclick="woCommType(\'all\')">All (' + wos.length + ')</button>' +
+        '<button class="pill' + (type==='landscape'?' active':'') + '" onclick="woCommType(\'landscape\')">🌿 Landscaping</button>' +
+        '<button class="pill' + (type==='irrigation'?' active':'') + '" onclick="woCommType(\'irrigation\')">💧 Irrigation</button>' +
+        '<button class="btn-sm" onclick="openUploadWO(\'' + community.replace(/'/g,"\\'") + '\')" style="margin-left:auto;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">⬆ Upload List</button>' +
+        '<button class="btn-sm" onclick="openWOReport(\'' + community.replace(/'/g,"\\'") + '\')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">📄 Report</button>' +
+      '</div>' +
+      (function() {
+        var villages = [];
+        wos.forEach(function(w) {
+          var v = (w.village||'').toString().trim();
+          if (v && !villages.includes(v)) villages.push(v);
+        });
+        villages.sort(function(a,b) { return (parseInt(a)||0) - (parseInt(b)||0); });
+        var opts = '<option value="">All Villages</option>';
+        villages.forEach(function(v) { opts += '<option value="' + v + '"' + (window._woVillage===v?' selected':'') + '>Village ' + v + '</option>'; });
+        return '<div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">' +
+          '<div style="font-size:12px;font-weight:700;color:var(--text3);white-space:nowrap;">🏘 Village</div>' +
+          '<select id="wo-village-filter" onchange="woFilterVillage(this.value)"' +
+            ' style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;font-weight:700;">' +
+            opts +
+          '</select>' +
+          '<div style="font-size:11px;color:var(--text4);white-space:nowrap;">' + (window._woVillage ? filtered.length + ' result' + (filtered.length!==1?'s':'') : wos.length + ' total') + '</div>';
+      })() +
+      '</div>' +
+      '<div style="flex:1;overflow-y:auto;padding:14px;" id="wo-comm-body">' +
+        (filtered.length ? woRows : '<div style="text-align:center;color:var(--text4);font-size:13px;padding:32px;">No work orders yet.<br><button class="btn btn-green" style="margin-top:12px;" onclick="openUploadWO(\'' + community.replace(/'/g,"\\'") + '\')">⬆ Upload List</button></div>') +
+      '</div>';
+    window._woCommunity = community;
+    window._woType = type;
+  }
+
+  buildPanel('all');
   document.body.appendChild(panel);
 
-  function allWOs(){return (state.workOrders||[]).filter(function(w){return w.community===community;});}
-  function activeWOs(){return allWOs().filter(function(w){return w.status!=='archived'&&w.status!=='placeholder';});}
-  function archivedWOs(){return allWOs().filter(function(w){return w.status==='archived';});}
-  function sortV(a){return a.slice().sort(function(a,b){return (parseInt(a.village)||0)-(parseInt(b.village)||0);});}
-  function aLabel(w){
-    var c=(state.crew||[]).find(function(c){return c.id===w.assignedTo;});
-    if(w.assignedTo==='__team__') return '<div style="font-size:11px;color:var(--blue);font-weight:700;">&#x1F465; General Team</div>';
-    if(c) return '<div style="font-size:11px;color:var(--teal);">&#x1F477; '+c.name+'</div>';
-    return '<div style="font-size:11px;color:var(--text4);">Unassigned</div>';
-  }
-  function vTag(w){return w.village?' <span style="color:var(--blue);font-weight:700;">V'+w.village+'</span>':'';}
-  function vOpts(pool,cur){
-    var vs=[];pool.forEach(function(w){var v=(w.village||'').toString().trim();if(v&&!vs.includes(v))vs.push(v);});
-    vs.sort(function(a,b){return (parseInt(a)||0)-(parseInt(b)||0);});
-    var o='<option value="">All Villages</option>';
-    vs.forEach(function(v){o+='<option value="'+v+'"'+(cur===v?' selected':'')+'>Village '+v+'</option>';});
-    return o;
-  }
-  function crewOpts(){
-    return '<option value="">-- Select --</option><option value="__team__">&#x1F465; General Team</option>'
-      +(state.crew||[]).map(function(c){return '<option value="'+c.id+'">'+c.name+'</option>';}).join('');
-  }
-  function applyDF(arr,df,dt){
-    if(!df&&!dt)return arr;
-    return arr.filter(function(w){
-      var dc=w.dateCompleted||w.completedOn||'';if(!dc)return false;
-      var d=new Date(dc);
-      if(df&&d<new Date(df))return false;
-      if(dt&&d>new Date(dt+'T23:59:59'))return false;
-      return true;
-    });
-  }
-
-  function woCard(w,color){
-    var bulk=window._woBulkMode,sel=window._woBulkSel;
-    var hdr='#'+(w.woNumber||w.id.slice(-4))+' &middot; '+(w.ownerName||'');
-    var sub=(w.address||'')+vTag(w);
-    if(bulk){
-      var chk=sel.has(w.id);
-      return '<label style="display:flex;align-items:flex-start;gap:10px;background:var(--bg3);border-radius:10px;padding:10px 12px;margin-bottom:8px;border-left:3px solid var(--'+color+');cursor:pointer;'+(chk?'outline:2px solid var(--blue);outline-offset:-2px;':'')+'box-sizing:border-box;">'
-        +'<input type="checkbox" data-woid="'+w.id+'" '+(chk?'checked ':'')+' onchange="woBulkToggle(this)" style="width:18px;height:18px;accent-color:var(--blue);flex-shrink:0;margin-top:2px;cursor:pointer;"/>'
-        +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;">'+hdr+'</div>'
-        +'<div style="font-size:11px;color:var(--text3);">'+sub+'</div>'
-        +'<div style="font-size:11px;color:var(--text3);">'+(w.requestType||'')+'</div>'+aLabel(w)+'</div></label>';
-    }
-    return '<div class="card-flat" style="margin-bottom:8px;cursor:pointer;border-left:3px solid var(--'+color+');" onclick="openWODetail(\''+w.id+'\')">'
-      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-      +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;">'+hdr+'</div>'
-      +'<div style="font-size:11px;color:var(--text3);">'+sub+'</div>'
-      +'<div style="font-size:11px;color:var(--text3);margin-top:2px;">'+(w.requestType||'')+'</div></div>'
-      +'<div style="text-align:right;flex-shrink:0;">'+aLabel(w)
-      +(w.dateCompleted||w.completedOn?'<div style="font-size:10px;color:var(--green);">&#x2713; '+(w.dateCompleted||w.completedOn)+'</div>':'')
-      +'</div></div>'+(w.details?'<div style="font-size:11px;color:var(--text3);margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">'+w.details+'</div>':'')+'</div>';
-  }
-
-  function archCard(w){
-    return '<div class="card-flat" style="margin-bottom:8px;border-left:3px solid var(--text4);opacity:0.85;">'
-      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-      +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;color:var(--text3);">#'+(w.woNumber||w.id.slice(-4))+' &middot; '+(w.ownerName||'')+'</div>'
-      +'<div style="font-size:11px;color:var(--text4);">'+(w.address||'')+vTag(w)+'</div>'
-      +'<div style="font-size:11px;color:var(--text4);">'+(w.requestType||'')+(w.archivedAt?' &middot; archived '+w.archivedAt:'')+'</div></div>'
-      +'<button data-woid="'+w.id+'" onclick="unarchiveWO(this.dataset.woid)" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.3);cursor:pointer;white-space:nowrap;flex-shrink:0;">&#x21A9; Restore</button>'
-      +'</div></div>';
-  }
-
-  function build(){
-    var type=window._woType||'all',vf=window._woVillage||'',df=window._woDateFrom||'',dt=window._woDateTo||'';
-    var bulk=window._woBulkMode,sel=window._woBulkSel;
-    var avf=window._woArchVillage||'',adf=window._woArchDateFrom||'',adt=window._woArchDateTo||'';
-    var base=activeWOs().filter(function(w){return w.status!=='placeholder';});
-    var typed=type==='all'?base:base.filter(function(w){return w.type===type;});
-    var filtered=typed;
-    if(vf)filtered=filtered.filter(function(w){return (w.village||'').toString().trim()===vf;});
-    filtered=applyDF(filtered,df,dt);
-    var openWOs=sortV(filtered.filter(function(w){return w.status==='open';}));
-    var inProg=sortV(filtered.filter(function(w){return w.status==='in_progress';}));
-    var done=sortV(filtered.filter(function(w){return w.status==='completed';}));
-    var woRows='';
-    [['Open',openWOs,'red'],['In Progress',inProg,'yellow'],['Completed',done,'green']].forEach(function(g){
-      if(!g[1].length)return;
-      woRows+='<div class="sec-title" style="margin-top:14px;">'+g[0]+' ('+g[1].length+')</div>';
-      g[1].forEach(function(w){woRows+=woCard(w,g[2]);});
-    });
-    var arch=archivedWOs();
-    var archF=arch;
-    if(avf)archF=archF.filter(function(w){return (w.village||'').toString().trim()===avf;});
-    archF=applyDF(archF,adf,adt);
-    archF.sort(function(a,b){return new Date(b.archivedAt||0)-new Date(a.archivedAt||0);});
-    var hasF=vf||df||dt,hasAF=avf||adf||adt;
-    var commStr=community.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-    var bulkBar=bulk
-      ?'<div style="background:var(--bg2);border-top:2px solid var(--blue);padding:10px 14px;">'
-        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
-        +'<div style="font-size:13px;font-weight:800;color:var(--blue);" id="wo-bulk-count">'+sel.size+' selected</div>'
-        +'<button id="woba-all" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);cursor:pointer;font-weight:700;">Select All</button>'
-        +'<button id="woba-clr" style="font-size:11px;padding:4px 10px;border-radius:8px;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);cursor:pointer;">Clear</button>'
-        +'<button id="woba-del" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);cursor:pointer;font-weight:700;margin-left:auto;">&#x1F5D1; Delete</button>'
-        +'</div>'
-        +'<div style="display:flex;gap:8px;">'
-        +'<select id="wo-bulk-crew" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:8px 10px;color:var(--text);font-size:13px;">'+crewOpts()+'</select>'
-        +'<button id="woba-asgn" style="padding:8px 18px;border-radius:10px;background:var(--blue);color:#fff;border:none;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">Assign</button>'
-        +'</div></div>'
-      :'';
-    panel.innerHTML=
-      '<div class="panel-head"><button class="close-btn" id="wop-close">&#x2715;</button><div class="panel-title">'+community+'</div></div>'
-      +'<div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'
-      +'<button class="pill'+(type==='all'?' active':'')+'" id="wop-all">All ('+base.length+')</button>'
-      +'<button class="pill'+(type==='landscape'?' active':'')+'" id="wop-land">&#x1F33F; Land</button>'
-      +'<button class="pill'+(type==='irrigation'?' active':'')+'" id="wop-irr">&#x1F4A7; Irr</button>'
-      +'<button id="wop-bulk" style="font-size:12px;padding:5px 11px;border-radius:8px;font-weight:700;cursor:pointer;border:1px solid '+(bulk?'rgba(248,113,113,.4)':'rgba(96,165,250,.3)')+';background:'+(bulk?'rgba(248,113,113,.12)':'rgba(96,165,250,.15)')+';color:'+(bulk?'var(--red)':'var(--blue)')+';">'+(bulk?'&#x2715; Cancel':'&#x2611; Bulk')+'</button>'
-      +'<button id="wop-create" class="btn-sm" style="margin-left:auto;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">&#x2795; Create</button>'
-      +'<button id="wop-upload" class="btn-sm" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">&#x2B06; Upload</button>'
-      +'<button id="wop-report" class="btn-sm" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">&#x1F4C4; Report</button>'
-      +'<button id="wop-arch-btn" class="btn-sm" style="background:rgba(148,163,184,.12);color:var(--text3);border:1px solid var(--border2);">&#x1F4E6; Archive</button>'
-      +'</div>'
-      +'<div style="padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg2);">'
-      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">'
-      +'<div style="font-size:11px;font-weight:700;color:var(--text3);white-space:nowrap;">&#x1F3D8; Village</div>'
-      +'<select id="wo-village-filter" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;font-weight:700;">'+vOpts(base,vf)+'</select>'
-      +'</div>'
-      +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">'
-      +'<div style="font-size:11px;font-weight:700;color:var(--text3);white-space:nowrap;">&#x1F4C5; Dates</div>'
-      +'<input type="date" id="wo-date-from" value="'+df+'" style="flex:1;min-width:90px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;"/>'
-      +'<span style="font-size:11px;color:var(--text4);">to</span>'
-      +'<input type="date" id="wo-date-to" value="'+dt+'" style="flex:1;min-width:90px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;"/>'
-      +(hasF?'<button id="wo-filter-clear" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);cursor:pointer;font-weight:700;white-space:nowrap;">&#x2715; Clear</button>':'')
-      +'</div>'
-      +(hasF?'<div style="font-size:11px;color:var(--teal);margin-top:4px;font-weight:700;">'+filtered.length+' result'+(filtered.length!==1?'s':'')+' matching filters</div>':'')
-      +'</div>'
-      +'<div style="flex:1;overflow-y:auto;padding:14px;" id="wo-comm-body">'
-      +(filtered.length?woRows:'<div style="text-align:center;color:var(--text4);font-size:13px;padding:32px;">'+(hasF?'No WOs match these filters.<br><button id="wo-filter-clear2" class="btn btn-outline" style="margin-top:12px;font-size:13px;">Clear Filters</button>':'No work orders yet.<br><button id="wop-upload2" class="btn btn-green" style="margin-top:12px;">&#x2B06; Upload List</button>')+'</div>')
-      +(arch.length
-        ?'<div style="margin-top:16px;">'
-          +'<button id="wop-arch-toggle" style="display:flex;justify-content:space-between;align-items:center;width:100%;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer;box-sizing:border-box;">'
-          +'<div style="display:flex;align-items:center;gap:8px;"><span>&#x1F4E6;</span><span style="font-size:13px;font-weight:700;color:var(--text3);">Archived ('+arch.length+')</span></div>'
-          +'<span style="font-size:13px;color:var(--text4);">'+(window._woShowArch?'&#x25B2; Hide':'&#x25BC; Show')+'</span>'
-          +'</button>'
-          +(window._woShowArch
-            ?'<div style="margin-top:10px;background:var(--bg2);border-radius:10px;padding:10px;">'
-              +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border);">'
-              +'<div style="font-size:11px;font-weight:700;color:var(--text3);">&#x1F3D8;</div>'
-              +'<select id="wo-arch-village" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;">'+vOpts(arch,avf)+'</select>'
-              +'<div style="font-size:11px;font-weight:700;color:var(--text3);">&#x1F4C5;</div>'
-              +'<input type="date" id="wo-arch-from" value="'+adf+'" style="flex:1;min-width:80px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;"/>'
-              +'<span style="font-size:11px;color:var(--text4);">to</span>'
-              +'<input type="date" id="wo-arch-to" value="'+adt+'" style="flex:1;min-width:80px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;"/>'
-              +(hasAF?'<button id="wo-arch-clear" style="font-size:11px;padding:4px 8px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);cursor:pointer;font-weight:700;">&#x2715;</button>':'')
-              +'</div>'
-              +(hasAF?'<div style="font-size:11px;color:var(--teal);margin-bottom:8px;font-weight:700;">'+archF.length+' of '+arch.length+' archived</div>':'')
-              +(archF.length?archF.map(archCard).join(''):'<div style="text-align:center;color:var(--text4);font-size:12px;padding:16px;">No archived WOs match</div>')
-              +'</div>'
-            :'')
-          +'</div>'
-        :'')
-      +bulkBar
-      +'</div>';
-
-    window._woCommunity=community; window._woType=type;
-    function q(id){return document.getElementById(id);}
-    q('wop-close').onclick=function(){panel.remove();renderWorkOrders();};
-    q('wop-all').onclick=function(){window._woType='all';build();};
-    q('wop-land').onclick=function(){window._woType='landscape';build();};
-    q('wop-irr').onclick=function(){window._woType='irrigation';build();};
-    q('wop-bulk').onclick=function(){window._woBulkMode=!window._woBulkMode;window._woBulkSel.clear();build();};
-    q('wop-create').onclick=function(){openCreateWO(community);};
-    q('wop-upload').onclick=function(){openUploadWO(community);};
-    q('wop-report').onclick=function(){openWOReport(community);};
-    q('wop-arch-btn').onclick=function(){openArchiveWOs(community);};
-    if(q('wop-upload2'))q('wop-upload2').onclick=function(){openUploadWO(community);};
-    if(q('wo-filter-clear'))q('wo-filter-clear').onclick=function(){window._woDateFrom='';window._woDateTo='';window._woVillage='';build();};
-    if(q('wo-filter-clear2'))q('wo-filter-clear2').onclick=function(){window._woDateFrom='';window._woDateTo='';window._woVillage='';build();};
-    q('wo-village-filter').onchange=function(){window._woVillage=this.value;build();};
-    q('wo-date-from').onchange=function(){window._woDateFrom=this.value;build();};
-    q('wo-date-to').onchange=function(){window._woDateTo=this.value;build();};
-    if(q('wop-arch-toggle'))q('wop-arch-toggle').onclick=function(){window._woShowArch=!window._woShowArch;build();};
-    if(q('wo-arch-village'))q('wo-arch-village').onchange=function(){window._woArchVillage=this.value;build();};
-    if(q('wo-arch-from'))q('wo-arch-from').onchange=function(){window._woArchDateFrom=this.value;build();};
-    if(q('wo-arch-to'))q('wo-arch-to').onchange=function(){window._woArchDateTo=this.value;build();};
-    if(q('wo-arch-clear'))q('wo-arch-clear').onclick=function(){window._woArchVillage='';window._woArchDateFrom='';window._woArchDateTo='';build();};
-    if(bulk){
-      window.woBulkToggle=function(cb){
-        if(cb.checked)sel.add(cb.dataset.woid);else sel.delete(cb.dataset.woid);
-        var c=q('wo-bulk-count');if(c)c.textContent=sel.size+' selected';
-        var l=cb.closest('label');if(l){l.style.outline=cb.checked?'2px solid var(--blue)':'';l.style.outlineOffset=cb.checked?'-2px':'';}
-      };
-      q('woba-all').onclick=function(){
-        document.querySelectorAll('#wo-comm-body input[type=checkbox]').forEach(function(cb){
-          cb.checked=true;sel.add(cb.dataset.woid);
-          var l=cb.closest('label');if(l){l.style.outline='2px solid var(--blue)';l.style.outlineOffset='-2px';}
-        });
-        var c=q('wo-bulk-count');if(c)c.textContent=sel.size+' selected';
-      };
-      q('woba-clr').onclick=function(){
-        sel.clear();
-        document.querySelectorAll('#wo-comm-body input[type=checkbox]').forEach(function(cb){
-          cb.checked=false;var l=cb.closest('label');if(l){l.style.outline='';l.style.outlineOffset='';}
-        });
-        var c=q('wo-bulk-count');if(c)c.textContent='0 selected';
-      };
-      q('woba-del').onclick=function(){
-        if(!sel.size){toast('Select at least one WO');return;}
-        if(!confirm('Delete '+sel.size+' work order'+(sel.size!==1?'s':'')+' permanently?'))return;
-        Array.from(sel).forEach(function(id){
-          state.workOrders=(state.workOrders||[]).filter(function(w){return w.id!==id;});
-          gsDelete('workOrders',id);
-        });
-        save();toast(sel.size+' WO'+(sel.size!==1?'s':'')+' deleted');
-        window._woBulkMode=false;window._woBulkSel.clear();
-        renderWorkOrders();panel.remove();openCommunityWO(community);
-      };
-      q('woba-asgn').onclick=function(){
-        var crewId=q('wo-bulk-crew').value;
-        if(!crewId){toast('Select a crew member first');return;}
-        if(!sel.size){toast('Select at least one WO');return;}
-        Array.from(sel).forEach(function(id){
-          var wo=(state.workOrders||[]).find(function(w){return w.id===id;});
-          if(wo){wo.assignedTo=crewId;saveAndSync('workOrders',wo);}
-        });
-        var name=crewId==='__team__'?'General Team':((state.crew||[]).find(function(c){return c.id===crewId;})||{}).name||'Crew';
-        toast(sel.size+' WO'+(sel.size!==1?'s':'')+' assigned to '+name+' \u2713');
-        window._woBulkMode=false;window._woBulkSel.clear();
-        renderWorkOrders();panel.remove();openCommunityWO(community);
-      };
-    }
-  }
-  build();
+  window.woCommType = function(t) {
+    window._woType = t;
+    buildPanel(t, window._woVillage || '');
+  };
+  window.woFilterVillage = function(v) {
+    window._woVillage = v.toString().trim();
+    buildPanel(window._woType || 'all', window._woVillage);
+    // Re-select the option after re-render
+    setTimeout(function() {
+      var sel = document.getElementById('wo-village-filter');
+      if (sel) sel.value = window._woVillage || '';
+    }, 10);
+  };
 }
 
 // ── Upload work order CSV/list ─────────────────────────────────────────────────
@@ -8042,9 +7961,8 @@ function openWODetail(woId) {
   sheet.id = 'wo-detail-sheet';
   sheet.className = 'overlay open';
 
-  var crewOptions = '<option value="">— Unassigned —</option>'
-    + '<option value="__team__"' + (wo.assignedTo === '__team__' ? ' selected' : '') + '>&#x1F465; General Team (All Crew)</option>'
-    + (state.crew || []).map(function(c) {
+  var crewOptions = '<option value="">— Unassigned —</option>' +
+    (state.crew || []).map(function(c) {
       return '<option value="' + c.id + '"' + (wo.assignedTo === c.id ? ' selected' : '') + '>' + c.name + '</option>';
     }).join('');
 
@@ -8150,74 +8068,10 @@ function deleteWO(woId) {
 }
 
 // ── Work Order Report ─────────────────────────────────────────────────────────
-// ── Archive Work Orders ───────────────────────────────────────────────────────────
-function openArchiveWOs(community) {
-  var existing=document.getElementById('wo-archive-sheet');if(existing)existing.remove();
-  var sheet=document.createElement('div');sheet.id='wo-archive-sheet';sheet.className='overlay open';
-  var completedWOs=(state.workOrders||[]).filter(function(w){return w.community===community&&w.status==='completed';});
-  var presets=[{label:'Older than 7 days',days:7},{label:'Older than 30 days',days:30},{label:'Older than 60 days',days:60},{label:'Older than 90 days',days:90}];
-  function countEl(days){var cutoff=new Date(Date.now()-days*864e5);cutoff.setHours(23,59,59,999);return completedWOs.filter(function(w){var dc=w.dateCompleted||w.completedOn||'';if(!dc)return false;return new Date(dc)<=cutoff;}).length;}
-  var presetBtns=presets.map(function(p){
-    var n=countEl(p.days);
-    var btn=document.createElement('button');
-    btn.style.cssText='display:flex;justify-content:space-between;align-items:center;width:100%;padding:12px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer;margin-bottom:8px;box-sizing:border-box;'+(n===0?'opacity:0.45;':'');
-    btn.innerHTML='<span style="font-size:13px;font-weight:700;color:var(--text);">'+p.label+'</span><span class="badge '+(n>0?'badge-yellow':'')+'" style="'+(n===0?'background:var(--bg4);color:var(--text4);':'')+'">'+n+' WO'+(n!==1?'s':'')+'</span>';
-    btn.onclick=function(){confirmArchiveWOs(community,p.days,null);};
-    return btn.outerHTML;
-  }).join('');
-  var closeBtn='<button id="wo-archive-close" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">&#x2715;</button>';
-  var archBtn='<button id="wo-archive-date-btn" style="padding:8px 16px;border-radius:8px;background:var(--blue);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;">Archive</button>';
-  sheet.innerHTML='<div class="sheet" style="max-height:90vh;">'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
-    +'<div class="sheet-title" style="margin-bottom:0;">&#x1F4E6; Archive Completed WOs</div>'+closeBtn+'</div>'
-    +'<div style="font-size:13px;color:var(--text3);margin-bottom:14px;">Archived WOs are hidden from the main view but never deleted. Restore them anytime.</div>'
-    +'<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">ARCHIVE BY AGE</div>'
-    +presetBtns
-    +'<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin:14px 0 8px;">ARCHIVE COMPLETED BEFORE DATE</div>'
-    +'<div style="display:flex;gap:8px;align-items:center;">'
-    +'<input type="date" id="wo-archive-before" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px;color:var(--text);font-size:13px;"/>'+archBtn
-    +'</div></div>';
-  document.body.appendChild(sheet);
-  document.getElementById('wo-archive-close').onclick=function(){sheet.remove();};
-  document.getElementById('wo-archive-date-btn').onclick=function(){
-    var d=document.getElementById('wo-archive-before').value;
-    if(!d){toast('Pick a date first');return;}
-    confirmArchiveWOs(community,null,d);
-  };
-}
-
-function confirmArchiveWOs(community,days,before) {
-  var cutoff=before?new Date(before):new Date(Date.now()-days*864e5);
-  cutoff.setHours(23,59,59,999);
-  var toArchive=(state.workOrders||[]).filter(function(w){
-    if(w.community!==community||w.status!=='completed')return false;
-    var dc=w.dateCompleted||w.completedOn||'';if(!dc)return false;
-    return new Date(dc)<=cutoff;
-  });
-  if(!toArchive.length){toast('No completed WOs match that range');return;}
-  var label=before?'completed before '+new Date(before).toLocaleDateString():'older than '+days+' days';
-  if(!confirm('Archive '+toArchive.length+' work order'+(toArchive.length!==1?'s':'')+' '+label+'? They will be hidden but never deleted.'))return;
-  toArchive.forEach(function(w){w.status='archived';w.archivedAt=new Date().toLocaleDateString();saveAndSync('workOrders',w);});
-  document.getElementById('wo-archive-sheet')?.remove();
-  var panel=document.getElementById('wo-community-panel');
-  if(panel&&window._woCommunity){panel.remove();openCommunityWO(window._woCommunity);}
-  renderWorkOrders();
-  toast(toArchive.length+' WO'+(toArchive.length!==1?'s':'')+' archived &#x2713;');
-}
-
-function unarchiveWO(woId) {
-  var wo=(state.workOrders||[]).find(function(w){return w.id===woId;});
-  if(!wo)return;
-  wo.status='completed';wo.archivedAt='';saveAndSync('workOrders',wo);
-  var panel=document.getElementById('wo-community-panel');
-  if(panel&&window._woCommunity){panel.remove();openCommunityWO(window._woCommunity);}
-  renderWorkOrders();toast('Restored to completed &#x2713;');
-}
-
 function openWOReport(community) {
   var wos = (state.workOrders || []).filter(function(w) { return w.community === community; });
   var completed = wos.filter(function(w) { return w.status === 'completed'; });
-  var open = wos.filter(function(w) { return w.status !== 'completed' && w.status !== 'archived' && w.status !== 'placeholder'; });
+  var open = wos.filter(function(w) { return w.status !== 'completed'; });
 
   var existing = document.getElementById('wo-report-sheet');
   if (existing) existing.remove();
@@ -8333,7 +8187,7 @@ function exportWOPDF(community) {
     return w.community === community && w.status === 'completed';
   });
   var open = (state.workOrders||[]).filter(function(w) {
-    return w.community === community && w.status !== 'completed' && w.status !== 'placeholder' && w.status !== 'archived';
+    return w.community === community && w.status !== 'completed' && w.status !== 'placeholder';
   });
 
   if (!wos.length && !open.length) { toast('No work orders to export'); return; }
@@ -8385,13 +8239,15 @@ function exportWOPDF(community) {
 
   overlay.innerHTML =
     // Buttons (hidden on print)
-    '<div id="pdf-btns" style="position:fixed;bottom:0;left:0;right:0;z-index:10000;background:#fff;border-top:2px solid #e5e7eb;padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">' +
-      '<button onclick="exportWOPDFDownload()" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;flex:1;max-width:180px;">⬇ Download</button>' +
-      '<button onclick="pdfSaveAllPhotos()" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;flex:1;max-width:180px;">⬇ Photos</button>' +
-      '<button onclick="pdfClose()" style="background:#6b7280;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;">✕ Close</button>' +
+    '<div id="pdf-btns" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:24px;">' +
+      '<button onclick="exportWOPDFDownload()" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">⬇ Download Report</button>' +
+      '<button onclick="pdfSaveAllPhotos()" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">⬇ Save All Photos</button>' +
+      '<button onclick="pdfClose()" style="background:#6b7280;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">✕ Close</button>' +
     '</div>' +
-    '<div style="text-align:center;margin-bottom:16px;font-size:12px;color:#6b7280;">' +
+    '<div style="text-align:center;margin-top:8px;font-size:12px;color:#6b7280;">' +
       '📱 iPhone: tap Share (↑) → Print to save as PDF' +
+    '</div>' +
+    '<div style="display:none;"><!-- dummy -->' +
     '</div>' +
     // Report header
     '<div style="max-width:720px;margin:0 auto;">' +
@@ -8501,102 +8357,75 @@ function exportWOReport(community) {
 function renderCrewWorkOrders() {
   var el = document.getElementById('wo-crew-list');
   if (!el) return;
+
   var crewId = state.loggedInCrewId;
-  var crew = crewId ? (state.crew||[]).find(function(c){return c.id===crewId;}) : null;
+  var crew = crewId ? (state.crew || []).find(function(c) { return c.id === crewId; }) : null;
+  var allWOs = state.workOrders || [];
+
+  // Show WOs assigned to this crew member
+  var myWOs = allWOs.filter(function(w) {
+    return (w.assignedTo === crewId || (crew && w.assignedTo === crew.name)) && w.status !== 'completed' && w.status !== 'placeholder';
+  });
+  var doneWOs = allWOs.filter(function(w) {
+    return (w.completedBy === (crew ? crew.name : '') || w.assignedTo === crewId) && w.status === 'completed';
+  }).slice(-10);
+
   if (!crewId) {
     el.innerHTML = '<div class="card" style="text-align:center;color:var(--text4);font-size:13px;padding:24px;">Log in as a crew member to see your work orders</div>';
     return;
   }
-  var allWOs = state.workOrders || [];
-  var myCommunities = [];
-  allWOs.forEach(function(w){
-    if(w.assignedTo===crewId&&w.community&&!myCommunities.includes(w.community)) myCommunities.push(w.community);
-  });
-  var myWOs = allWOs.filter(function(w){
-    if(w.status==='completed'||w.status==='placeholder'||w.status==='archived') return false;
-    if(w.assignedTo===crewId) return true;
-    if(crew&&w.assignedTo===crew.name) return true;
-    if(w.assignedTo==='__team__') return myCommunities.length===0||myCommunities.includes(w.community);
-    return false;
-  });
-  var doneWOs = allWOs.filter(function(w){
-    return w.status==='completed'&&(w.completedBy===(crew?crew.name:'')||w.assignedTo===crewId||(w.assignedTo==='__team__'&&(myCommunities.length===0||myCommunities.includes(w.community))));
-  }).slice(-10);
+
   if (!myWOs.length && !doneWOs.length) {
-    el.innerHTML = '<div class="card" style="text-align:center;padding:32px;"><div style="font-size:40px;margin-bottom:12px;">&#x2705;</div><div style="font-weight:700;font-size:15px;">All caught up!</div><div style="font-size:13px;color:var(--text3);margin-top:6px;">No work orders assigned to you</div></div>';
+    el.innerHTML = '<div class="card" style="text-align:center;padding:32px;">' +
+      '<div style="font-size:40px;margin-bottom:12px;">✅</div>' +
+      '<div style="font-weight:700;font-size:15px;">All caught up!</div>' +
+      '<div style="font-size:13px;color:var(--text3);margin-top:6px;">No work orders assigned to you</div>' +
+      '</div>';
     return;
   }
-  var vf = window._crewWOVillage || '';
-  var villages = [];
-  myWOs.forEach(function(w){var v=(w.village||'').toString().trim();if(v&&!villages.includes(v))villages.push(v);});
-  villages.sort(function(a,b){return (parseInt(a)||0)-(parseInt(b)||0);});
-  var filteredWOs = vf ? myWOs.filter(function(w){return (w.village||'').toString().trim()===vf;}) : myWOs;
+
   var html = '';
-  if (villages.length > 1) {
-    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">';
-    html += '<button class="pill'+(!vf?' active':'')+'" onclick="window._crewWOVillage=\'\';renderCrewWorkOrders()">All ('+myWOs.length+')</button>';
-    villages.forEach(function(v){
-      var cnt=myWOs.filter(function(w){return (w.village||'').toString().trim()===v;}).length;
-      html += '<button class="pill'+(vf===v?' active':'')+'" onclick="window._crewWOVillage=\''+v+'\';renderCrewWorkOrders()">V'+v+' ('+cnt+')</button>';
+
+  if (myWOs.length) {
+    html += '<div class="sec-title">Assigned to Me (' + myWOs.length + ')</div>';
+    myWOs.forEach(function(w) {
+      var typeIcon = w.type === 'irrigation' ? '💧' : '🌿';
+      var statusColor = w.status === 'in_progress' ? 'yellow' : 'red';
+      html += '<div class="card" style="margin-bottom:10px;cursor:pointer;border-left:3px solid var(--' + statusColor + ');" onclick="openCrewWODetail(\'' + w.id + '\')">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
+          '<div>' +
+            '<div style="font-weight:800;font-size:14px;">' + typeIcon + ' #' + (w.woNumber||w.id.slice(-4)) + ' · ' + (w.ownerName||'') + '</div>' +
+            '<div style="font-size:12px;color:var(--text3);">' + (w.address||'') + '</div>' +
+          '</div>' +
+          '<span class="badge badge-' + statusColor + '">' + (w.status==='in_progress'?'In Progress':'Open') + '</span>' +
+        '</div>' +
+        '<div style="font-size:12px;color:var(--text2);"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details.slice(0,80) + (w.details.length>80?'…':'') : '') + '</div>' +
+        (w.community ? '<div style="font-size:11px;color:var(--text4);margin-top:4px;">' + w.community + '</div>' : '') +
+        (w.dueDate ? '<div style="font-size:11px;color:var(--red);margin-top:4px;font-weight:700;">⏰ Due: ' + w.dueDate + '</div>' : '') +
+        '<div style="margin-top:10px;">' +
+          '<button class="btn btn-green" style="font-size:12px;padding:8px 14px;" onclick="event.stopPropagation();openCrewWOComplete(\'' + w.id + '\')">📷 Complete with Photo</button>' +
+        '</div>' +
+        '</div>';
     });
-    html += '</div>';
   }
-  if (filteredWOs.length) {
-    html += '<div class="sec-title">Assigned to Me ('+filteredWOs.length+(vf?' &middot; Village '+vf:'')+')</div>';
-    filteredWOs.forEach(function(w){
-      var typeIcon = w.type==='irrigation' ? '&#x1F4A7;' : '&#x1F33F;';
-      var statusColor = w.status==='in_progress'?'yellow':'red';
-      var isTeam = w.assignedTo==='__team__';
-      html += '<div class="card" style="margin-bottom:10px;cursor:pointer;border-left:3px solid var(--'+statusColor+');" onclick="openCrewWODetail(\''+w.id+'\')">'
-        +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">'
-        +'<div style="flex:1;min-width:0;">'
-        +'<div style="font-weight:800;font-size:14px;">'+typeIcon+' #'+(w.woNumber||w.id.slice(-4))+' &middot; '+(w.ownerName||'')+'</div>'
-        +'<div style="font-size:12px;color:var(--text3);">'+(w.address||'')
-        +(w.village?' <span style="background:rgba(96,165,250,.15);color:var(--blue);font-weight:700;font-size:11px;padding:1px 6px;border-radius:6px;">V'+w.village+'</span>':'')
-        +'</div></div>'
-        +'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">'
-        +'<span class="badge badge-'+statusColor+'">'+(w.status==='in_progress'?'In Progress':'Open')+'</span>'
-        +(isTeam?'<span style="font-size:10px;color:var(--blue);font-weight:700;">&#x1F465; Team</span>':'')
-        +'</div></div>'
-        +'<div style="font-size:12px;color:var(--text2);"><strong>'+(w.requestType||'')+'</strong>'+(w.details?': '+w.details.slice(0,80)+(w.details.length>80?'&hellip;':''):'')+'</div>'
-        +(w.community?'<div style="font-size:11px;color:var(--text4);margin-top:3px;">'+w.community+'</div>':'')
-        +(w.dueDate?'<div style="font-size:11px;color:var(--red);margin-top:4px;font-weight:700;">&#x23F0; Due: '+w.dueDate+'</div>':'')
-        +'<div style="margin-top:10px;"><button class="btn btn-green" style="font-size:12px;padding:8px 14px;" onclick="event.stopPropagation();openCrewWOComplete(\''+w.id+'\')">&#x1F4F7; Complete with Photo</button></div>'
-        +'</div>';
-    });
-  } else if (vf) {
-    html += '<div style="text-align:center;color:var(--text4);padding:20px;font-size:13px;">No open WOs for Village '+vf+'</div>';
-  }
+
   if (doneWOs.length) {
     html += '<div class="sec-title" style="margin-top:16px;">Recently Completed</div>';
-    doneWOs.forEach(function(w){
-      var typeIcon=w.type==='irrigation'?'&#x1F4A7;':'&#x1F33F;';
-      html += '<div class="card-flat" style="margin-bottom:8px;border-left:3px solid var(--green);">'
-        +'<div style="display:flex;justify-content:space-between;align-items:center;">'
-        +'<div><div style="font-weight:700;font-size:13px;">'+typeIcon+' #'+(w.woNumber||'')+' &middot; '+(w.ownerName||'')+(w.village?' <span style="color:var(--blue);font-size:11px;">V'+w.village+'</span>':'')+'</div>'
-        +'<div style="font-size:11px;color:var(--text3);">'+(w.dateCompleted||w.completedOn||'')+'</div></div>'
-        +'<span class="badge badge-green">&#x2713;</span></div>'
-        +(getWOPhoto(w)?'<img src="'+getWOPhoto(w)+'" style="width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-top:8px;"/>':'')
-        +'</div>';
+    doneWOs.forEach(function(w) {
+      var typeIcon = w.type === 'irrigation' ? '💧' : '🌿';
+      html += '<div class="card-flat" style="margin-bottom:8px;border-left:3px solid var(--green);">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+          '<div>' +
+            '<div style="font-weight:700;font-size:13px;">' + typeIcon + ' #' + (w.woNumber||'') + ' · ' + (w.ownerName||'') + '</div>' +
+            '<div style="font-size:11px;color:var(--text3);">' + (w.completedOn||'') + '</div>' +
+          '</div>' +
+          '<span class="badge badge-green">✓</span>' +
+        '</div>' +
+        (getWOPhoto(w) ? '<img src="' + getWOPhoto(w) + '" style="width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-top:8px;"/>' : '') +
+      '</div>';
     });
   }
-  var myFlags=(state.flags||[]).filter(function(f){return !f.resolved&&(f.assignedCrewId===crewId||f.assignedCrewId==='__team__');});
-  if (myFlags.length) {
-    html += '<div class="sec-title" style="margin-top:20px;">&#x2691; Flags Assigned to Me ('+myFlags.length+')</div>';
-    myFlags.forEach(function(f){
-      var prop=(state.properties||[]).find(function(p){return p.id===f.propId;});
-      var photo=getFlagPhoto(f);
-      html += '<div class="card" style="margin-bottom:10px;border-left:3px solid var(--red);">'
-        +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">'
-        +'<div><span class="badge badge-red">'+(f.priority||'')+'</span> <span style="font-size:12px;color:var(--blue);font-weight:700;">'+(f.service||'')+'</span></div>'
-        +'<div style="font-size:10px;color:var(--text4);">'+(f.date||'')+'</div></div>'
-        +(prop?'<div style="font-size:12px;font-weight:700;margin-bottom:4px;">'+(prop.name||prop.address||'')+'</div>':'')
-        +'<div style="font-size:13px;margin-bottom:8px;">'+(f.note||'')+'</div>'
-        +(photo?'<img src="'+photo+'" style="width:100%;border-radius:8px;max-height:140px;object-fit:cover;margin-bottom:8px;"/>':'')
-        +'<button data-flagid="'+f.id+'" data-propid="'+f.propId+'" onclick="crewResolveFlag(this.dataset.flagid,this.dataset.propid)" style="width:100%;padding:10px;border-radius:10px;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);font-size:13px;font-weight:700;cursor:pointer;">&#x2713; Mark Resolved</button>'
-        +'</div>';
-    });
-  }
+
   el.innerHTML = html;
 }
 
@@ -8850,7 +8679,7 @@ function openCrewWOComplete(woId) {
       '<label class="photo-zone" for="wo-photo-input" id="wo-photo-zone" style="margin-bottom:12px;">' +
         '<div style="font-size:28px;margin-bottom:6px;">📷</div>' +
         '<div style="font-size:13px;color:var(--text3);">Tap to take or choose a photo</div>' +
-        '<input type="file" id="wo-photo-input" accept="image/*" capture="environment" style="display:none;"/>' +
+        '<input type="file" id="wo-photo-input" accept="image/*"  style="display:none;"/>' +
       '</label>' +
       '<img id="wo-photo-preview" style="display:none;width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;"/>' +
       '<textarea id="wo-complete-notes" class="inp" rows="2" placeholder="Completion notes (optional)..." style="margin-bottom:12px;"></textarea>' +
@@ -9019,38 +8848,18 @@ function clearOldPhotos() {
 
 function getWOPhoto(wo) {
   if (!wo) return null;
-  try { var local=localStorage.getItem('dlphoto_'+wo.id); if(local&&local.length>100)return local; } catch(e){}
-  try { var photos=JSON.parse(localStorage.getItem('dlphotos')||'{}'); var lp=photos[wo.id]; if(lp&&lp.length>100)return lp; } catch(e){}
-  if (wo.completedPhoto) {
-    if (wo.completedPhoto.startsWith('local:')) {
-      try { var s=localStorage.getItem('dlphoto_'+wo.completedPhoto.slice(6)); if(s&&s.length>100)return s; } catch(e){}
-      return null;
-    }
-    if (!wo.completedPhoto.startsWith('[') && wo.completedPhoto.length>10) return wo.completedPhoto;
-  }
+  // Check dlphotos localStorage first (full quality on originating device)
+  try {
+    var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+    var lp = photos[wo.id];
+    if (lp && lp.length > 5) return lp;
+  } catch(e) {}
+  var local = localStorage.getItem('dlphoto_' + wo.id);
+  if (local && local.length > 5) return local;
+  // Return completedPhoto from Sheets (ImgBB URL or data:)
+  if (wo.completedPhoto && wo.completedPhoto.length > 5 &&
+      !wo.completedPhoto.startsWith('[')) return wo.completedPhoto;
   return null;
-}
-
-function retryPendingWOPhotos() {
-  var pending=(state.workOrders||[]).filter(function(w){return w.completedPhoto==='[uploading]'||(w.completedPhoto&&w.completedPhoto.startsWith('local:'));});
-  if(!pending.length)return;
-  console.log('[Retry]',pending.length,'WO(s) with pending photos');
-  pending.forEach(function(wo){
-    var photo=getWOPhoto(wo);
-    if(!photo){console.warn('[Retry] No local photo for',wo.id);return;}
-    var raw=photo,comma=photo.indexOf(',');if(comma!==-1)raw=photo.slice(comma+1);
-    var form=new FormData();form.append('image',raw);form.append('name','WO_'+(wo.woNumber||wo.id.slice(-4))+'_retry');
-    fetch('https://api.imgbb.com/1/upload?key='+IMGBB_API_KEY,{method:'POST',body:form})
-    .then(function(r){return r.json();})
-    .then(function(data){
-      if(data&&data.success&&data.data&&data.data.url){
-        console.log('[Retry] Uploaded photo for WO',wo.id);
-        wo.completedPhoto=data.data.url;
-        try{var photos=JSON.parse(localStorage.getItem('dlphotos')||'{}');photos[wo.id]=data.data.url;localStorage.setItem('dlphotos',JSON.stringify(photos));}catch(e){}
-        save();gsSave('workOrders',wo);
-      }
-    }).catch(function(err){console.warn('[Retry] Failed for',wo.id,err);});
-  });
 }
 
 
@@ -9115,53 +8924,107 @@ function readFileAsDataUrl(file, callback) {
 }
 
 function submitCrewWOComplete(woId, photoData) {
-  var wo=(state.workOrders||[]).find(function(w){return w.id===woId;});
-  if(!wo)return;
-  var crew=state.loggedInCrewId?(state.crew||[]).find(function(c){return c.id===state.loggedInCrewId;}):null;
-  var notes=document.getElementById('wo-complete-notes')?.value||'';
-  var btn=document.getElementById('wo-complete-btn');
-  if(btn){btn.disabled=true;btn.style.opacity='0.6';btn.textContent='Saving...';}
-  compressPhoto(photoData,1200,0.88,function(compressed){
-    var photoSaved=false;
-    try{localStorage.setItem('dlphoto_'+woId,compressed);photoSaved=true;}catch(e){console.warn('dlphoto_ save failed:',e);}
-    try{var photos=JSON.parse(localStorage.getItem('dlphotos')||'{}');photos[woId]=compressed;localStorage.setItem('dlphotos',JSON.stringify(photos));}catch(e){console.warn('dlphotos map full');}
-    wo.status='completed';
-    wo.completedOn=new Date().toLocaleDateString();
-    wo.dateCompleted=new Date().toLocaleDateString();
-    wo.completedBy=crew?crew.name:'Crew';
-    wo.completedNotes=notes;
-    wo.completedPhoto=photoSaved?'local:'+woId:compressed;
-    save();
-    var completeSheet=document.getElementById('crew-wo-complete-sheet');if(completeSheet)completeSheet.remove();
-    renderCrewWorkOrders();
-    toast('&#x2713; Work order completed — uploading photo...');
-    if(typeof syncOnline!=='undefined'&&syncOnline){setTimeout(function(){gsLoad().catch(function(){});},1500);}
-    var woSlim=Object.assign({},wo,{completedPhoto:'[uploading]'});gsSave('workOrders',woSlim);
-    var woFilename='WO_'+(wo.woNumber||wo.id.slice(-4))+'_'+(wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_')+'_'+Date.now();
-    function doUpload(attempt){
-      var raw=compressed,comma=compressed.indexOf(',');if(comma!==-1)raw=compressed.slice(comma+1);
-      var form=new FormData();form.append('image',raw);form.append('name',woFilename);
-      fetch('https://api.imgbb.com/1/upload?key='+IMGBB_API_KEY,{method:'POST',body:form})
-      .then(function(r){return r.json();})
-      .then(function(data){
-        if(data&&data.success&&data.data&&data.data.url){
-          var imgUrl=data.data.url;
-          wo.completedPhoto=imgUrl;
-          try{var photos=JSON.parse(localStorage.getItem('dlphotos')||'{}');photos[woId]=imgUrl;localStorage.setItem('dlphotos',JSON.stringify(photos));}catch(e){}
-          save();gsSave('workOrders',wo);renderCrewWorkOrders();
-          toast('&#x2713; Photo uploaded — visible on all devices');
-        } else {
-          console.warn('ImgBB error attempt '+attempt+':',(data&&data.error&&data.error.message)||'unknown');
-          if(attempt<3){setTimeout(function(){doUpload(attempt+1);},3000*attempt);}
-          else{wo.completedPhoto=compressed;save();gsSave('workOrders',wo);toast('Photo saved locally — will upload next sync');}
-        }
-      }).catch(function(err){
-        console.warn('ImgBB fetch error attempt '+attempt+':',err);
-        if(attempt<3){setTimeout(function(){doUpload(attempt+1);},3000*attempt);}
-        else{wo.completedPhoto=compressed;save();gsSave('workOrders',wo);toast('Photo saved locally — will upload next sync');}
-      });
+  var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
+  if (!wo) return;
+
+  var crew = state.loggedInCrewId ? (state.crew || []).find(function(c) { return c.id === state.loggedInCrewId; }) : null;
+  var notes = document.getElementById('wo-complete-notes')?.value || '';
+
+  // Step 1: compress to good quality (matches flag photo pipeline)
+  compressPhoto(photoData, 800, 0.82, function(compressed) {
+    toast('📷 Photo ready - saving...');
+
+    // Step 2: save locally for immediate display
+    wo.completedPhoto = compressed;
+    try {
+      var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+      photos[woId] = compressed;
+      localStorage.setItem('dlphotos', JSON.stringify(photos));
+    } catch(pe) {
+      try { localStorage.setItem('dlphoto_' + woId, compressed); } catch(e2) {}
     }
-    doUpload(1);
+
+    // Step 3: update WO status
+    wo.status = 'completed';
+    wo.completedOn = new Date().toLocaleDateString();
+    wo.completedBy = crew ? crew.name : 'Crew';
+    wo.completedNotes = notes;
+
+    // Step 4: save state and close sheet
+    save();
+    var completeSheet = document.getElementById('crew-wo-complete-sheet');
+    if (completeSheet) completeSheet.remove();
+    renderCrewWorkOrders();
+    if (document.getElementById('wo-community-list')) renderWorkOrders();
+    toast('✓ Work order completed');
+
+    // Step 5: save WO to Sheets with placeholder while upload runs
+    var woForSheets = Object.assign({}, wo, { completedPhoto: '[uploading]' });
+    gsSave('workOrders', woForSheets);
+
+    // Step 6: upload to ImgBB - same as flag photos
+    toast('📤 Uploading photo...');
+    var woFilename = 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now();
+    uploadPhotoViaPost(compressed, woFilename,
+      function(imgbbUrl) {
+        wo.completedPhoto = imgbbUrl;
+        try {
+          var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+          photos[wo.id] = imgbbUrl;
+          localStorage.setItem('dlphotos', JSON.stringify(photos));
+        } catch(e) {}
+        save();
+        gsSave('workOrders', wo);
+        renderCrewWorkOrders();
+        if (document.getElementById('wo-community-list')) renderWorkOrders();
+        toast('✓ Photo uploaded — visible on all devices');
+      },
+      function(err) {
+        console.warn('WO photo upload failed:', err);
+        // Fallback: save compressed locally, sync without photo
+        gsSave('workOrders', wo);
+        toast('Photo saved locally');
+      }
+    );
+    var photoDisabled = null;
+    if (photoDisabled) {
+      console.log('disabled');
+      var uploadPayload = JSON.stringify({
+        secret: GS_SECRET,
+        action: 'uploadWOPhoto',
+        woId: wo.id,
+        photo: photo,
+        filename: 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now()
+      });
+
+      // Try regular POST first (works if CORS configured)
+      fetch(GS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: uploadPayload
+      })
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(result) {
+        console.log('Photo upload result:', result);
+        if (result && result.photoUrl) {
+          wo.completedPhoto = result.photoUrl;
+          try {
+            var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+            photos[wo.id] = result.photoUrl;
+            localStorage.setItem('dlphotos', JSON.stringify(photos));
+          } catch(e) {}
+          save();
+          toast('✓ Photo uploaded to Drive');
+          renderCrewWorkOrders();
+          if (document.getElementById('wo-community-list')) renderWorkOrders();
+        } else {
+          toast('✓ Completed (photo upload issue: ' + JSON.stringify(result) + ')');
+        }
+      })
+    } // end photoDisabled block
   });
 }
 
@@ -9986,7 +9849,9 @@ ls_showWho();
 // load live data from Google Sheets
 gsLoad().then(() => {
   startAutoSync();
-  setTimeout(retryPendingWOPhotos, 3000);
+  setTimeout(function() {
+    if (typeof retryPendingWOPhotos === 'function') retryPendingWOPhotos();
+  }, 3000);
 });
 document.title = 'Diamond Landscapes';
 var tdEl2 = document.getElementById('topbar-date'); if(tdEl2) tdEl2.textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
