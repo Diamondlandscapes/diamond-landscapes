@@ -4991,11 +4991,7 @@ function gsLoad() {
         }
         merge('equipment');
         merge('workOrders');
-        // Attendance: always merge from remote (don't skip empty)
-        if (remote && Array.isArray(remote['attendance'])) {
-          state.attendance = remote['attendance'];
-        }
-        if (!Array.isArray(state.attendance)) state.attendance = [];
+        merge('attendance');
         // Fix any JSON string fields that came back from Sheets as strings
         (state.routes||[]).forEach(function(r) {
           if (typeof r.stops === 'string') { try { r.stops = JSON.parse(r.stops); } catch(e) { r.stops = []; } }
@@ -9748,19 +9744,26 @@ function deleteAttendanceRecord(id) {
   gsDelete('attendance', id);
 }
 
-var ATT_STATUSES = [
-  { key:'present',  label:'Present',  color:'var(--green)',  bg:'rgba(74,222,128,.18)',  border:'rgba(74,222,128,.4)'  },
-  { key:'absent',   label:'Absent',   color:'var(--red)',    bg:'rgba(248,113,113,.18)', border:'rgba(248,113,113,.4)' },
-  { key:'late',     label:'Late',     color:'#f59e0b',       bg:'rgba(245,158,11,.18)',  border:'rgba(245,158,11,.4)'  },
-  { key:'halfday',  label:'Half Day', color:'#f97316',       bg:'rgba(249,115,22,.18)',  border:'rgba(249,115,22,.4)'  },
-];
+// Attendance statuses — defined as a function so always available regardless of load order
+function getAttStatuses() {
+  return [
+    { key:'present',  label:'Present',  color:'var(--green)',  bg:'rgba(74,222,128,.18)',  border:'rgba(74,222,128,.4)'  },
+    { key:'absent',   label:'Absent',   color:'var(--red)',    bg:'rgba(248,113,113,.18)', border:'rgba(248,113,113,.4)' },
+    { key:'late',     label:'Late',     color:'#f59e0b',       bg:'rgba(245,158,11,.18)',  border:'rgba(245,158,11,.4)'  },
+    { key:'halfday',  label:'Half Day', color:'#f97316',       bg:'rgba(249,115,22,.18)',  border:'rgba(249,115,22,.4)'  }
+  ];
+}
+var ATT_STATUSES = getAttStatuses();
 
 function nextStatus(current) {
-  var idx = ATT_STATUSES.findIndex(function(s){ return s.key===current; });
-  return ATT_STATUSES[(idx+1) % ATT_STATUSES.length].key;
+  var s = getAttStatuses();
+  var idx = s.findIndex(function(x){ return x.key===current; });
+  if (idx < 0) idx = 0;
+  return s[(idx+1) % s.length].key;
 }
 function statusMeta(key) {
-  return ATT_STATUSES.find(function(s){ return s.key===key; }) || ATT_STATUSES[0];
+  var s = getAttStatuses();
+  return s.find(function(x){ return x.key===key; }) || s[0];
 }
 
 function renderAttendance() {
@@ -9833,7 +9836,7 @@ function renderAttendance() {
         + '</div>';
     }).join('');
 
-    var pillBar = ATT_STATUSES.map(function(s) {
+    var pillBar = getAttStatuses().map(function(s) {
       return '<span style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;'
         + 'background:' + s.bg + ';color:' + s.color + ';border:1px solid ' + s.border + ';">'
         + s.label + ': ' + (counts[s.key]||0) + '</span>';
@@ -9990,25 +9993,6 @@ function renderAttendance() {
 }
 
 // ── Helpers ──────────────────────────────────────────────────
-function attSetMode(m) {
-  window._attMode = m;
-  renderAttendance();
-}
-function attApplyReport() {
-  window._attRptFrom = document.getElementById('rpt-from') ? document.getElementById('rpt-from').value : '';
-  window._attRptTo   = document.getElementById('rpt-to')   ? document.getElementById('rpt-to').value   : '';
-  renderAttendance();
-}
-function attClearReport() {
-  window._attRptFrom = '';
-  window._attRptTo = '';
-  renderAttendance();
-}
-function attClosePDF() {
-  var el = document.querySelector('[data-att-pdf]');
-  if (el) el.remove();
-}
-
 function attChangeDate(delta) {
   var d = new Date((window._attDate || todayStr()) + 'T12:00:00');
   d.setDate(d.getDate() + delta);
@@ -10062,10 +10046,6 @@ function attSaveDay() {
   if (!roster.length) { toast('No crew to save'); return; }
   roster.forEach(function(rec){ saveAttendanceRecord(rec); });
   toast('Attendance saved ✓');
-  // Push to Sheets immediately so other devices see it
-  if (typeof syncOnline !== 'undefined' && syncOnline) {
-    setTimeout(function() { gsLoad().catch(function(){}); }, 500);
-  }
 }
 
 function attExportPDF() {
