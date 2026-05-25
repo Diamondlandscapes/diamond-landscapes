@@ -1481,7 +1481,7 @@ const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
 // ── Auto-update: clear cache if running old version ─────────────────────────
-var APP_VERSION = '2026-05-25-v3';
+var APP_VERSION = '2026-05-25-v4';
 (function() {
   try {
     var storedVersion = localStorage.getItem('app_version');
@@ -9788,11 +9788,20 @@ var ATT_STATUSES = [
 ];
 
 function nextStatus(current) {
-  var idx = ATT_STATUSES.findIndex(function(s){ return s.key===current; });
-  return ATT_STATUSES[(idx+1) % ATT_STATUSES.length].key;
+  var STATUSES = (typeof ATT_STATUSES !== 'undefined' && Array.isArray(ATT_STATUSES)) ? ATT_STATUSES : [
+    { key:'present'}, { key:'absent'}, { key:'late'}, { key:'halfday'}
+  ];
+  var idx = STATUSES.findIndex(function(s){ return s.key===current; });
+  return STATUSES[(idx+1) % STATUSES.length].key;
 }
 function statusMeta(key) {
-  return ATT_STATUSES.find(function(s){ return s.key===key; }) || ATT_STATUSES[0];
+  var STATUSES = (typeof ATT_STATUSES !== 'undefined' && Array.isArray(ATT_STATUSES)) ? ATT_STATUSES : [
+    { key:'present',  label:'Present',  color:'var(--green)',  bg:'rgba(74,222,128,.18)',  border:'rgba(74,222,128,.4)'  },
+    { key:'absent',   label:'Absent',   color:'var(--red)',    bg:'rgba(248,113,113,.18)', border:'rgba(248,113,113,.4)' },
+    { key:'late',     label:'Late',     color:'#f59e0b',       bg:'rgba(245,158,11,.18)',  border:'rgba(245,158,11,.4)'  },
+    { key:'halfday',  label:'Half Day', color:'#f97316',       bg:'rgba(249,115,22,.18)',  border:'rgba(249,115,22,.4)'  }
+  ];
+  return STATUSES.find(function(s){ return s.key===key; }) || STATUSES[0];
 }
 
 function renderAttendance() {
@@ -9874,7 +9883,7 @@ function renderAttendance() {
         + '</div>';
     }).join('');
 
-    var pillBar = ATT_STATUSES.map(function(s) {
+    var pillBar = (typeof ATT_STATUSES !== 'undefined' ? ATT_STATUSES : []).map(function(s) {
       return '<span style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;'
         + 'background:' + s.bg + ';color:' + s.color + ';border:1px solid ' + s.border + ';">'
         + s.label + ': ' + (counts[s.key]||0) + '</span>';
