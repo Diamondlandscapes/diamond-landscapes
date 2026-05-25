@@ -4996,9 +4996,8 @@ function gsLoad() {
         }
         merge('equipment');
         merge('workOrders');
-        // Always ensure attendance is a clean array before and after merge
-        if (!Array.isArray(state.attendance)) state.attendance = [];
-        merge('attendance');
+        // attendance is NOT merged from remote — it loads from localStorage
+        // and saves per-record via saveAndSync. This avoids crashes when sheet is empty.
         if (!Array.isArray(state.attendance)) state.attendance = [];
         // Fix any JSON string fields that came back from Sheets as strings
         (state.routes||[]).forEach(function(r) {
@@ -9737,8 +9736,13 @@ function todayStr() {
 }
 
 function getAttendanceDay(dateStr) {
-  var att = Array.isArray(state.attendance) ? state.attendance : [];
-  return att.filter(function(r){ return r && r.date===dateStr; });
+  try {
+    if (!Array.isArray(state.attendance)) state.attendance = [];
+    return state.attendance.filter(function(r){ return r && r.date===dateStr; });
+  } catch(e) {
+    state.attendance = [];
+    return [];
+  }
 }
 
 function saveAttendanceRecord(record) {
@@ -9789,22 +9793,31 @@ function renderAttendance() {
 
   // ── Day view ────────────────────────────────────────────────
   if (mode === 'day') {
-    var dayRecords = getAttendanceDay(dateStr);
-    var crew = state.crew || [];
+    // Always build from state.crew — no dependency on Sheets
+    if (!Array.isArray(state.crew)) state.crew = [];
+    if (!Array.isArray(state.attendance)) state.attendance = [];
 
-    // Build roster: permanent crew merged with saved records
+    var savedToday = [];
+    try {
+      savedToday = state.attendance.filter(function(r){ return r && r.date===dateStr; });
+    } catch(e) { savedToday = []; }
+
+    // Build roster from crew list, overlaying any saved records for today
     var roster = [];
-    crew.forEach(function(c) {
-      var saved = dayRecords.find(function(r){ return r.crewId===c.id; });
+    state.crew.forEach(function(c) {
+      var saved = null;
+      try { saved = savedToday.find(function(r){ return r.crewId===c.id; }); } catch(e){}
       roster.push(saved || {
         id: 'att_' + c.id + '_' + dateStr.replace(/-/g,''),
         date: dateStr, crewId: c.id,
         name: c.name, role: c.role||'', status: 'present', note: ''
       });
     });
-    // Add day laborers for this date
-    dayRecords.filter(function(r){ return r.crewId==='temp'; })
-      .forEach(function(r){ roster.push(r); });
+    // Add day laborers saved for this date
+    try {
+      savedToday.filter(function(r){ return r.crewId==='temp'; })
+        .forEach(function(r){ roster.push(r); });
+    } catch(e){}
 
     window._attRoster = roster;
 
