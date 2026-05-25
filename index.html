@@ -1103,6 +1103,11 @@ select.inp{cursor:pointer;}
       <div id="wo-community-list"></div>
     </div>
 
+    <!-- ══════ ATTENDANCE ══════ -->
+    <div id="screen-attendance" class="screen">
+      <div id="attendance-root"></div>
+    </div>
+
     <!-- ══════ WORK ORDERS — CREW ══════ -->
     <div id="screen-wo-crew" class="screen">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
@@ -1441,6 +1446,9 @@ select.inp{cursor:pointer;}
   <button class="cbn-btn" data-tab="wo-crew" onclick="switchTab('wo-crew');updateCrewBottomNav('wo-crew')">
     <span class="cbn-icon">📋</span><span class="cbn-label">Work Orders</span>
   </button>
+  <button class="cbn-btn" data-tab="attendance" onclick="switchTab('attendance');updateCrewBottomNav('attendance')">
+    <span class="cbn-icon">📅</span><span class="cbn-label">Attendance</span>
+  </button>
   <button class="cbn-btn" data-tab="menu" onclick="toggleDrawer()">
     <span class="cbn-icon">☰</span><span class="cbn-label">Menu</span>
   </button>
@@ -1481,6 +1489,7 @@ let state = {
   flags: [],
   equipment: [],
   workOrders: [],
+  attendance: [],
   routeWeeks: {},
   eqCategory: 'All',
   routeDay: 'Monday',
@@ -1556,7 +1565,7 @@ function switchTab(tab) {
     properties: renderProperties, crew: renderCrew, inventory: renderInventory,
     equipment: renderEquipment, reports: renderReports,
     schedule: renderSchedule, 'crew-week': renderCrewWeek, field: renderFieldView,
-    workorders: renderWorkOrders, 'wo-crew': renderCrewWorkOrders };
+    workorders: renderWorkOrders, 'wo-crew': renderCrewWorkOrders, attendance: renderAttendance };
   renders[tab]?.();
 }
 
@@ -1672,6 +1681,7 @@ function applyRole(r) {
     <button class="nb" onclick="switchTab('crew-week')" data-tab="crew-week"><span class="ni">📅</span><span class="nl">My Week</span></button>
     <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni">🏡</span><span class="nl">Properties</span></button>
     <button class="nb" onclick="switchTab('wo-crew')" data-tab="wo-crew"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
+    <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni">📅</span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
       <button class="nb" onclick="signOut()"><span class="ni">🔒</span><span class="nl">Sign Out</span></button>
@@ -1696,6 +1706,7 @@ function applyRole(r) {
     <button class="nb" onclick="switchTab('equipment')" data-tab="equipment"><span class="ni">🔧</span><span class="nl">Equipment</span></button>
     <button class="nb" onclick="switchTab('reports')" data-tab="reports"><span class="ni">📊</span><span class="nl">Reports</span></button>
     <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
+    <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni">📅</span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
       <button class="nb" onclick="gsLoad()"><span class="ni">↺</span><span class="nl">Refresh Data</span></button>
@@ -4713,7 +4724,354 @@ function ls_showCrewNames() {
   renderCrewList();
 
   // Then sync in background silently — if crew updates, refresh list
-  gsLoad().then(() => {
+  
+// ══════════════════════════════════════════════════════════════
+// ATTENDANCE
+// ══════════════════════════════════════════════════════════════
+
+function todayStr() {
+  return new Date().toISOString().slice(0,10);
+}
+
+function getAttendanceDay(dateStr) {
+  return (state.attendance||[]).filter(function(r){ return r.date===dateStr; });
+}
+
+function saveAttendanceRecord(record) {
+  if (!state.attendance) state.attendance = [];
+  var idx = state.attendance.findIndex(function(r){ return r.id===record.id; });
+  if (idx>=0) state.attendance[idx]=record; else state.attendance.push(record);
+  save();
+  saveAndSync('attendance', record);
+}
+
+function deleteAttendanceRecord(id) {
+  state.attendance = (state.attendance||[]).filter(function(r){ return r.id!==id; });
+  save();
+  gsDelete('attendance', id);
+}
+
+// ── Status cycle: present → absent → late → half → present ──
+var ATT_STATUSES = [
+  { key:'present',  label:'Present',  color:'var(--green)',  bg:'rgba(74,222,128,.15)',  border:'rgba(74,222,128,.35)'  },
+  { key:'absent',   label:'Absent',   color:'var(--red)',    bg:'rgba(248,113,113,.15)', border:'rgba(248,113,113,.35)' },
+  { key:'late',     label:'Late',     color:'var(--yellow)', bg:'rgba(250,204,21,.15)',  border:'rgba(250,204,21,.35)'  },
+  { key:'halfday',  label:'Half Day', color:'var(--orange)', bg:'rgba(251,146,60,.15)',  border:'rgba(251,146,60,.35)'  },
+];
+function nextStatus(current) {
+  var idx = ATT_STATUSES.findIndex(function(s){return s.key===current;});
+  return ATT_STATUSES[(idx+1)%ATT_STATUSES.length].key;
+}
+function statusMeta(key) {
+  return ATT_STATUSES.find(function(s){return s.key===key;})||ATT_STATUSES[0];
+}
+
+function renderAttendance() {
+  var root = document.getElementById('attendance-root');
+  if (!root) return;
+  var isManager = state.role==='manager';
+  var dateStr = window._attDate || todayStr();
+  window._attDate = dateStr;
+  var mode = window._attMode || 'day'; // 'day' or 'report'
+  window._attMode = mode;
+
+  // Build today's roster: permanent crew + day laborers already added
+  var dayRecords = getAttendanceDay(dateStr);
+  var crew = state.crew||[];
+
+  // Merge permanent crew with existing records for this day
+  var roster = [];
+  crew.forEach(function(c){
+    var rec = dayRecords.find(function(r){return r.crewId===c.id;});
+    roster.push(rec || { id:'att_'+c.id+'_'+dateStr.replace(/-/g,''), date:dateStr, crewId:c.id, name:c.name, role:c.role||'', status:'present', note:'' });
+  });
+  // Add day laborers (crewId='temp')
+  dayRecords.filter(function(r){return r.crewId==='temp';}).forEach(function(r){ roster.push(r); });
+
+  // ── Day view ─────────────────────────────────────────────────
+  if (mode==='day') {
+    var rows = roster.map(function(rec){
+      var sm = statusMeta(rec.status||'present');
+      var isPast = dateStr < todayStr();
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">'
+        // Avatar
+        +'<div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--green),var(--teal));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#fff;flex-shrink:0;">'
+        +(rec.name?rec.name.trim()[0].toUpperCase():'?')+'</div>'
+        // Name + role
+        +'<div style="flex:1;min-width:0;">'
+        +'<div style="font-weight:700;font-size:14px;">'+(rec.name||'')+'</div>'
+        +(rec.role?'<div style="font-size:11px;color:var(--text3);">'+rec.role+'</div>':'')
+        +(rec.crewId==='temp'?'<div style="font-size:10px;color:var(--orange);font-weight:700;">Day Laborer</div>':'')
+        +'</div>'
+        // Status pill (tap to cycle)
+        +'<button data-recid="'+rec.id+'" onclick="attCycleStatus(this)" '
+        +'style="padding:6px 14px;border-radius:20px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;border:1px solid '+sm.border+';background:'+sm.bg+';color:'+sm.color+';transition:all .15s;">'
+        +sm.label+'</button>'
+        // Note button
+        +'<button data-recid="'+rec.id+'" onclick="attEditNote(this)" title="Add note" '
+        +'style="width:32px;height:32px;border-radius:50%;background:var(--bg3);border:1px solid var(--border2);cursor:pointer;font-size:14px;flex-shrink:0;">'
+        +(rec.note?'📝':'➕')+'</button>'
+        // Delete (day laborers only)
+        +(rec.crewId==='temp'?'<button data-recid="'+rec.id+'" onclick="attDeleteTemp(this)" style="width:32px;height:32px;border-radius:50%;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);cursor:pointer;font-size:14px;flex-shrink:0;">🗑</button>':'')
+        +'</div>';
+    }).join('');
+
+    // Summary counts
+    var counts = { present:0, absent:0, late:0, halfday:0 };
+    roster.forEach(function(r){ counts[r.status||'present']=(counts[r.status||'present']||0)+1; });
+
+    root.innerHTML =
+      // Header
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'
+      +'<div style="font-size:20px;font-weight:800;">Attendance</div>'
+      +(isManager?'<button onclick="window._attMode=\'report\';renderAttendance()" style="font-size:12px;padding:6px 14px;border-radius:8px;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);cursor:pointer;font-weight:700;">📊 Payroll Report</button>':'')
+      +'</div>'
+
+      // Date picker
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">'
+      +'<button onclick="attChangeDate(-1)" style="width:36px;height:36px;border-radius:50%;background:var(--bg3);border:1px solid var(--border2);cursor:pointer;font-size:18px;font-weight:700;">‹</button>'
+      +'<input type="date" id="att-date-picker" value="'+dateStr+'" onchange="window._attDate=this.value;renderAttendance()" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:8px 12px;color:var(--text);font-size:14px;font-weight:700;text-align:center;"/>'
+      +'<button onclick="attChangeDate(1)" style="width:36px;height:36px;border-radius:50%;background:var(--bg3);border:1px solid var(--border2);cursor:pointer;font-size:18px;font-weight:700;">›</button>'
+      +'</div>'
+
+      // Summary pills
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">'
+      +ATT_STATUSES.map(function(s){
+        return '<div style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;background:'+s.bg+';color:'+s.color+';border:1px solid '+s.border+';">'+s.label+': '+( counts[s.key]||0)+'</div>';
+      }).join('')
+      +'</div>'
+
+      // Roster
+      +'<div class="card" style="padding:0 14px;">'
+      +(roster.length?rows:'<div style="text-align:center;padding:24px;color:var(--text4);font-size:13px;">No crew members yet</div>')
+      +'</div>'
+
+      // Add day laborer
+      +'<div style="margin-top:14px;">'
+      +'<button onclick="attAddLaborer()" style="width:100%;padding:12px;border-radius:12px;background:rgba(251,146,60,.12);color:var(--orange);border:1px solid rgba(251,146,60,.3);font-size:14px;font-weight:700;cursor:pointer;">+ Add Day Laborer</button>'
+      +'</div>'
+
+      // Save button
+      +'<div style="margin-top:10px;">'
+      +'<button onclick="attSaveDay()" style="width:100%;padding:14px;border-radius:12px;background:var(--green);color:#fff;border:none;font-size:15px;font-weight:800;cursor:pointer;">✓ Save Attendance</button>'
+      +'</div>';
+
+    // Store roster in window for save access
+    window._attRoster = roster;
+  }
+
+  // ── Report view (manager only) ───────────────────────────────
+  if (mode==='report') {
+    var rFrom = window._attRptFrom || '';
+    var rTo   = window._attRptTo   || '';
+    var recs  = state.attendance||[];
+
+    // Filter by date range
+    var filtered = recs;
+    if (rFrom) filtered = filtered.filter(function(r){return r.date>=rFrom;});
+    if (rTo)   filtered = filtered.filter(function(r){return r.date<=rTo;});
+
+    // Get all unique dates in range (sorted)
+    var dates = [];
+    filtered.forEach(function(r){if(!dates.includes(r.date))dates.push(r.date);});
+    dates.sort();
+
+    // Get all unique people
+    var people = {};
+    filtered.forEach(function(r){
+      if(!people[r.name]) people[r.name]={name:r.name,role:r.role||'',records:{}};
+      people[r.name].records[r.date]=r;
+    });
+    var peopleList = Object.values(people).sort(function(a,b){return a.name.localeCompare(b.name);});
+
+    // Summary table
+    var tableRows = peopleList.map(function(p){
+      var totals={present:0,absent:0,late:0,halfday:0};
+      dates.forEach(function(d){
+        var rec=p.records[d];
+        var st=rec?rec.status||'present':'—';
+        if(totals[st]!==undefined) totals[st]++;
+      });
+      var cells = dates.map(function(d){
+        var rec=p.records[d];
+        if(!rec) return '<td style="text-align:center;color:var(--text4);font-size:11px;">—</td>';
+        var sm=statusMeta(rec.status||'present');
+        var tip=rec.note?(' title="'+rec.note+'"'):'';
+        return '<td'+tip+' style="text-align:center;padding:4px 2px;">'
+          +'<div style="width:28px;height:28px;border-radius:50%;background:'+sm.bg+';border:1px solid '+sm.border+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:'+sm.color+';margin:0 auto;">'+sm.label[0]+'</div>'
+          +'</td>';
+      }).join('');
+      return '<tr>'
+        +'<td style="font-weight:700;font-size:13px;padding:8px 6px;white-space:nowrap;">'+p.name+'<br><span style="font-size:10px;color:var(--text3);font-weight:400;">'+p.role+'</span></td>'
+        +cells
+        +'<td style="text-align:center;font-size:12px;font-weight:700;color:var(--green);padding:4px 6px;">'+totals.present+'</td>'
+        +'<td style="text-align:center;font-size:12px;font-weight:700;color:var(--red);padding:4px 6px;">'+totals.absent+'</td>'
+        +'<td style="text-align:center;font-size:12px;font-weight:700;color:var(--yellow);padding:4px 6px;">'+totals.late+'</td>'
+        +'<td style="text-align:center;font-size:12px;font-weight:700;color:var(--orange);padding:4px 6px;">'+totals.halfday+'</td>'
+        +'</tr>';
+    }).join('');
+
+    var dateHeaders = dates.map(function(d){
+      var dt=new Date(d+'T12:00:00');
+      return '<th style="font-size:10px;font-weight:700;color:var(--text3);padding:4px 2px;text-align:center;white-space:nowrap;">'+dt.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</th>';
+    }).join('');
+
+    root.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'
+      +'<div style="font-size:20px;font-weight:800;">Payroll Report</div>'
+      +'<button onclick="window._attMode=\'day\';renderAttendance()" style="font-size:12px;padding:6px 14px;border-radius:8px;background:var(--bg3);color:var(--text2);border:1px solid var(--border2);cursor:pointer;font-weight:700;">← Back</button>'
+      +'</div>'
+
+      // Date range filter
+      +'<div class="card" style="margin-bottom:14px;">'
+      +'<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">DATE RANGE</div>'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+      +'<input type="date" id="rpt-from" value="'+rFrom+'" style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:7px 8px;color:var(--text);font-size:13px;"/>'
+      +'<span style="font-size:12px;color:var(--text4);">to</span>'
+      +'<input type="date" id="rpt-to" value="'+rTo+'" style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:7px 8px;color:var(--text);font-size:13px;"/>'
+      +'</div>'
+      +'<div style="display:flex;gap:8px;">'
+      +'<button onclick="window._attRptFrom=document.getElementById(\'rpt-from\').value;window._attRptTo=document.getElementById(\'rpt-to\').value;renderAttendance()" style="flex:1;padding:8px;border-radius:8px;background:var(--blue);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;">Apply</button>'
+      +(rFrom||rTo?'<button onclick="window._attRptFrom=\'\';window._attRptTo=\'\';renderAttendance()" style="padding:8px 14px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);font-size:13px;font-weight:700;cursor:pointer;">✕ Clear</button>':'')
+      +'</div>'
+      +'</div>'
+
+      +(peopleList.length && dates.length
+        ? '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">'
+          +'<thead><tr>'
+          +'<th style="text-align:left;padding:6px;font-size:12px;font-weight:700;color:var(--text3);">Name</th>'
+          +dateHeaders
+          +'<th style="text-align:center;font-size:11px;padding:4px 2px;color:var(--green);">✓</th>'
+          +'<th style="text-align:center;font-size:11px;padding:4px 2px;color:var(--red);">✗</th>'
+          +'<th style="text-align:center;font-size:11px;padding:4px 2px;color:var(--yellow);">L</th>'
+          +'<th style="text-align:center;font-size:11px;padding:4px 2px;color:var(--orange);">½</th>'
+          +'</tr></thead>'
+          +'<tbody>'+tableRows+'</tbody>'
+          +'</table></div>'
+          +'<button onclick="attExportReport()" style="width:100%;margin-top:14px;padding:12px;border-radius:12px;background:var(--green);color:#fff;border:none;font-size:14px;font-weight:800;cursor:pointer;">📄 Export PDF Report</button>'
+        : '<div style="text-align:center;color:var(--text4);padding:32px;font-size:13px;">No attendance records found'+(rFrom||rTo?' in that date range':'')+'. Select a date range or mark attendance first.</div>')
+      +'</div>';
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+function attChangeDate(delta) {
+  var d=new Date((window._attDate||todayStr())+'T12:00:00');
+  d.setDate(d.getDate()+delta);
+  window._attDate=d.toISOString().slice(0,10);
+  renderAttendance();
+}
+
+function attCycleStatus(btn) {
+  var recId=btn.dataset.recid;
+  var rec=window._attRoster.find(function(r){return r.id===recId;});
+  if(!rec)return;
+  rec.status=nextStatus(rec.status||'present');
+  var sm=statusMeta(rec.status);
+  btn.textContent=sm.label;
+  btn.style.background=sm.bg;
+  btn.style.color=sm.color;
+  btn.style.borderColor=sm.border;
+}
+
+function attEditNote(btn) {
+  var recId=btn.dataset.recid;
+  var rec=window._attRoster.find(function(r){return r.id===recId;});
+  if(!rec)return;
+  var note=prompt('Note for '+rec.name+' ('+(rec.date||'')+')\nLeave blank to remove note:',rec.note||'');
+  if(note===null)return; // cancelled
+  rec.note=note.trim();
+  btn.textContent=rec.note?'📝':'➕';
+}
+
+function attDeleteTemp(btn) {
+  var recId=btn.dataset.recid;
+  if(!confirm('Remove this day laborer from today\'s attendance?'))return;
+  window._attRoster=window._attRoster.filter(function(r){return r.id!==recId;});
+  deleteAttendanceRecord(recId);
+  renderAttendance();
+}
+
+function attAddLaborer() {
+  var name=(prompt('Day laborer name:')||'').trim();
+  if(!name)return;
+  var dateStr=window._attDate||todayStr();
+  var rec={id:'att_temp_'+Date.now(),date:dateStr,crewId:'temp',name:name,role:'Day Laborer',status:'present',note:''};
+  if(!window._attRoster)window._attRoster=[];
+  window._attRoster.push(rec);
+  renderAttendance();
+}
+
+function attSaveDay() {
+  if(!window._attRoster||!window._attRoster.length){toast('Nothing to save');return;}
+  window._attRoster.forEach(function(rec){ saveAttendanceRecord(rec); });
+  toast('Attendance saved ✓');
+}
+
+function attExportReport() {
+  var rFrom=window._attRptFrom||'';
+  var rTo=window._attRptTo||'';
+  var recs=state.attendance||[];
+  var filtered=recs;
+  if(rFrom)filtered=filtered.filter(function(r){return r.date>=rFrom;});
+  if(rTo)filtered=filtered.filter(function(r){return r.date<=rTo;});
+  var dates=[]; filtered.forEach(function(r){if(!dates.includes(r.date))dates.push(r.date);}); dates.sort();
+  var people={}; filtered.forEach(function(r){if(!people[r.name])people[r.name]={name:r.name,role:r.role||'',records:{}}; people[r.name].records[r.date]=r;});
+  var peopleList=Object.values(people).sort(function(a,b){return a.name.localeCompare(b.name);});
+  var rangeLabel=(rFrom&&rTo)?rFrom+' to '+rTo:(rFrom?'From '+rFrom:(rTo?'To '+rTo:'All dates'));
+
+  var rows=peopleList.map(function(p){
+    var totals={present:0,absent:0,late:0,halfday:0};
+    dates.forEach(function(d){var rec=p.records[d];var st=rec?rec.status||'present':'';if(totals[st]!==undefined)totals[st]++;});
+    var cells=dates.map(function(d){
+      var rec=p.records[d];
+      if(!rec)return '<td style="text-align:center;color:#9ca3af;font-size:12px;">—</td>';
+      var sm=statusMeta(rec.status||'present');
+      return '<td style="text-align:center;padding:4px;">'
+        +'<div style="width:26px;height:26px;border-radius:50%;background:'+sm.bg.replace('var(--green)','#dcfce7').replace('var(--red)','#fee2e2').replace('var(--yellow)','#fef9c3').replace('var(--orange)','#ffedd5')+';border:1px solid #e5e7eb;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:'+sm.color.replace('var(--green)','#16a34a').replace('var(--red)','#dc2626').replace('var(--yellow)','#ca8a04').replace('var(--orange)','#ea580c')+';margin:0 auto;">'
+        +sm.label[0]+'</div>'
+        +(rec.note?'<div style="font-size:9px;color:#6b7280;margin-top:2px;" title="'+rec.note+'">📝</div>':'')
+        +'</td>';
+    }).join('');
+    return '<tr style="border-bottom:1px solid #f3f4f6;">'
+      +'<td style="padding:8px 6px;font-weight:700;font-size:13px;white-space:nowrap;">'+p.name+'<br><span style="font-size:10px;color:#6b7280;font-weight:400;">'+p.role+'</span></td>'
+      +cells
+      +'<td style="text-align:center;font-weight:800;color:#16a34a;font-size:13px;">'+totals.present+'</td>'
+      +'<td style="text-align:center;font-weight:800;color:#dc2626;font-size:13px;">'+totals.absent+'</td>'
+      +'<td style="text-align:center;font-weight:800;color:#ca8a04;font-size:13px;">'+totals.late+'</td>'
+      +'<td style="text-align:center;font-weight:800;color:#ea580c;font-size:13px;">'+totals.halfday+'</td>'
+      +'</tr>';
+  }).join('');
+
+  var dateHdrs=dates.map(function(d){var dt=new Date(d+'T12:00:00');return '<th style="font-size:10px;color:#6b7280;padding:4px 2px;text-align:center;white-space:nowrap;">'+dt.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</th>';}).join('');
+
+  var html='<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Attendance Report</title>'
+    +'<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;padding:24px;color:#111;}table{width:100%;border-collapse:collapse;}th{text-align:left;padding:6px;background:#f9fafb;font-size:11px;}tr:hover{background:#f9fafb;}@media print{body{padding:8px;}}</style>'
+    +'</head><body>'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;">'
+    +'<div><div style="font-size:22px;font-weight:800;">Diamond Landscapes</div><div style="font-size:15px;color:#6b7280;">Attendance Report &middot; '+rangeLabel+'</div></div>'
+    +'<div style="text-align:right;font-size:12px;color:#6b7280;">Generated '+new Date().toLocaleDateString()+'</div></div>'
+    +'<div style="display:flex;gap:16px;margin-bottom:16px;">'
+    +ATT_STATUSES.map(function(s){return '<div style="font-size:12px;"><strong>'+s.label[0]+'</strong> = '+s.label+'</div>';}).join('')
+    +'</div>'
+    +'<table><thead><tr><th>Name</th>'+dateHdrs
+    +'<th style="text-align:center;color:#16a34a;">✓</th><th style="text-align:center;color:#dc2626;">✗</th><th style="text-align:center;color:#ca8a04;">L</th><th style="text-align:center;color:#ea580c;">½</th>'
+    +'</tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<div style="margin-top:20px;font-size:11px;color:#9ca3af;text-align:center;">Diamond Landscapes &middot; Attendance Report &middot; '+new Date().toLocaleDateString()+'</div>'
+    +'</body></html>';
+
+  var overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:#fff;z-index:9999;overflow-y:auto;padding:16px 16px 100px;';
+  overlay.innerHTML=html;
+  var bar='<div style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:2px solid #e5e7eb;padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;z-index:10000;">'
+    +'<button onclick="window.print()" style="flex:1;padding:10px;border-radius:10px;background:#16a34a;color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;">🖨 Print / Save PDF</button>'
+    +'<button onclick="this.closest(\'div\').parentElement.remove()" style="padding:10px 18px;border-radius:10px;background:#6b7280;color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;">✕ Close</button>'
+    +'</div>';
+  overlay.innerHTML+=bar;
+  document.body.appendChild(overlay);
+}
+
+gsLoad().then(() => {
     renderCrewList(); // re-render with fresh data if anything changed
   }).catch(() => {
     // offline — cached list is already showing, nothing to do
@@ -4812,6 +5170,7 @@ function signOut() {
     <button class="nb" onclick="switchTab('equipment')" data-tab="equipment"><span class="ni">🔧</span><span class="nl">Equipment</span></button>
     <button class="nb" onclick="switchTab('reports')" data-tab="reports"><span class="ni">📊</span><span class="nl">Reports</span></button>
     <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
+    <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni">📅</span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
       <button class="nb" onclick="gsLoad()"><span class="ni">↺</span><span class="nl">Refresh Data</span></button>
@@ -4987,6 +5346,7 @@ function gsLoad() {
         }
         merge('equipment');
         merge('workOrders');
+        merge('attendance');
         // Fix any JSON string fields that came back from Sheets as strings
         (state.routes||[]).forEach(function(r) {
           if (typeof r.stops === 'string') { try { r.stops = JSON.parse(r.stops); } catch(e) { r.stops = []; } }
