@@ -1480,7 +1480,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION = '2026-05-25-v9';
+var APP_VERSION = '2026-05-25-v10';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -9783,7 +9783,7 @@ function renderAttendance() {
 
     // Build roster: permanent crew merged with saved records
     var roster = [];
-    crew.forEach(function(c) {
+    crew.filter(function(c){ return c.id && c.name && String(c.name).toLowerCase()!=='name' && String(c.id).toLowerCase()!=='id'; }).forEach(function(c) {
       var saved = dayRecords.find(function(r){ return r.crewId===c.id; });
       roster.push(saved || {
         id: 'att_' + c.id + '_' + dateStr.replace(/-/g,''),
@@ -9895,16 +9895,17 @@ function renderAttendance() {
     dates.sort();
 
     var people = {};
-    filtered.forEach(function(r){
+    filtered.forEach(function(r){ if(!r.name||r.name.toLowerCase()==='name') return;
       if (!people[r.name]) people[r.name] = { name:r.name, role:r.role||'', records:{} };
       people[r.name].records[r.date] = r;
     });
     var peopleList = Object.values(people).sort(function(a,b){ return a.name.localeCompare(b.name); });
 
     var dateHdrs = dates.map(function(d){
-      var dt = new Date(d+'T12:00:00');
+      var dt = new Date(d.includes('T') ? d : d+'T12:00:00');
+      var dtLabel = isNaN(dt.getTime()) ? d : dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});
       return '<th style="font-size:10px;font-weight:700;color:var(--text3);padding:4px 3px;text-align:center;white-space:nowrap;">'
-        + dt.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + '</th>';
+        + dtLabel + '</th>';
     }).join('');
 
     var tableRows = peopleList.map(function(p){
@@ -9913,7 +9914,8 @@ function renderAttendance() {
         var rec = p.records[d];
         if (!rec) return '<td style="text-align:center;color:var(--text4);font-size:11px;">—</td>';
         var sm = statusMeta(rec.status||'present');
-        totals[rec.status||'present'] = (totals[rec.status||'present']||0)+1;
+        var validStatus = rec.status && ['present','absent','late','halfday'].includes(rec.status) ? rec.status : 'present';
+        totals[validStatus] = (totals[validStatus]||0)+1;
         return '<td style="text-align:center;padding:3px;">'
           + '<div title="' + (rec.note||'') + '" style="width:28px;height:28px;border-radius:50%;'
           + 'background:' + sm.bg + ';border:1.5px solid ' + sm.border + ';'
@@ -9955,7 +9957,6 @@ function renderAttendance() {
       + '<div style="display:flex;gap:8px;">'
       +   '<button onclick="attApplyReport()"'
       +     ' style="flex:1;padding:8px;border-radius:8px;background:var(--blue);color:#fff;border:none;'
-      +     'font-size:13px;font-weight:700;cursor:pointer;">Apply</button>'
       +     'font-size:13px;font-weight:700;cursor:pointer;">Apply</button>'
       +   (rFrom||rTo ? '<button onclick="attClearReport()"'
       +     ' style="padding:8px 14px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);'
