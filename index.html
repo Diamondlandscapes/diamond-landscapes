@@ -1480,6 +1480,27 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
+// ── Auto-update: clear cache if running old version ─────────────────────────
+var APP_VERSION = '2026-05-25-v3';
+(function() {
+  try {
+    var storedVersion = localStorage.getItem('app_version');
+    if (storedVersion !== APP_VERSION) {
+      localStorage.setItem('app_version', APP_VERSION);
+      // Clear service worker caches and reload
+      if ('caches' in window) {
+        caches.keys().then(function(keys) {
+          return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+        }).then(function() {
+          window.location.reload(true);
+        });
+      } else {
+        window.location.reload(true);
+      }
+    }
+  } catch(e) {}
+})();
+
 let state = {
   role: 'manager',
   properties: [],
