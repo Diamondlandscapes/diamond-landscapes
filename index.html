@@ -4991,7 +4991,11 @@ function gsLoad() {
         }
         merge('equipment');
         merge('workOrders');
-        merge('attendance');
+        // Attendance: merge directly — don't use merge() which skips empty arrays
+        if (remote && Array.isArray(remote['attendance'])) {
+          state.attendance = remote['attendance'];
+        }
+        if (!Array.isArray(state.attendance)) state.attendance = [];
         // Fix any JSON string fields that came back from Sheets as strings
         (state.routes||[]).forEach(function(r) {
           if (typeof r.stops === 'string') { try { r.stops = JSON.parse(r.stops); } catch(e) { r.stops = []; } }
@@ -5120,7 +5124,7 @@ function startAutoSync() {
     if (activeScreen) {
       var tab = activeScreen.id.replace('screen-','');
       var r = { dashboard:renderDashboard, workorders:renderWorkOrders,
-        'wo-crew':renderCrewWorkOrders, attendance:renderAttendance,
+        'wo-crew':renderCrewWorkOrders, attendance:renderAttendance, attendance:renderAttendance,
         crew:renderCrew, reports:renderReports };
       if (r[tab]) try { r[tab](); } catch(e){}
     }
@@ -10049,6 +10053,10 @@ function attSaveDay() {
   if (!roster.length) { toast('No crew to save'); return; }
   roster.forEach(function(rec){ saveAttendanceRecord(rec); });
   toast('Attendance saved ✓');
+  // Push immediately so other devices see changes within seconds
+  if (typeof gsLoad === 'function' && typeof syncOnline !== 'undefined' && syncOnline) {
+    setTimeout(function(){ gsLoad().catch(function(){}); }, 800);
+  }
 }
 
 function attExportPDF() {
