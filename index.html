@@ -1437,17 +1437,14 @@ select.inp{cursor:pointer;}
   <button class="cbn-btn active" data-tab="field" onclick="switchTab('field');updateCrewBottomNav('field')">
     <span class="cbn-icon">📋</span><span class="cbn-label">My Jobs</span>
   </button>
-  <button class="cbn-btn" data-tab="crew-week" onclick="switchTab('crew-week');updateCrewBottomNav('crew-week')">
-    <span class="cbn-icon">📅</span><span class="cbn-label">My Month</span>
-  </button>
-  <button class="cbn-btn" data-tab="properties" onclick="switchTab('properties');updateCrewBottomNav('properties')">
-    <span class="cbn-icon">🏡</span><span class="cbn-label">Properties</span>
-  </button>
   <button class="cbn-btn" data-tab="wo-crew" onclick="switchTab('wo-crew');updateCrewBottomNav('wo-crew')">
-    <span class="cbn-icon">📋</span><span class="cbn-label">Work Orders</span>
+    <span class="cbn-icon">🔧</span><span class="cbn-label">Work Orders</span>
   </button>
   <button class="cbn-btn" data-tab="attendance" onclick="switchTab('attendance');updateCrewBottomNav('attendance')">
     <span class="cbn-icon">📅</span><span class="cbn-label">Attendance</span>
+  </button>
+  <button class="cbn-btn" data-tab="crew-week" onclick="switchTab('crew-week');updateCrewBottomNav('crew-week')">
+    <span class="cbn-icon">🗓</span><span class="cbn-label">My Month</span>
   </button>
   <button class="cbn-btn" data-tab="menu" onclick="toggleDrawer()">
     <span class="cbn-icon">☰</span><span class="cbn-label">Menu</span>
@@ -9986,6 +9983,16 @@ function renderAttendance() {
 }
 
 // ── Helpers ──────────────────────────────────────────────────
+
+function attSetMode(m) { window._attMode = m; renderAttendance(); }
+function attApplyReport() {
+  window._attRptFrom = document.getElementById('rpt-from')?.value || '';
+  window._attRptTo   = document.getElementById('rpt-to')?.value   || '';
+  renderAttendance();
+}
+function attClearReport() { window._attRptFrom=''; window._attRptTo=''; renderAttendance(); }
+function attClosePDF() { var el=document.querySelector('[data-att-pdf]'); if(el) el.remove(); }
+
 function attChangeDate(delta) {
   var d = new Date((window._attDate || todayStr()) + 'T12:00:00');
   d.setDate(d.getDate() + delta);
@@ -10151,8 +10158,25 @@ if ('serviceWorker' in navigator) {
   if (!isPreview) {
     window.addEventListener('load', function() {
       navigator.serviceWorker.register('./sw.js')
-        .then(function(reg) { console.log('SW registered'); })
+        .then(function(reg) {
+          console.log('SW registered');
+          // When a new SW activates, reload so everyone gets the latest version
+          reg.addEventListener('updatefound', function() {
+            var newWorker = reg.installing;
+            newWorker.addEventListener('statechange', function() {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                newWorker.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
+        })
         .catch(function(err) { console.warn('SW failed:', err); });
+
+      // When controller changes (new SW took over), reload silently
+      var _swRefreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function() {
+        if (!_swRefreshing) { _swRefreshing = true; window.location.reload(); }
+      });
     });
   }
 }
