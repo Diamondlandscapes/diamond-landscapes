@@ -1480,7 +1480,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-25-v11';
+var APP_VERSION='2026-05-25-v12';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -5035,7 +5035,8 @@ function gsLoad() {
         const refreshes = { dashboard:renderDashboard, routes:renderRoutes,
           properties:renderProperties, crew:renderCrew, inventory:renderInventory,
           equipment:renderEquipment, field:renderFieldView,
-          workorders:renderWorkOrders, 'wo-crew':renderCrewWorkOrders };
+          workorders:renderWorkOrders, 'wo-crew':renderCrewWorkOrders,
+          attendance:renderAttendance };
         refreshes[activeTab]?.();
         // also refresh reports if it has a pending flag count
         if (activeTab !== 'reports') refreshes['dashboard']?.();
@@ -5126,7 +5127,7 @@ function startAutoSync() {
     if (activeScreen) {
       var tab = activeScreen.id.replace('screen-','');
       var r = { dashboard:renderDashboard, workorders:renderWorkOrders,
-        'wo-crew':renderCrewWorkOrders, attendance:renderAttendance,
+        'wo-crew':renderCrewWorkOrders, 'attendance':renderAttendance, attendance:renderAttendance,
         crew:renderCrew, reports:renderReports };
       if (r[tab]) try { r[tab](); } catch(e){}
     }
