@@ -5453,6 +5453,7 @@ const MANAGER_MENU = [
   { tab:'reports',   icon:'📊', label:'Reports' },
   { tab:'schedule',  icon:'📅', label:'Schedule' },
   { tab:'workorders', icon:'📋', label:'Work Orders' },
+  { tab:'attendance',  icon:'📅', label:'Attendance' },
 ];
 const CREW_MENU = [
   { tab:'field',       icon:'📋', label:'My Jobs' },
@@ -9744,26 +9745,19 @@ function deleteAttendanceRecord(id) {
   gsDelete('attendance', id);
 }
 
-// Attendance statuses — defined as a function so always available regardless of load order
-function getAttStatuses() {
-  return [
-    { key:'present',  label:'Present',  color:'var(--green)',  bg:'rgba(74,222,128,.18)',  border:'rgba(74,222,128,.4)'  },
-    { key:'absent',   label:'Absent',   color:'var(--red)',    bg:'rgba(248,113,113,.18)', border:'rgba(248,113,113,.4)' },
-    { key:'late',     label:'Late',     color:'#f59e0b',       bg:'rgba(245,158,11,.18)',  border:'rgba(245,158,11,.4)'  },
-    { key:'halfday',  label:'Half Day', color:'#f97316',       bg:'rgba(249,115,22,.18)',  border:'rgba(249,115,22,.4)'  }
-  ];
-}
-var ATT_STATUSES = getAttStatuses();
+var ATT_STATUSES = [
+  { key:'present',  label:'Present',  color:'var(--green)',  bg:'rgba(74,222,128,.18)',  border:'rgba(74,222,128,.4)'  },
+  { key:'absent',   label:'Absent',   color:'var(--red)',    bg:'rgba(248,113,113,.18)', border:'rgba(248,113,113,.4)' },
+  { key:'late',     label:'Late',     color:'#f59e0b',       bg:'rgba(245,158,11,.18)',  border:'rgba(245,158,11,.4)'  },
+  { key:'halfday',  label:'Half Day', color:'#f97316',       bg:'rgba(249,115,22,.18)',  border:'rgba(249,115,22,.4)'  },
+];
 
 function nextStatus(current) {
-  var s = getAttStatuses();
-  var idx = s.findIndex(function(x){ return x.key===current; });
-  if (idx < 0) idx = 0;
-  return s[(idx+1) % s.length].key;
+  var idx = ATT_STATUSES.findIndex(function(s){ return s.key===current; });
+  return ATT_STATUSES[(idx+1) % ATT_STATUSES.length].key;
 }
 function statusMeta(key) {
-  var s = getAttStatuses();
-  return s.find(function(x){ return x.key===key; }) || s[0];
+  return ATT_STATUSES.find(function(s){ return s.key===key; }) || ATT_STATUSES[0];
 }
 
 function renderAttendance() {
@@ -9836,7 +9830,7 @@ function renderAttendance() {
         + '</div>';
     }).join('');
 
-    var pillBar = getAttStatuses().map(function(s) {
+    var pillBar = ATT_STATUSES.map(function(s) {
       return '<span style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;'
         + 'background:' + s.bg + ';color:' + s.color + ';border:1px solid ' + s.border + ';">'
         + s.label + ': ' + (counts[s.key]||0) + '</span>';
@@ -9993,6 +9987,15 @@ function renderAttendance() {
 }
 
 // ── Helpers ──────────────────────────────────────────────────
+function attSetMode(m) { window._attMode = m; renderAttendance(); }
+function attApplyReport() {
+  window._attRptFrom = (document.getElementById('rpt-from')||{}).value || '';
+  window._attRptTo   = (document.getElementById('rpt-to')||{}).value   || '';
+  renderAttendance();
+}
+function attClearReport() { window._attRptFrom=''; window._attRptTo=''; renderAttendance(); }
+function attClosePDF() { var el=document.querySelector('[data-att-pdf]'); if(el) el.remove(); }
+
 function attChangeDate(delta) {
   var d = new Date((window._attDate || todayStr()) + 'T12:00:00');
   d.setDate(d.getDate() + delta);
