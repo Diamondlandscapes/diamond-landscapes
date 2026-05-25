@@ -1437,14 +1437,17 @@ select.inp{cursor:pointer;}
   <button class="cbn-btn active" data-tab="field" onclick="switchTab('field');updateCrewBottomNav('field')">
     <span class="cbn-icon">📋</span><span class="cbn-label">My Jobs</span>
   </button>
+  <button class="cbn-btn" data-tab="crew-week" onclick="switchTab('crew-week');updateCrewBottomNav('crew-week')">
+    <span class="cbn-icon">📅</span><span class="cbn-label">My Month</span>
+  </button>
+  <button class="cbn-btn" data-tab="properties" onclick="switchTab('properties');updateCrewBottomNav('properties')">
+    <span class="cbn-icon">🏡</span><span class="cbn-label">Properties</span>
+  </button>
   <button class="cbn-btn" data-tab="wo-crew" onclick="switchTab('wo-crew');updateCrewBottomNav('wo-crew')">
-    <span class="cbn-icon">🔧</span><span class="cbn-label">Work Orders</span>
+    <span class="cbn-icon">📋</span><span class="cbn-label">Work Orders</span>
   </button>
   <button class="cbn-btn" data-tab="attendance" onclick="switchTab('attendance');updateCrewBottomNav('attendance')">
     <span class="cbn-icon">📅</span><span class="cbn-label">Attendance</span>
-  </button>
-  <button class="cbn-btn" data-tab="crew-week" onclick="switchTab('crew-week');updateCrewBottomNav('crew-week')">
-    <span class="cbn-icon">🗓</span><span class="cbn-label">My Month</span>
   </button>
   <button class="cbn-btn" data-tab="menu" onclick="toggleDrawer()">
     <span class="cbn-icon">☰</span><span class="cbn-label">Menu</span>
@@ -1678,6 +1681,7 @@ function applyRole(r) {
     <button class="nb" onclick="switchTab('crew-week')" data-tab="crew-week"><span class="ni">📅</span><span class="nl">My Week</span></button>
     <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni">🏡</span><span class="nl">Properties</span></button>
     <button class="nb" onclick="switchTab('wo-crew')" data-tab="wo-crew"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
+    <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni">📅</span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
       <button class="nb" onclick="signOut()"><span class="ni">🔒</span><span class="nl">Sign Out</span></button>
@@ -5450,12 +5454,14 @@ const MANAGER_MENU = [
   { tab:'reports',   icon:'📊', label:'Reports' },
   { tab:'schedule',  icon:'📅', label:'Schedule' },
   { tab:'workorders', icon:'📋', label:'Work Orders' },
+  { tab:'attendance',  icon:'📅', label:'Attendance' },
 ];
 const CREW_MENU = [
   { tab:'field',       icon:'📋', label:'My Jobs' },
   { tab:'crew-week',   icon:'📅', label:'My Week' },
   { tab:'properties',  icon:'🏡', label:'Properties' },
   { tab:'wo-crew',     icon:'📋', label:'Work Orders' },
+  { tab:'attendance',  icon:'📅', label:'Attendance' },
 ];
 
 function buildDrawerItems(menuItems, activeTab) {
@@ -9759,7 +9765,7 @@ function statusMeta(key) {
 function renderAttendance() {
   var root = document.getElementById('attendance-root');
   if (!root) return;
-
+  try {
   // Make sure attendance array exists
   if (!state.attendance) state.attendance = [];
 
@@ -9980,19 +9986,13 @@ function renderAttendance() {
           + 'No attendance records'+(rFrom||rTo?' in that date range':'')+'. '
           + 'Mark and save attendance for a few days first.</div>');
   }
+  } catch(err) {
+    console.error('renderAttendance error:', err);
+    if (root) root.innerHTML = '<div style="padding:24px;text-align:center;color:var(--red);">Error loading attendance: ' + err.message + '<br><button onclick="renderAttendance()" class="btn btn-outline" style="margin-top:12px;">Retry</button></div>';
+  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────
-
-function attSetMode(m) { window._attMode = m; renderAttendance(); }
-function attApplyReport() {
-  window._attRptFrom = document.getElementById('rpt-from')?.value || '';
-  window._attRptTo   = document.getElementById('rpt-to')?.value   || '';
-  renderAttendance();
-}
-function attClearReport() { window._attRptFrom=''; window._attRptTo=''; renderAttendance(); }
-function attClosePDF() { var el=document.querySelector('[data-att-pdf]'); if(el) el.remove(); }
-
 function attChangeDate(delta) {
   var d = new Date((window._attDate || todayStr()) + 'T12:00:00');
   d.setDate(d.getDate() + delta);
@@ -10158,25 +10158,8 @@ if ('serviceWorker' in navigator) {
   if (!isPreview) {
     window.addEventListener('load', function() {
       navigator.serviceWorker.register('./sw.js')
-        .then(function(reg) {
-          console.log('SW registered');
-          // When a new SW activates, reload so everyone gets the latest version
-          reg.addEventListener('updatefound', function() {
-            var newWorker = reg.installing;
-            newWorker.addEventListener('statechange', function() {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                newWorker.postMessage({ type: 'SKIP_WAITING' });
-              }
-            });
-          });
-        })
+        .then(function(reg) { console.log('SW registered'); })
         .catch(function(err) { console.warn('SW failed:', err); });
-
-      // When controller changes (new SW took over), reload silently
-      var _swRefreshing = false;
-      navigator.serviceWorker.addEventListener('controllerchange', function() {
-        if (!_swRefreshing) { _swRefreshing = true; window.location.reload(); }
-      });
     });
   }
 }
