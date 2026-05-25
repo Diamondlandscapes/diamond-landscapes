@@ -1480,27 +1480,6 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-// ── Auto-update: clear cache if running old version ─────────────────────────
-var APP_VERSION = '2026-05-25-v4';
-(function() {
-  try {
-    var storedVersion = localStorage.getItem('app_version');
-    if (storedVersion !== APP_VERSION) {
-      localStorage.setItem('app_version', APP_VERSION);
-      // Clear service worker caches and reload
-      if ('caches' in window) {
-        caches.keys().then(function(keys) {
-          return Promise.all(keys.map(function(k) { return caches.delete(k); }));
-        }).then(function() {
-          window.location.reload(true);
-        });
-      } else {
-        window.location.reload(true);
-      }
-    }
-  } catch(e) {}
-})();
-
 let state = {
   role: 'manager',
   properties: [],
@@ -1519,10 +1498,6 @@ let state = {
 
 function load() {
   try { const s = localStorage.getItem('diamondlandscapes_v1'); if(s) Object.assign(state, JSON.parse(s)); } catch(e) {}
-  // Always ensure arrays are proper arrays after loading from localStorage
-  if (!Array.isArray(state.attendance)) state.attendance = [];
-  if (!Array.isArray(state.workOrders)) state.workOrders = [];
-  if (!Array.isArray(state.crew)) state.crew = [];
 }
 function save() {
   try {
@@ -1706,7 +1681,6 @@ function applyRole(r) {
     <button class="nb" onclick="switchTab('crew-week')" data-tab="crew-week"><span class="ni">📅</span><span class="nl">My Week</span></button>
     <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni">🏡</span><span class="nl">Properties</span></button>
     <button class="nb" onclick="switchTab('wo-crew')" data-tab="wo-crew"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
-    <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni">📅</span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
       <button class="nb" onclick="signOut()"><span class="ni">🔒</span><span class="nl">Sign Out</span></button>
@@ -5017,8 +4991,10 @@ function gsLoad() {
         }
         merge('equipment');
         merge('workOrders');
-        // attendance is NOT merged from remote — it loads from localStorage
-        // and saves per-record via saveAndSync. This avoids crashes when sheet is empty.
+        // Attendance: always merge from remote (don't skip empty)
+        if (remote && Array.isArray(remote['attendance'])) {
+          state.attendance = remote['attendance'];
+        }
         if (!Array.isArray(state.attendance)) state.attendance = [];
         // Fix any JSON string fields that came back from Sheets as strings
         (state.routes||[]).forEach(function(r) {
@@ -5481,14 +5457,12 @@ const MANAGER_MENU = [
   { tab:'reports',   icon:'📊', label:'Reports' },
   { tab:'schedule',  icon:'📅', label:'Schedule' },
   { tab:'workorders', icon:'📋', label:'Work Orders' },
-  { tab:'attendance',  icon:'📅', label:'Attendance' },
 ];
 const CREW_MENU = [
   { tab:'field',       icon:'📋', label:'My Jobs' },
   { tab:'crew-week',   icon:'📅', label:'My Week' },
   { tab:'properties',  icon:'🏡', label:'Properties' },
   { tab:'wo-crew',     icon:'📋', label:'Work Orders' },
-  { tab:'attendance',  icon:'📅', label:'Attendance' },
 ];
 
 function buildDrawerItems(menuItems, activeTab) {
@@ -9757,17 +9731,11 @@ function todayStr() {
 }
 
 function getAttendanceDay(dateStr) {
-  try {
-    if (!Array.isArray(state.attendance)) state.attendance = [];
-    return state.attendance.filter(function(r){ return r && r.date===dateStr; });
-  } catch(e) {
-    state.attendance = [];
-    return [];
-  }
+  return (state.attendance||[]).filter(function(r){ return r.date===dateStr; });
 }
 
 function saveAttendanceRecord(record) {
-  if (!Array.isArray(state.attendance)) state.attendance = [];
+  if (!state.attendance) state.attendance = [];
   var idx = state.attendance.findIndex(function(r){ return r.id===record.id; });
   if (idx>=0) state.attendance[idx]=record; else state.attendance.push(record);
   save();
@@ -9788,28 +9756,19 @@ var ATT_STATUSES = [
 ];
 
 function nextStatus(current) {
-  var STATUSES = (typeof ATT_STATUSES !== 'undefined' && Array.isArray(ATT_STATUSES)) ? ATT_STATUSES : [
-    { key:'present'}, { key:'absent'}, { key:'late'}, { key:'halfday'}
-  ];
-  var idx = STATUSES.findIndex(function(s){ return s.key===current; });
-  return STATUSES[(idx+1) % STATUSES.length].key;
+  var idx = ATT_STATUSES.findIndex(function(s){ return s.key===current; });
+  return ATT_STATUSES[(idx+1) % ATT_STATUSES.length].key;
 }
 function statusMeta(key) {
-  var STATUSES = (typeof ATT_STATUSES !== 'undefined' && Array.isArray(ATT_STATUSES)) ? ATT_STATUSES : [
-    { key:'present',  label:'Present',  color:'var(--green)',  bg:'rgba(74,222,128,.18)',  border:'rgba(74,222,128,.4)'  },
-    { key:'absent',   label:'Absent',   color:'var(--red)',    bg:'rgba(248,113,113,.18)', border:'rgba(248,113,113,.4)' },
-    { key:'late',     label:'Late',     color:'#f59e0b',       bg:'rgba(245,158,11,.18)',  border:'rgba(245,158,11,.4)'  },
-    { key:'halfday',  label:'Half Day', color:'#f97316',       bg:'rgba(249,115,22,.18)',  border:'rgba(249,115,22,.4)'  }
-  ];
-  return STATUSES.find(function(s){ return s.key===key; }) || STATUSES[0];
+  return ATT_STATUSES.find(function(s){ return s.key===key; }) || ATT_STATUSES[0];
 }
 
 function renderAttendance() {
   var root = document.getElementById('attendance-root');
   if (!root) return;
-  try {
-  // Make sure attendance is always a proper array
-  if (!Array.isArray(state.attendance)) state.attendance = [];
+
+  // Make sure attendance array exists
+  if (!state.attendance) state.attendance = [];
 
   var isManager = state.role === 'manager';
   var dateStr   = window._attDate || todayStr();
@@ -9823,31 +9782,22 @@ function renderAttendance() {
 
   // ── Day view ────────────────────────────────────────────────
   if (mode === 'day') {
-    // Always build from state.crew — no dependency on Sheets
-    if (!Array.isArray(state.crew)) state.crew = [];
-    if (!Array.isArray(state.attendance)) state.attendance = [];
+    var dayRecords = getAttendanceDay(dateStr);
+    var crew = state.crew || [];
 
-    var savedToday = [];
-    try {
-      savedToday = state.attendance.filter(function(r){ return r && r.date===dateStr; });
-    } catch(e) { savedToday = []; }
-
-    // Build roster from crew list, overlaying any saved records for today
+    // Build roster: permanent crew merged with saved records
     var roster = [];
-    state.crew.forEach(function(c) {
-      var saved = null;
-      try { saved = savedToday.find(function(r){ return r.crewId===c.id; }); } catch(e){}
+    crew.forEach(function(c) {
+      var saved = dayRecords.find(function(r){ return r.crewId===c.id; });
       roster.push(saved || {
         id: 'att_' + c.id + '_' + dateStr.replace(/-/g,''),
         date: dateStr, crewId: c.id,
         name: c.name, role: c.role||'', status: 'present', note: ''
       });
     });
-    // Add day laborers saved for this date
-    try {
-      savedToday.filter(function(r){ return r.crewId==='temp'; })
-        .forEach(function(r){ roster.push(r); });
-    } catch(e){}
+    // Add day laborers for this date
+    dayRecords.filter(function(r){ return r.crewId==='temp'; })
+      .forEach(function(r){ roster.push(r); });
 
     window._attRoster = roster;
 
@@ -9883,7 +9833,7 @@ function renderAttendance() {
         + '</div>';
     }).join('');
 
-    var pillBar = (typeof ATT_STATUSES !== 'undefined' ? ATT_STATUSES : []).map(function(s) {
+    var pillBar = ATT_STATUSES.map(function(s) {
       return '<span style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;'
         + 'background:' + s.bg + ';color:' + s.color + ';border:1px solid ' + s.border + ';">'
         + s.label + ': ' + (counts[s.key]||0) + '</span>';
@@ -10037,13 +9987,28 @@ function renderAttendance() {
           + 'No attendance records'+(rFrom||rTo?' in that date range':'')+'. '
           + 'Mark and save attendance for a few days first.</div>');
   }
-  } catch(err) {
-    console.error('renderAttendance error:', err);
-    if (root) root.innerHTML = '<div style="padding:24px;text-align:center;color:var(--red);">Error loading attendance: ' + err.message + '<br><button onclick="renderAttendance()" class="btn btn-outline" style="margin-top:12px;">Retry</button></div>';
-  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────
+function attSetMode(m) {
+  window._attMode = m;
+  renderAttendance();
+}
+function attApplyReport() {
+  window._attRptFrom = document.getElementById('rpt-from') ? document.getElementById('rpt-from').value : '';
+  window._attRptTo   = document.getElementById('rpt-to')   ? document.getElementById('rpt-to').value   : '';
+  renderAttendance();
+}
+function attClearReport() {
+  window._attRptFrom = '';
+  window._attRptTo = '';
+  renderAttendance();
+}
+function attClosePDF() {
+  var el = document.querySelector('[data-att-pdf]');
+  if (el) el.remove();
+}
+
 function attChangeDate(delta) {
   var d = new Date((window._attDate || todayStr()) + 'T12:00:00');
   d.setDate(d.getDate() + delta);
@@ -10097,6 +10062,10 @@ function attSaveDay() {
   if (!roster.length) { toast('No crew to save'); return; }
   roster.forEach(function(rec){ saveAttendanceRecord(rec); });
   toast('Attendance saved ✓');
+  // Push to Sheets immediately so other devices see it
+  if (typeof syncOnline !== 'undefined' && syncOnline) {
+    setTimeout(function() { gsLoad().catch(function(){}); }, 500);
+  }
 }
 
 function attExportPDF() {
@@ -10208,34 +10177,9 @@ if ('serviceWorker' in navigator) {
                   location.protocol === 'file:';
   if (!isPreview) {
     window.addEventListener('load', function() {
-
-      // Register SW — add timestamp so browser always checks for updates
       navigator.serviceWorker.register('./sw.js')
-        .then(function(reg) {
-          console.log('[SW] Registered');
-
-          // When a new SW is found, activate it immediately
-          reg.addEventListener('updatefound', function() {
-            var newWorker = reg.installing;
-            newWorker.addEventListener('statechange', function() {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                console.log('[SW] New version available — activating');
-                newWorker.postMessage({ type: 'SKIP_WAITING' });
-              }
-            });
-          });
-        })
-        .catch(function(err) { console.warn('[SW] Registration failed:', err); });
-
-      // When new SW takes control, reload the page to get fresh content
-      var _swRefreshing = false;
-      navigator.serviceWorker.addEventListener('controllerchange', function() {
-        if (!_swRefreshing) {
-          _swRefreshing = true;
-          console.log('[SW] Controller changed — reloading for fresh content');
-          window.location.reload();
-        }
-      });
+        .then(function(reg) { console.log('SW registered'); })
+        .catch(function(err) { console.warn('SW failed:', err); });
     });
   }
 }
