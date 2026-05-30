@@ -1480,7 +1480,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-30-v5';
+var APP_VERSION='2026-05-30-v6';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -7847,14 +7847,26 @@ function openWODetail(woId) {
       '</div>' +
 
 
+      (wo.status === 'completed' ?
+        '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:14px;">' +
+          '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">COMPLETION DETAILS</div>' +
+          (wo.completedBy ? '<div style="font-size:12px;color:var(--text2);margin-bottom:6px;">&#x2713; Completed by <strong>' + wo.completedBy + '</strong>' + (wo.completedOn ? ' on ' + wo.completedOn : '') + '</div>' : '') +
+          (wo.completedNotes ?
+            '<div style="font-size:13px;color:var(--text);margin-bottom:6px;padding:10px;background:var(--bg2);border-radius:8px;border-left:3px solid var(--green);">' +
+              '<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">CREW NOTES</div>' +
+              wo.completedNotes +
+              (wo.completedNotesOriginal ? '<div style="font-size:10px;color:var(--text4);margin-top:6px;font-style:italic;">Original: ' + wo.completedNotesOriginal + '</div>' : '') +
+            '</div>' : '') +
+        '</div>'
+      : '') +
+
       '<div style="margin-bottom:14px;">' +
         '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">COMPLETION PHOTO</div>' +
         (getWOPhoto(wo) ?
-          '<img src="' + getWOPhoto(wo) + '" style="width:100%;border-radius:10px;max-height:200px;object-fit:cover;margin-top:8px;"/>' +
-          (wo.completedBy ? '<div style="font-size:11px;color:var(--text3);margin-top:6px;">Completed by ' + wo.completedBy + (wo.completedOn ? ' on ' + wo.completedOn : '') + '</div>' : '')
+          '<img src="' + getWOPhoto(wo) + '" style="width:100%;border-radius:10px;max-height:200px;object-fit:cover;margin-top:8px;"/>'
         : wo.status === 'completed' ?
           '<div style="background:var(--bg3);border-radius:10px;padding:14px;text-align:center;">' +
-            '<div style="font-size:24px;margin-bottom:6px;">📷</div>' +
+            '<div style="font-size:24px;margin-bottom:6px;">&#x1F4F7;</div>' +
             '<div style="font-size:13px;font-weight:700;color:var(--text2);">Photo taken by crew</div>' +
             '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Photo stored on crew device. New completions will sync here automatically.</div>' +
           '</div>'
