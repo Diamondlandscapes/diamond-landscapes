@@ -1483,7 +1483,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-30-v10';
+var APP_VERSION='2026-05-30-v11';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -9987,9 +9987,15 @@ function renderAttendance() {
         name: c.name, role: c.role||'', status: 'present', note: ''
       });
     });
-    // Add day laborers for this date
+    // Add day laborers: saved ones from attendance records
     dayRecords.filter(function(r){ return r.crewId==='temp'; })
       .forEach(function(r){ roster.push(r); });
+    // Also preserve any unsaved laborers added this session (not yet in dayRecords)
+    var savedTempIds = dayRecords.filter(function(r){return r.crewId==='temp';}).map(function(r){return r.id;});
+    (window._attRoster||[]).filter(function(r){
+      return r.crewId==='temp' && !savedTempIds.includes(r.id) &&
+             normalizeAttDate(r.date) === normalizeAttDate(dateStr);
+    }).forEach(function(r){ roster.push(r); });
 
     window._attRoster = roster;
 
@@ -10100,7 +10106,7 @@ function renderAttendance() {
     var dateHdrs = dates.map(function(d){
       var dt=new Date(d.indexOf('T')>=0?d:d+'T12:00:00');var isValidDt=!isNaN(dt.getTime());
       return '<th style="font-size:10px;font-weight:700;color:var(--text3);padding:4px 3px;text-align:center;white-space:nowrap;">'
-        + isValidDt?dt.toLocaleDateString('en-US',{month:'short',day:'numeric'}):d + '</th>';
+        + (isValidDt ? dt.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : d) + '</th>';
     }).join('');
 
     var tableRows = peopleList.map(function(p){
@@ -10126,8 +10132,6 @@ function renderAttendance() {
         + cells
         + '<td style="text-align:center;font-weight:800;color:var(--green);font-size:13px;">' + (totals.present||0) + '</td>'
         + '<td style="text-align:center;font-weight:800;color:var(--red);font-size:13px;">'    + (totals.absent||0)  + '</td>'
-        + '<td style="text-align:center;font-weight:800;color:#f59e0b;font-size:13px;">'       + (totals.late||0)    + '</td>'
-        + '<td style="text-align:center;font-weight:800;color:#f97316;font-size:13px;">'       + (totals.halfday||0) + '</td>'
         + '</tr>';
     }).join('');
 
@@ -10149,10 +10153,7 @@ function renderAttendance() {
       +     ' style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:7px 8px;color:var(--text);font-size:13px;"/>'
       + '</div>'
       + '<div style="display:flex;gap:8px;">'
-      +   '<button onclick="attApplyReport()"'
-      +     ' style="flex:1;padding:8px;border-radius:8px;background:var(--blue);color:#fff;border:none;'
-      +     'font-size:13px;font-weight:700;cursor:pointer;">Apply</button>'
-      +     'font-size:13px;font-weight:700;cursor:pointer;">Apply</button>'
+      +   '<button onclick="attApplyReport()" style="flex:1;padding:8px;border-radius:8px;background:var(--blue);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;">Apply</button>'
       +   (rFrom||rTo ? '<button onclick="attClearReport()"'
       +     ' style="padding:8px 14px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);'
       +     'border:1px solid rgba(248,113,113,.3);font-size:13px;font-weight:700;cursor:pointer;">✕ Clear</button>' : '')
@@ -10165,10 +10166,8 @@ function renderAttendance() {
           + '<thead><tr>'
           + '<th style="text-align:left;padding:6px;font-size:12px;font-weight:700;color:var(--text3);">Name</th>'
           + dateHdrs
-          + '<th style="text-align:center;font-size:11px;padding:4px 3px;color:var(--green);">✓</th>'
-          + '<th style="text-align:center;font-size:11px;padding:4px 3px;color:var(--red);">✗</th>'
-          + '<th style="text-align:center;font-size:11px;padding:4px 3px;color:#f59e0b;">L</th>'
-          + '<th style="text-align:center;font-size:11px;padding:4px 3px;color:#f97316;">½</th>'
+          + '<th style="text-align:center;font-size:11px;padding:4px 6px;color:var(--green);white-space:nowrap;">&#x2713; Present</th>'
+          + '<th style="text-align:center;font-size:11px;padding:4px 6px;color:var(--red);white-space:nowrap;">&#x2717; Absent</th>'
           + '</tr></thead>'
           + '<tbody>' + tableRows + '</tbody>'
           + '</table></div>'
