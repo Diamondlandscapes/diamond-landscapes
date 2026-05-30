@@ -1481,7 +1481,25 @@ const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
 var APP_VERSION='2026-05-27-v6';
-(function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
+(function(){
+  try {
+    var v = localStorage.getItem('app_version');
+    var reloaded = sessionStorage.getItem('app_reloaded');
+    if (v !== APP_VERSION && !reloaded) {
+      localStorage.setItem('app_version', APP_VERSION);
+      sessionStorage.setItem('app_reloaded', '1');
+      if ('caches' in window) {
+        caches.keys().then(function(k){
+          return Promise.all(k.map(function(x){ return caches.delete(x); }));
+        }).then(function(){ window.location.reload(true); });
+      } else {
+        window.location.reload(true);
+      }
+    } else {
+      sessionStorage.removeItem('app_reloaded');
+    }
+  } catch(e) {}
+})();
 
 let state = {
   role: 'manager',
