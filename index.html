@@ -1480,8 +1480,26 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-27-v5';
-(function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
+var APP_VERSION='2026-05-27-v6';
+(function(){
+  try {
+    var v = localStorage.getItem('app_version');
+    var reloaded = sessionStorage.getItem('app_reloaded');
+    if (v !== APP_VERSION && !reloaded) {
+      localStorage.setItem('app_version', APP_VERSION);
+      sessionStorage.setItem('app_reloaded', '1');
+      if ('caches' in window) {
+        caches.keys().then(function(k){
+          return Promise.all(k.map(function(x){ return caches.delete(x); }));
+        }).then(function(){ window.location.reload(true); });
+      } else {
+        window.location.reload(true);
+      }
+    } else {
+      sessionStorage.removeItem('app_reloaded');
+    }
+  } catch(e) {}
+})();
 
 let state = {
   role: 'manager',
@@ -8414,23 +8432,6 @@ function openCrewWODetail(woId) {
   buildContent(requestText, detailText, false);
   document.body.appendChild(sheet);
 
-  window.translateCrewWO = function() {
-    var st = document.getElementById('wo-translate-status');
-    if (st) { st.style.display='block'; st.textContent='⏳ Traduciendo...'; }
-    var textToTranslate = requestText + (detailText ? '. ' + detailText : '');
-    fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(textToTranslate) + '&langpair=en|es')
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      var translated = data.responseData && data.responseData.translatedText;
-      if (st) st.style.display='none';
-      if (translated) {
-        var parts = translated.split('. ');
-        buildContent(parts[0]||translated, parts.slice(1).join('. '), true);
-      }
-    })
-    .catch(function(){ if (st) { st.style.display='block'; st.style.color='var(--red)'; st.textContent='⚠ Translation unavailable'; } });
-  };
-
   window.showCrewWOEnglish = function() { buildContent(requestText, detailText, false); };
 }
 
@@ -8765,6 +8766,8 @@ function readFileAsDataUrl(file, callback) {
   img.src = objectUrl;
 }
 
+
+
 function submitCrewWOComplete(woId, photoData) {
   var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
   if (!wo) return;
@@ -8772,11 +8775,10 @@ function submitCrewWOComplete(woId, photoData) {
   var crew = state.loggedInCrewId ? (state.crew || []).find(function(c) { return c.id === state.loggedInCrewId; }) : null;
   var notes = document.getElementById('wo-complete-notes')?.value || '';
 
-  // Step 1: compress to good quality (matches flag photo pipeline)
   compressPhoto(photoData, 800, 0.82, function(compressed) {
     toast('📷 Photo ready - saving...');
 
-    // Step 2: save locally for immediate display
+    // Save locally for immediate display
     wo.completedPhoto = compressed;
     try {
       var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
@@ -8786,34 +8788,37 @@ function submitCrewWOComplete(woId, photoData) {
       try { localStorage.setItem('dlphoto_' + woId, compressed); } catch(e2) {}
     }
 
-    // Step 3: update WO status
+    // Update WO status
     wo.status = 'completed';
     wo.completedOn = new Date().toLocaleDateString();
+    wo.dateCompleted = new Date().toLocaleDateString();
     wo.completedBy = crew ? crew.name : 'Crew';
     wo.completedNotes = notes;
 
-    // Step 4: save state and close sheet
+    // Save and close
     save();
     var completeSheet = document.getElementById('crew-wo-complete-sheet');
     if (completeSheet) completeSheet.remove();
     renderCrewWorkOrders();
     if (document.getElementById('wo-community-list')) renderWorkOrders();
     toast('✓ Work order completed');
+    if (typeof syncOnline !== 'undefined' && syncOnline) {
+      setTimeout(function() { gsLoad().catch(function(){}); }, 1500);
+    }
 
-    // Step 5: save WO to Sheets with placeholder while upload runs
+    // Save to Sheets then upload photo
     var woForSheets = Object.assign({}, wo, { completedPhoto: '[uploading]' });
     gsSave('workOrders', woForSheets);
 
-    // Step 6: upload to ImgBB - same as flag photos
     toast('📤 Uploading photo...');
     var woFilename = 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now();
     uploadPhotoViaPost(compressed, woFilename,
       function(imgbbUrl) {
         wo.completedPhoto = imgbbUrl;
         try {
-          var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-          photos[wo.id] = imgbbUrl;
-          localStorage.setItem('dlphotos', JSON.stringify(photos));
+          var photos2 = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+          photos2[wo.id] = imgbbUrl;
+          localStorage.setItem('dlphotos', JSON.stringify(photos2));
         } catch(e) {}
         save();
         gsSave('workOrders', wo);
@@ -8823,52 +8828,13 @@ function submitCrewWOComplete(woId, photoData) {
       },
       function(err) {
         console.warn('WO photo upload failed:', err);
-        // Fallback: save compressed locally, sync without photo
         gsSave('workOrders', wo);
         toast('Photo saved locally');
       }
     );
-    var photoDisabled = null;
-    if (photoDisabled) {
-      console.log('disabled');
-      var uploadPayload = JSON.stringify({
-        secret: GS_SECRET,
-        action: 'uploadWOPhoto',
-        woId: wo.id,
-        photo: photo,
-        filename: 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now()
-      });
-
-      // Try regular POST first (works if CORS configured)
-      fetch(GS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: uploadPayload
-      })
-      .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(function(result) {
-        console.log('Photo upload result:', result);
-        if (result && result.photoUrl) {
-          wo.completedPhoto = result.photoUrl;
-          try {
-            var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-            photos[wo.id] = result.photoUrl;
-            localStorage.setItem('dlphotos', JSON.stringify(photos));
-          } catch(e) {}
-          save();
-          toast('✓ Photo uploaded to Drive');
-          renderCrewWorkOrders();
-          if (document.getElementById('wo-community-list')) renderWorkOrders();
-        } else {
-          toast('✓ Completed (photo upload issue: ' + JSON.stringify(result) + ')');
-        }
-      })
-    } // end photoDisabled block
   });
 }
+
 
 
 
@@ -9045,14 +9011,11 @@ function toggleFlagLang() {
 function saveFlagWithTranslation() {
   var note = document.getElementById('flag-note').value.trim();
   if (!note) { toast('Add a description'); return; }
-
   if (flagInSpanish && note) {
-    // translate Spanish → English before saving
     var st = document.getElementById('flag-translate-status');
-    if (st) { st.style.display='block'; st.textContent='⏳ Translating...'; }
+    if (st) { st.style.display='block'; st.textContent='\u29d7 Translating...'; }
     var btn = document.querySelector('#flag-sheet .btn.btn-green');
-    if (btn) { btn.disabled=true; btn.textContent='⏳ Submitting...'; }
-
+    if (btn) { btn.disabled=true; btn.textContent='\u29d7 Submitting...'; }
     fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(note) + '&langpair=es|en')
     .then(function(r){ return r.json(); })
     .then(function(data){
@@ -9064,7 +9027,6 @@ function saveFlagWithTranslation() {
       saveFlag();
     })
     .catch(function(){
-      // If translation fails, submit as-is
       flagInSpanish = false;
       saveFlag();
     });
@@ -9077,67 +9039,55 @@ function saveFlagWithTranslation() {
 function translateFlagNote(btn, text, idx) {
   var isSpanish = btn.dataset.translated === '1';
   if (isSpanish) {
-    // Switch back to English
     btn.parentElement.querySelector('span').textContent = btn.dataset.original || text;
-    btn.textContent = '🇲🇽 ES';
+    btn.textContent = '\ud83c\uddf2\ud83c\uddfd ES';
     btn.dataset.translated = '0';
     return;
   }
-  btn.textContent = '⏳';
+  btn.textContent = '\u29d7';
   btn.disabled = true;
   btn.dataset.original = text;
-  fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=en|es')
+  fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=es|en')
   .then(function(r){ return r.json(); })
   .then(function(data){
     var translated = data.responseData && data.responseData.translatedText;
     if (translated) {
       btn.parentElement.querySelector('span').textContent = translated;
-      btn.textContent = '🇺🇸 EN';
+      btn.textContent = '\ud83c\uddfa\ud83c\uddf8 EN';
       btn.dataset.translated = '1';
-    } else {
-      btn.textContent = '🇲🇽 ES';
-    }
+    } else { btn.textContent = '\ud83c\uddf2\ud83c\uddfd ES'; }
     btn.disabled = false;
   })
-  .catch(function(){
-    btn.textContent = '🇲🇽 ES';
-    btn.disabled = false;
-  });
+  .catch(function(){ btn.textContent = '\ud83c\uddf2\ud83c\uddfd ES'; btn.disabled = false; });
 }
 
 function translateFlagPanelNote(originalText) {
   var btn = document.getElementById('flag-panel-translate-btn');
   var noteEl = document.getElementById('flag-panel-note-text');
   if (!btn || !noteEl) return;
-
   var isSpanish = btn.dataset.translated === '1';
   if (isSpanish) {
     noteEl.textContent = originalText;
-    btn.textContent = '🇲🇽 Español';
+    btn.textContent = '\ud83c\uddf2\ud83c\uddfd Espa\u00f1ol';
     btn.dataset.translated = '0';
     return;
   }
-
-  btn.textContent = '⏳';
+  btn.textContent = '\u29d7';
   btn.disabled = true;
-  fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(originalText) + '&langpair=en|es')
+  fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(originalText) + '&langpair=es|en')
   .then(function(r){ return r.json(); })
   .then(function(data){
     var translated = data.responseData && data.responseData.translatedText;
     if (translated) {
       noteEl.textContent = translated;
-      btn.textContent = '🇺🇸 English';
+      btn.textContent = '\ud83c\uddfa\ud83c\uddf8 English';
       btn.dataset.translated = '1';
-    } else {
-      btn.textContent = '🇲🇽 Español';
-    }
+    } else { btn.textContent = '\ud83c\uddf2\ud83c\uddfd Espa\u00f1ol'; }
     btn.disabled = false;
   })
-  .catch(function(){
-    btn.textContent = '🇲🇽 Español';
-    btn.disabled = false;
-  });
+  .catch(function(){ btn.textContent = '\ud83c\uddf2\ud83c\uddfd Espa\u00f1ol'; btn.disabled = false; });
 }
+
 
 // ─── WEEKLY ROUTE INSTANCES ──────────────────────────────────────────────────
 // Routes are templates. Each week generates an instance with only due stops.
