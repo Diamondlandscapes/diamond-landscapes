@@ -1483,7 +1483,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-30-v9';
+var APP_VERSION='2026-05-30-v10';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -3081,7 +3081,7 @@ function resolveFlag(flagId, propId) {
   sheetDiv.insertBefore(handle, sheetDiv.firstChild);
 
   sheetDiv.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+    '<div class="sheet-hdr">' +
       '<div class="sheet-title" style="margin-bottom:0;">Resolve Flag</div>' +
       '<button id="mgr-resolve-close" style="background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;">✕</button>' +
     '</div>' +
@@ -7196,7 +7196,7 @@ function renderWorkOrders() {
     return;
   }
 
-  let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+  let html = '<div class="sheet-hdr">' +
     '<div style="font-size:13px;color:var(--text3);">' + communities.length + ' communities · ' + wos.length + ' work orders</div>' +
     '<button class="btn-sm" onclick="openAddCommunityWO()" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">+ Add Community</button>' +
     '</div>';
@@ -7353,6 +7353,7 @@ function openCommunityWO(community) {
       +'<button id="wop-upload" class="btn-sm" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">&#x2B06; Upload</button>'
       +'<button id="wop-report" class="btn-sm" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">&#x1F4C4; Report</button>'
       +'<button id="wop-arch-btn" class="btn-sm" style="background:rgba(148,163,184,.12);color:var(--text3);border:1px solid var(--border2);">&#x1F4E6; Archive</button>'
+      +'<button id="wop-del-comm" class="btn-sm" style="background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.3);">&#x1F5D1; Del</button>'
       +'</div>'
       +'<div style="padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg2);">'
       +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">'
@@ -7408,6 +7409,13 @@ function openCommunityWO(community) {
     if(q('wop-upload')) q('wop-upload').onclick=function(){openUploadWO(community);};
     if(q('wop-report')) q('wop-report').onclick=function(){openWOReport(community);};
     if(q('wop-arch-btn')) q('wop-arch-btn').onclick=function(){openArchiveWOs(community);};
+    if(q('wop-del-comm')) q('wop-del-comm').onclick=function(){
+      var n=(state.workOrders||[]).filter(function(w){return w.community===community;}).length;
+      if(!confirm('Delete ALL '+n+' work orders in "'+community+'" and remove this community? This cannot be undone.')) return;
+      (state.workOrders||[]).filter(function(w){return w.community===community;}).forEach(function(w){gsDelete('workOrders',w.id);});
+      state.workOrders=(state.workOrders||[]).filter(function(w){return w.community!==community;});
+      save(); panel.remove(); renderWorkOrders(); toast('Community deleted ✓');
+    };
     if(q('wop-upload2'))q('wop-upload2').onclick=function(){openUploadWO(community);};
     if(q('wo-filter-clear'))  q('wo-filter-clear').onclick=function(){window._woDateFrom='';window._woDateTo='';window._woVillage='';build();};
     if(q('wo-filter-clear2')) q('wo-filter-clear2').onclick=function(){window._woDateFrom='';window._woDateTo='';window._woVillage='';build();};
@@ -7958,10 +7966,10 @@ function openWOReport(community) {
   });
 
   sheet.innerHTML =
-    '<div class="sheet" style="max-height:92vh;">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
-        '<div class="sheet-title" style="margin-bottom:0;">📄 ' + community + ' Report</div>' +
-        '<button onclick="document.getElementById(\'wo-report-sheet\').remove()" class="sheet-close">✕</button>' +
+    '<div class="sheet" style="max-height:92dvh;max-height:92vh;">' +
+      '<div class="sheet-hdr">' +
+        '<div class="sheet-title">&#x1F4C4; ' + community + ' Report</div>' +
+        '<button onclick="document.getElementById(\'wo-report-sheet\').remove()" class="sheet-close">&#x2715;</button>' +
       '</div>' +
       '<div style="display:flex;gap:8px;margin-bottom:14px;">' +
         '<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;">' +
@@ -8330,7 +8338,7 @@ function openCrewPropFlags(propId) {
   var rows = flags.map(function(f) {
     var photo = getFlagPhoto(f);
     return '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px;border-left:3px solid var(--red);">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+      '<div class="sheet-hdr">' +
         '<div>' +
           '<span class="badge badge-red" style="margin-right:6px;">' + f.priority + '</span>' +
           '<span style="font-size:12px;color:var(--blue);font-weight:700;">' + f.service + '</span>' +
@@ -8346,7 +8354,7 @@ function openCrewPropFlags(propId) {
   }).join('');
 
   inner.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+    '<div class="sheet-hdr">' +
       '<div>' +
         '<div class="sheet-title" style="margin-bottom:2px;">⚑ Open Flags</div>' +
         '<div style="font-size:12px;color:var(--text3);">' + (prop ? prop.name : '') + '</div>' +
@@ -8377,7 +8385,7 @@ function openCrewWODetail(woId) {
 
   function buildContent(reqLabel, detailLabel, isSpanish) {
     inner.innerHTML =
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
+      '<div class="sheet-hdr">' +
         '<div class="sheet-title" style="margin-bottom:0;">' + typeIcon + '</div>' +
         '<button onclick="crewWODetailClose()" class="sheet-close">✕</button>' +
       '</div>' +
