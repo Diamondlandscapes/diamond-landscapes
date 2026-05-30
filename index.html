@@ -116,6 +116,9 @@ select.inp{cursor:pointer;}
 .overlay.open{display:flex;}
 .sheet{width:100%;max-width:480px;background:var(--bg2);border-radius:24px 24px 0 0;padding:20px 16px calc(20px + var(--safe-bottom));max-height:85dvh;max-height:85vh;overflow-y:auto;box-shadow:0 -4px 32px rgba(0,0,0,.5);-webkit-overflow-scrolling:touch;}
 .sheet-title{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:17px;font-weight:800;margin-bottom:16px;}
+.sheet-hdr{position:sticky;top:0;z-index:10;background:var(--bg2);display:flex;justify-content:space-between;align-items:center;padding:16px 0 12px;margin:-4px 0 12px;border-bottom:1px solid var(--border);}
+.sheet-hdr .sheet-title{margin-bottom:0;}
+.sheet-close{background:none;border:none;font-size:28px;cursor:pointer;color:var(--text3);padding:0 4px;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 
 /* toast */
 #toast{position:fixed;top:calc(16px + var(--safe-top));left:50%;
@@ -1383,7 +1386,7 @@ select.inp{cursor:pointer;}
 
   <div id="login-overlay" class="overlay">
     <div class="sheet">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div class="sheet-hdr">
         <div class="sheet-title" style="margin-bottom:0;" id="login-sheet-title">Sign In</div>
         <button onclick="closeOverlay('login-overlay')" style="background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;">✕</button>
       </div>
@@ -1480,7 +1483,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-30-v8';
+var APP_VERSION='2026-05-30-v9';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2982,10 +2985,10 @@ function openEditFlag(flagId) {
   var PRIORITIES = ['Low','Medium','High','Urgent'];
 
   inner.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
-      '<div class="sheet-title" style="margin-bottom:0;">Edit Flag</div>' +
-      '<button onclick="editFlagClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
-    '</div>' +
+    '<div class="sheet-hdr">' +
+        '<div class="sheet-title">Edit Flag</div>' +
+        '<button onclick="editFlagClose()" class="sheet-close">&#x2715;</button>' +
+      '</div>' +
     '<div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:4px;">PROPERTY</div>' +
     '<div style="font-size:14px;font-weight:700;margin-bottom:12px;">' + (prop ? prop.name : 'Unknown') + '</div>' +
     '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">SERVICE</div>' +
@@ -6243,7 +6246,7 @@ function bulkAssignToRoute() {
     `<option value="${c.id}">${c.name}</option>`).join('');
 
   sheet.innerHTML = `<div class="sheet">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+    <div class="sheet-hdr">
       <div class="sheet-title" style="margin-bottom:0;">Add to Route</div>
       <button onclick="document.getElementById('bulk-route-sheet').remove()" style="background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;">✕</button>
     </div>
@@ -6928,7 +6931,7 @@ function showCalendarDay(day, dayName) {
 
   // header
   const hdr = document.createElement('div');
-  hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;';
+  hdr.className = 'sheet-hdr';
   const title = document.createElement('div');
   title.style.cssText = "font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;font-weight:800;";
   title.textContent = dateStr;
@@ -7472,10 +7475,10 @@ function openAddCommunityWO() {
   var inner = document.createElement('div');
   inner.className = 'sheet';
   inner.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
-      '<div class="sheet-title" style="margin-bottom:0;">Add Community</div>' +
-      '<button id="add-comm-close" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
-    '</div>' +
+    '<div class="sheet-hdr">' +
+        '<div class="sheet-title">Add Community</div>' +
+        '<button id="add-comm-close" class="sheet-close">&#x2715;</button>' +
+      '</div>' +
     '<div style="font-size:13px;color:var(--text3);margin-bottom:10px;">Enter the community name</div>' +
     '<input id="new-comm-name" class="inp" placeholder="e.g. Palm Beach Gardens" style="margin-bottom:14px;"/>' +
     '<button id="add-comm-save" class="btn btn-green">Save Community</button>';
@@ -7558,7 +7561,7 @@ function openUploadWO(community) {
 
   // Header row
   var hdr = document.createElement('div');
-  hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+  hdr.className = 'sheet-hdr';
   var title = document.createElement('div');
   title.className = 'sheet-title';
   title.style.marginBottom = '0';
@@ -7814,9 +7817,9 @@ function openWODetail(woId) {
 
   sheet.innerHTML =
     '<div class="sheet" style="max-height:92dvh;max-height:92vh;padding-top:0;">' +
-      '<div style="position:sticky;top:0;z-index:10;background:var(--bg2);display:flex;justify-content:space-between;align-items:center;padding:16px 0 12px;margin-bottom:8px;border-bottom:1px solid var(--border);">' +
+      '<div class="sheet-hdr">' +
         '<div class="sheet-title" style="margin-bottom:0;">Work Order #' + (wo.woNumber||wo.id.slice(-4)) + '</div>' +
-        '<button onclick="document.getElementById(\'wo-detail-sheet\').remove()" style="background:none;border:none;font-size:28px;cursor:pointer;color:var(--text3);padding:0 4px;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;">✕</button>' +
+        '<button onclick="document.getElementById(\'wo-detail-sheet\').remove()" class="sheet-close">✕</button>' +
       '</div>' +
 
       '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:14px;border:1px solid var(--border);">' +
@@ -7958,7 +7961,7 @@ function openWOReport(community) {
     '<div class="sheet" style="max-height:92vh;">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
         '<div class="sheet-title" style="margin-bottom:0;">📄 ' + community + ' Report</div>' +
-        '<button onclick="document.getElementById(\'wo-report-sheet\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+        '<button onclick="document.getElementById(\'wo-report-sheet\').remove()" class="sheet-close">✕</button>' +
       '</div>' +
       '<div style="display:flex;gap:8px;margin-bottom:14px;">' +
         '<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;">' +
@@ -8347,8 +8350,8 @@ function openCrewPropFlags(propId) {
       '<div>' +
         '<div class="sheet-title" style="margin-bottom:2px;">⚑ Open Flags</div>' +
         '<div style="font-size:12px;color:var(--text3);">' + (prop ? prop.name : '') + '</div>' +
-      '<button onclick="crewPropFlagsClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
-      '<button onclick="crewPropFlagsClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+      '<button onclick="crewPropFlagsClose()" class="sheet-close">✕</button>' +
+      '<button onclick="crewPropFlagsClose()" class="sheet-close">✕</button>' +
     '</div>' +
     rows;
 }
@@ -8376,7 +8379,7 @@ function openCrewWODetail(woId) {
     inner.innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
         '<div class="sheet-title" style="margin-bottom:0;">' + typeIcon + '</div>' +
-        '<button onclick="crewWODetailClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+        '<button onclick="crewWODetailClose()" class="sheet-close">✕</button>' +
       '</div>' +
 
       '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:12px;">' +
@@ -8527,9 +8530,9 @@ function openCrewWOComplete(woId) {
 
   sheet.innerHTML =
     '<div class="sheet">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
-        '<div class="sheet-title" style="margin-bottom:0;">Complete Work Order</div>' +
-        '<button onclick="document.getElementById(\'crew-wo-complete-sheet\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+      '<div class="sheet-hdr">' +
+        '<div class="sheet-title">Complete Work Order</div>' +
+        '<button onclick="document.getElementById(\'crew-wo-complete-sheet\').remove()" class="sheet-close">&#x2715;</button>' +
       '</div>' +
       '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:14px;">' +
         '<div style="font-weight:700;font-size:14px;">#' + (wo.woNumber||'') + ' · ' + (wo.ownerName||'') + '</div>' +
@@ -9670,10 +9673,10 @@ function openCreateWO(presetCommunity) {
   function close() { sheet.remove(); }
 
   inner.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
-      '<div class="sheet-title" style="margin-bottom:0;">New Work Order</div>' +
-      '<button onclick="createWOClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
-    '</div>' +
+    '<div class="sheet-hdr">' +
+        '<div class="sheet-title">New Work Order</div>' +
+        '<button onclick="createWOClose()" class="sheet-close">&#x2715;</button>' +
+      '</div>' +
     '<div style="display:flex;flex-direction:column;gap:10px;">' +
     '<div style="display:flex;gap:8px;margin-bottom:0;">' +
     '<button id="cwo-type-land" class="pill active" onclick="cwoSetType(\'land\')">🌿 Landscaping</button>' +
@@ -9774,7 +9777,7 @@ function openCreateWO(community) {
   var inner=document.createElement('div');inner.className='sheet';inner.style.maxHeight='92vh';
   inner.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
     +'<div class="sheet-title" style="margin-bottom:0;">&#x2795; New Work Order</div>'
-    +'<button id="woc-close" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">&#x2715;</button></div>'
+    +'<button id="woc-close" class="sheet-close">&#x2715;</button></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'
     +'<div><div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">TYPE</div>'
     +'<select id="woc-type" class="inp" style="margin-bottom:0;"><option value="landscape">&#x1F33F; Landscaping</option><option value="irrigation">&#x1F4A7; Irrigation</option></select></div>'
@@ -9847,7 +9850,7 @@ function openArchiveWOs(community) {
   sheet.innerHTML='<div class="sheet" style="max-height:90vh;">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
     +'<div class="sheet-title" style="margin-bottom:0;">&#x1F4E6; Archive Completed WOs</div>'
-    +'<button id="wo-archive-close" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">&#x2715;</button></div>'
+    +'<button id="wo-archive-close" class="sheet-close">&#x2715;</button></div>'
     +'<div style="font-size:13px;color:var(--text3);margin-bottom:14px;">Archived WOs are hidden but never deleted. Restore anytime.</div>'
     +'<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">ARCHIVE BY AGE</div>'
     +presetBtns
