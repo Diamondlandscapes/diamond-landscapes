@@ -1480,7 +1480,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-27-v6';
+var APP_VERSION='2026-05-30-v1';
 (function(){
   try {
     var v = localStorage.getItem('app_version');
@@ -7946,7 +7946,7 @@ function openWOReport(community) {
           '<span class="badge badge-green">✓ Done</span>' +
         '</div>' +
         '<div style="font-size:12px;color:var(--text2);margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
-        '<div style="font-size:11px;color:var(--text3);">Completed by ' + (w.completedBy || (crew ? crew.name : 'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
+        '<div style="font-size:11px;color:var(--text3);">Completed by ' + (w.completedBy || (crew ? crew.name : 'Unknown')) + (w.completedOn ? ' &middot; ' + w.completedOn : '') + '</div>' +
         (getWOPhoto(w) ?
           '<img src="' + getWOPhoto(w) + '" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-top:8px;cursor:pointer;"/>' +
           '<div style="display:flex;gap:8px;margin-top:8px;">' +
@@ -8068,7 +8068,7 @@ function exportWOPDF(community) {
       '</div>' +
       '<div style="font-size:13px;color:#374151;margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
       '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
-      (w.completedNotes ? '<div style="font-size:11px;color:#6b7280;margin-top:4px;">Notes: ' + w.completedNotes + '</div>' : '') +
+      (w.completedNotes ? '<div style="font-size:11px;color:#374151;margin-top:4px;"><strong>Notes:</strong> ' + w.completedNotes + (w.completedNotesOriginal ? ' <em style="color:#9ca3af;font-size:10px;">(Original: ' + w.completedNotesOriginal + ')</em>' : '') + '</div>' : '') +
       (getWOPhoto(w)
       ? '<img src="' + getWOPhoto(w) + '" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;"/>' +
           '<div style="font-size:11px;color:#6b7280;text-align:center;margin-top:4px;">📱 Long press → Save to Photos &nbsp;|&nbsp; 💻 Right-click → Save Image</div>'
@@ -8768,6 +8768,26 @@ function readFileAsDataUrl(file, callback) {
 
 
 
+
+function translateNotes(text, onDone) {
+  if (!text || !text.trim()) { onDone(text); return; }
+  // Detect Spanish: accented chars or common Spanish words
+  var hasAccents = /[\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00f1\u00bf\u00a1]/i.test(text);
+  var hasSpanishWords = /\b(los|las|del|que|con|para|pero|esta|este|como|una|uno|todo|fue|hay|por|sin|mas|muy|bien|hizo|esta|el|la|se|no|le|al|yo|tu|es|en|su|un|de|lo)\b/i.test(text);
+  if (!hasAccents && !hasSpanishWords) { onDone(text); return; } // already English
+  fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=es|en')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var t = d && d.responseData && d.responseData.translatedText;
+      if (t && d.responseStatus === 200 && t.toLowerCase() !== text.toLowerCase()) {
+        onDone(t, text); // translated, original
+      } else {
+        onDone(text);
+      }
+    })
+    .catch(function() { onDone(text); });
+}
+
 function submitCrewWOComplete(woId, photoData) {
   var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
   if (!wo) return;
@@ -8804,6 +8824,18 @@ function submitCrewWOComplete(woId, photoData) {
     toast('✓ Work order completed');
     if (typeof syncOnline !== 'undefined' && syncOnline) {
       setTimeout(function() { gsLoad().catch(function(){}); }, 1500);
+    }
+    // Auto-translate notes in background — WO already saved so this can't break anything
+    if (notes && notes.trim()) {
+      translateNotes(notes, function(translated, original) {
+        if (original) {
+          wo.completedNotes = translated;
+          wo.completedNotesOriginal = original;
+          save();
+          gsSave('workOrders', wo);
+          toast('Notes translated to English');
+        }
+      });
     }
 
     // Save to Sheets then upload photo
