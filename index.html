@@ -1480,7 +1480,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-30-v1';
+var APP_VERSION='2026-05-30-v2';
 (function(){
   try {
     var v = localStorage.getItem('app_version');
@@ -7363,6 +7363,7 @@ function openCommunityWO(community) {
       +'<button id="wop-upload" class="btn-sm" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">&#x2B06; Upload</button>'
       +'<button id="wop-report" class="btn-sm" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">&#x1F4C4; Report</button>'
       +'<button id="wop-arch-btn" class="btn-sm" style="background:rgba(148,163,184,.12);color:var(--text3);border:1px solid var(--border2);">&#x1F4E6; Archive</button>'
+      +'<button id="wop-del-comm" class="btn-sm" style="background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.3);">🗑 Del</button>'
       +'</div>'
       +'<div style="padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg2);">'
       +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">'
@@ -7418,6 +7419,14 @@ function openCommunityWO(community) {
     if(q('wop-upload')) q('wop-upload').onclick=function(){openUploadWO(community);};
     if(q('wop-report')) q('wop-report').onclick=function(){openWOReport(community);};
     if(q('wop-arch-btn')) q('wop-arch-btn').onclick=function(){openArchiveWOs(community);};
+    if(q('wop-del-comm')) q('wop-del-comm').onclick=function(){
+      var commWOs=(state.workOrders||[]).filter(function(w){return w.community===community;});
+      if(!confirm('Delete ALL '+commWOs.length+' work orders in "'+community+'" and remove this community? This cannot be undone.')) return;
+      commWOs.forEach(function(w){gsDelete('workOrders',w.id);});
+      state.workOrders=(state.workOrders||[]).filter(function(w){return w.community!==community;});
+      save(); panel.remove(); renderWorkOrders();
+      toast('Community deleted ✓');
+    };
     if(q('wop-upload2'))q('wop-upload2').onclick=function(){openUploadWO(community);};
     if(q('wo-filter-clear'))  q('wo-filter-clear').onclick=function(){window._woDateFrom='';window._woDateTo='';window._woVillage='';build();};
     if(q('wo-filter-clear2')) q('wo-filter-clear2').onclick=function(){window._woDateFrom='';window._woDateTo='';window._woVillage='';build();};
@@ -7931,6 +7940,7 @@ function openWOReport(community) {
   var sheet = document.createElement('div');
   sheet.id = 'wo-report-sheet';
   sheet.className = 'overlay open';
+  sheet.style.zIndex = '600'; // above community panel (z-index 200)
 
   var rows = '';
   completed.forEach(function(w) {
