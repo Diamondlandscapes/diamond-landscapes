@@ -1480,7 +1480,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-30-v7';
+var APP_VERSION='2026-05-30-v8';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2734,7 +2734,12 @@ function uploadPhotoViaPost(base64Data, filename, onSuccess, onError) {
   .then(function(data) {
     console.log('ImgBB response:', JSON.stringify(data).slice(0,200));
     if (data && data.success && data.data && data.data.url) {
-      var url = data.data.url;
+      // Prefer display_url or medium.url — more reliable on mobile than direct url
+      var url = (data.data.medium && data.data.medium.url)
+             || data.data.display_url
+             || data.data.url;
+      // Ensure using https
+      if (url && url.startsWith('http:')) url = url.replace('http:', 'https:');
       console.log('Photo URL:', url);
       onSuccess(url);
     } else {
@@ -7863,7 +7868,7 @@ function openWODetail(woId) {
       '<div style="margin-bottom:14px;">' +
         '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">COMPLETION PHOTO</div>' +
         (getWOPhoto(wo) ?
-          '<img src="' + getWOPhoto(wo) + '" style="width:100%;border-radius:10px;max-height:200px;object-fit:cover;margin-top:8px;"/>'
+          '<img src="' + getWOPhoto(wo) + '" referrerpolicy="no-referrer" crossorigin="anonymous" style="width:100%;border-radius:10px;max-height:200px;object-fit:cover;margin-top:8px;" onerror="this.onerror=null;this.src=\'' + getWOPhoto(wo) + '\';this.style.opacity=\'0.7\'"/>'
         : wo.status === 'completed' ?
           '<div style="background:var(--bg3);border-radius:10px;padding:14px;text-align:center;">' +
             '<div style="font-size:24px;margin-bottom:6px;">&#x1F4F7;</div>' +
@@ -7942,7 +7947,7 @@ function openWOReport(community) {
         '<div style="font-size:12px;color:var(--text2);margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
         '<div style="font-size:11px;color:var(--text3);">Completed by ' + (w.completedBy || (crew ? crew.name : 'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
         (getWOPhoto(w) ?
-          '<img src="' + getWOPhoto(w) + '" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-top:8px;cursor:pointer;"/>' +
+          '<img src="' + getWOPhoto(w) + ' referrerpolicy="no-referrer"" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-top:8px;cursor:pointer;"/>' +
           '<div style="display:flex;gap:8px;margin-top:8px;">' +
             '<button onclick="dlPhotoFromBtn(this)" data-woid="' + w.id + '" style="flex:1;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">⬇ Download Photo</button>' +
           '</div>' : '') +
@@ -8065,7 +8070,7 @@ function exportWOPDF(community) {
       '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
       (w.completedNotes ? '<div style="font-size:11px;color:#6b7280;margin-top:4px;"><strong>Notes:</strong> ' + w.completedNotes + (w.completedNotesOriginal ? ' <em style="color:#9ca3af;font-size:10px;">(Original: ' + w.completedNotesOriginal + ')</em>' : '') + '</div>' : '') +
       (getWOPhoto(w)
-      ? '<img src="' + getWOPhoto(w) + '" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;"/>' +
+      ? '<img src="' + getWOPhoto(w) + ' referrerpolicy="no-referrer"" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;"/>' +
           '<div style="font-size:11px;color:#6b7280;text-align:center;margin-top:4px;">📱 Long press → Save to Photos &nbsp;|&nbsp; 💻 Right-click → Save Image</div>'
         : '<div style="background:#f3f4f6;border-radius:8px;padding:16px;text-align:center;color:#9ca3af;font-size:12px;margin-top:10px;">No photo attached</div>') +
     '</div>';
@@ -8703,17 +8708,21 @@ function clearOldPhotos() {
 
 function getWOPhoto(wo) {
   if (!wo) return null;
-  // Check dlphotos localStorage first (full quality on originating device)
+  // 1. Check individual localStorage key first (fastest, local device)
+  try {
+    var local = localStorage.getItem('dlphoto_' + wo.id);
+    if (local && local.length > 100) return local;
+  } catch(e) {}
+  // 2. Check dlphotos map
   try {
     var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
     var lp = photos[wo.id];
-    if (lp && lp.length > 5) return lp;
+    if (lp && lp.length > 100) return lp;
   } catch(e) {}
-  var local = localStorage.getItem('dlphoto_' + wo.id);
-  if (local && local.length > 5) return local;
-  // Return completedPhoto from Sheets (ImgBB URL or data:)
-  if (wo.completedPhoto && wo.completedPhoto.length > 5 &&
-      !wo.completedPhoto.startsWith('[')) return wo.completedPhoto;
+  // 3. Use remote URL from Sheets
+  if (wo.completedPhoto && !wo.completedPhoto.startsWith('[') && wo.completedPhoto.length > 10) {
+    return wo.completedPhoto;
+  }
   return null;
 }
 
