@@ -1483,7 +1483,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-30-v14';
+var APP_VERSION='2026-05-30-v15';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -7204,8 +7204,8 @@ function renderWorkOrders() {
     return;
   }
 
-  let html = '<div class="sheet-hdr">' +
-    '<div style="font-size:13px;color:var(--text3);">' + communities.length + ' communities · ' + wos.length + ' work orders</div>' +
+  let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+    '<div style="font-size:13px;color:var(--text3);">' + communities.length + ' communit' + (communities.length===1?'y':'ies') + ' · ' + wos.filter(function(w){return w.status!=='archived';}).length + ' work orders</div>' +
     '<button class="btn-sm" onclick="openAddCommunityWO()" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">+ Add Community</button>' +
     '</div>';
 
