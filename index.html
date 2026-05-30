@@ -1483,7 +1483,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-30-v13';
+var APP_VERSION='2026-05-30-v14';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -7255,6 +7255,21 @@ function renderWorkOrders() {
 }
 
 // ── Open community detail ─────────────────────────────────────────────────────
+
+function deleteCommunityWOs(community) {
+  var toDelete = (state.workOrders||[]).filter(function(w){ return w.community===community; });
+  if (!confirm('Delete ALL ' + toDelete.length + ' work orders in "' + community + '" and remove this community? This cannot be undone.')) return;
+  toDelete.forEach(function(w){
+    try { gsDelete('workOrders', w.id); } catch(e){}
+  });
+  state.workOrders = (state.workOrders||[]).filter(function(w){ return w.community !== community; });
+  save();
+  var p = document.getElementById('wo-community-panel');
+  if (p) p.remove();
+  renderWorkOrders();
+  toast('Community deleted ✓');
+}
+
 function openCommunityWO(community) {
   window._woVillage=''; window._woType='all'; window._woDateFrom=''; window._woDateTo='';
   window._woBulkMode=false; window._woBulkSel=new Set();
@@ -7373,7 +7388,7 @@ function openCommunityWO(community) {
       +'<button id="wop-upload" class="btn-sm" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">&#x2B06; Upload</button>'
       +'<button id="wop-report" class="btn-sm" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">&#x1F4C4; Report</button>'
       +'<button id="wop-arch-btn" class="btn-sm" style="background:rgba(148,163,184,.12);color:var(--text3);border:1px solid var(--border2);">&#x1F4E6; Archive</button>'
-      +'<button id="wop-del-comm" class="btn-sm" style="background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.3);">&#x1F5D1; Del</button>'
+      +'<button onclick="deleteCommunityWOs(\'' + community.replace(/'/g,"\\'") + '\')" class="btn-sm" style="background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.3);">&#x1F5D1; Del</button>'
       +'</div>'
       +'<div style="padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg2);">'
       +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">'
