@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="Diamond"/>
@@ -104,9 +104,9 @@ select.inp{cursor:pointer;}
 
 /* panels */
 .panel{position:fixed;inset:0;z-index:200;display:none;flex-direction:column;
-  background:var(--bg);max-width:480px;margin:0 auto;}
+  background:var(--bg);max-width:480px;margin:0 auto;height:100dvh;height:100vh;height:-webkit-fill-available;}
 .panel.open{display:flex;}
-.panel-head{background:var(--bg2);padding:calc(14px + var(--safe-top)) 16px 14px;
+.panel-head{background:var(--bg2);padding:calc(14px + var(--safe-top)) 16px 14px;position:sticky;top:0;z-index:10;
   border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
 .panel-title{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:18px;font-weight:800;}
 .close-btn{background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;padding:2px 6px;}
@@ -114,7 +114,7 @@ select.inp{cursor:pointer;}
 /* overlay sheet */
 .overlay{position:fixed;inset:0;z-index:300;background:linear-gradient(to bottom,rgba(0,0,0,0) 0%,rgba(0,0,0,.6) 40%);display:none;align-items:flex-end;justify-content:center;}
 .overlay.open{display:flex;}
-.sheet{width:100%;max-width:480px;background:var(--bg2);border-radius:24px 24px 0 0;padding:20px 16px calc(20px + var(--safe-bottom));max-height:85vh;overflow-y:auto;box-shadow:0 -4px 32px rgba(0,0,0,.5);}
+.sheet{width:100%;max-width:480px;background:var(--bg2);border-radius:24px 24px 0 0;padding:20px 16px calc(20px + var(--safe-bottom));max-height:85dvh;max-height:85vh;overflow-y:auto;box-shadow:0 -4px 32px rgba(0,0,0,.5);}
 .sheet-title{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:17px;font-weight:800;margin-bottom:16px;}
 
 /* toast */
@@ -1480,7 +1480,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-25-v13';
+var APP_VERSION='2026-05-27-v5';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -7625,6 +7625,48 @@ function openUploadWO(community) {
   inner.appendChild(importBtn);
 }
 
+function parseCSVFull(raw) {
+  // Fully RFC-4180 compliant CSV parser — handles quoted newlines in headers
+  var rows = [];
+  var row = [];
+  var cur = '';
+  var inQ = false;
+  for (var i = 0; i < raw.length; i++) {
+    var ch = raw[i];
+    var next = raw[i+1];
+    if (inQ) {
+      if (ch === '"' && next === '"') { cur += '"'; i++; }
+      else if (ch === '"') { inQ = false; }
+      else { cur += ch; }
+    } else {
+      if (ch === '"') { inQ = true; }
+      else if (ch === '\t' || ch === ',') { row.push(cur.replace(/\r?\n/g,' ').trim()); cur = ''; }
+      else if (ch === '\n') {
+        row.push(cur.replace(/\r?\n/g,' ').trim()); cur = '';
+        if (row.some(function(c){return c;})) rows.push(row);
+        row = [];
+      } else if (ch === '\r') { /* skip */ }
+      else { cur += ch; }
+    }
+  }
+  if (cur || row.length) { row.push(cur.trim()); if (row.some(function(c){return c;})) rows.push(row); }
+  return rows;
+}
+
+function parseWOLine(line) {
+  var parts = [];
+  var cur = '';
+  var inQ = false;
+  for (var i = 0; i < line.length; i++) {
+    var ch = line[i];
+    if (ch === '"') { inQ = !inQ; }
+    else if ((ch === ',' || ch === '\t') && !inQ) { parts.push(cur.trim()); cur = ''; }
+    else { cur += ch; }
+  }
+  parts.push(cur.trim());
+  return parts.map(function(p) { return p.replace(/^"|"$/g, '').trim(); });
+}
+
 function processWOUpload(community) {
   var raw = document.getElementById('wo-paste-area').value.trim();
   if (!raw) { toast('Paste some data first'); return; }
@@ -7632,34 +7674,81 @@ function processWOUpload(community) {
   var isIrrigation = document.getElementById('wo-type-irr').classList.contains('active');
   var woType = isIrrigation ? 'irrigation' : 'landscape';
 
-  var lines = raw.split('\n').filter(function(l) { return l.trim(); });
+  // Use full RFC CSV parser to handle quoted newlines in headers
+  var allRows = parseCSVFull(raw);
+  if (!allRows.length) { toast('No data found'); return; }
+
+  // ── Smart header detection ────────────────────────────────────────────────
+  var firstParts = allRows[0];
+  var firstLower = firstParts.map(function(p){ return (p||'').toLowerCase().replace(/\s+/g,' ').trim(); });
+  var lines = []; // not used below — we use allRows instead
+
+  // Column index map — defaults to positional if no headers detected
+  var colDate=-1, colWO=-1, colAddr=-1, colVillage=-1, colOwner=-1, colReqType=-1, colDetails=-1;
+
+  // Check if this looks like a header row
+  var looksLikeHeader = firstLower.some(function(h){
+    return h.includes('date') || h.includes('work') || h.includes('order') ||
+           h.includes('owner') || h.includes('address') || h.includes('village');
+  });
+
+  if (looksLikeHeader) {
+    // Map by header name
+    firstLower.forEach(function(h, i) {
+      if (colDate   < 0 && h.includes('date')) colDate = i;
+      if (colWO     < 0 && (h.includes('work') || h.includes('order') || h.includes('wo#') || h.includes('wo #'))) colWO = i;
+      if (colAddr   < 0 && h.includes('address')) colAddr = i;
+      if (colVillage< 0 && h.includes('village')) colVillage = i;
+      if (colOwner  < 0 && (h.includes('owner') || h.includes('name'))) colOwner = i;
+      if (colReqType< 0 && (h.includes('type') || h.includes('request'))) colReqType = i;
+      if (colDetails< 0 && (h.includes('detail') || h.includes('description') || h.includes('notes'))) colDetails = i;
+    });
+    lines = lines.slice(1); // skip header row
+  } else {
+    // Fallback: positional — Date, WO#, Address, Village, Owner, RequestType, Details
+    colDate=0; colWO=1; colAddr=2; colVillage=3; colOwner=4; colReqType=5; colDetails=6;
+  }
+
   var imported = 0;
   var newWOs = [];
 
-  lines.forEach(function(line) {
-    // Handle tab or comma separated
-    var parts = line.includes('\t') ? line.split('\t') : line.split(',');
-    parts = parts.map(function(p) { return p.trim().replace(/^"|"$/g,''); });
-    if (parts.length < 2) return;
+  var dataRows = looksLikeHeader ? allRows.slice(1) : allRows;
+  dataRows.forEach(function(p) {
+    if (!p || !p.some(function(c){return c;})) return;
+    if (p.length < 2) return;
 
-    // Try to parse: Date, WO#, Address, Village, Owner, RequestType, Details
-    var date = parts[0] || '';
-    var woNum = parts[1] || '';
-    var address = parts[2] || '';
-    var village = parts[3] || '';
-    var owner = parts[4] || '';
-    var reqType = parts[5] || '';
-    var details = parts.slice(6).join(' ').trim();
+    function col(idx, fallback) {
+      if (idx < 0 || idx >= p.length) return fallback || '';
+      return String(p[idx] || '').trim();
+    }
 
-    // Skip header rows
-    if (date.toLowerCase().includes('date') || woNum.toLowerCase().includes('work')) return;
+    var date    = col(colDate);
+    var woNum   = col(colWO);
+    var address = col(colAddr);
+    var village = col(colVillage);
+    var owner   = col(colOwner);
+    var reqType = col(colReqType);
+    var details = colDetails >= 0 ? col(colDetails) :
+      p.slice(Math.max(colDetails, colReqType >= 0 ? colReqType+1 : 6)).join(' ').trim();
+
+    // Skip rows that look like headers or are completely empty
     if (!woNum && !owner && !address) return;
+    if ((date||'').toLowerCase().includes('date') && (woNum||'').toLowerCase().includes('work')) return;
 
-    var wo = {
+    // Auto-detect type from request type or details if contains irrigation keywords
+    var autoType = woType;
+    var combined = (reqType + ' ' + details).toLowerCase();
+    if (combined.includes('sprinkler') || combined.includes('irrigation') || combined.includes('drip')) {
+      autoType = 'irrigation';
+    }
+
+    newWOs.push({
       id: 'wo_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
-      type: woType,
+      type: autoType,
       community: community,
       date: date,
+      dateReceived: new Date().toLocaleDateString(),
+      dateCompleted: '',
       woNumber: woNum,
       address: address,
       village: village,
@@ -7673,8 +7762,7 @@ function processWOUpload(community) {
       completedBy: '',
       dueDate: '',
       createdAt: new Date().toLocaleDateString()
-    };
-    newWOs.push(wo);
+    });
     imported++;
   });
 
@@ -7683,12 +7771,10 @@ function processWOUpload(community) {
   state.workOrders = state.workOrders || [];
   state.workOrders = state.workOrders.concat(newWOs);
   save();
-  // Sync to Google Sheets
   newWOs.forEach(function(wo) { gsSave('workOrders', wo); });
 
   document.querySelector('.overlay.open')?.remove();
   toast(imported + ' work orders imported ✓');
-  // Refresh the community panel if open
   if (window._woCommunity === community) {
     var panel = document.getElementById('wo-community-panel');
     if (panel) { panel.remove(); openCommunityWO(community); }
@@ -7817,9 +7903,9 @@ function deleteWO(woId) {
 
 // ── Work Order Report ─────────────────────────────────────────────────────────
 function openWOReport(community) {
-  var wos = (state.workOrders || []).filter(function(w) { return w.community === community; });
+  var wos = (state.workOrders || []).filter(function(w) { return w.community === community && w.status !== 'archived'; });
   var completed = wos.filter(function(w) { return w.status === 'completed'; });
-  var open = wos.filter(function(w) { return w.status !== 'completed' && w.status !== 'archived' && w.status !== 'placeholder'; });
+  var open = wos.filter(function(w) { return w.status !== 'completed' && w.status !== 'placeholder'; });
 
   var existing = document.getElementById('wo-report-sheet');
   if (existing) existing.remove();
@@ -7935,7 +8021,7 @@ function exportWOPDF(community) {
     return w.community === community && w.status === 'completed';
   });
   var open = (state.workOrders||[]).filter(function(w) {
-    return w.community === community && w.status !== 'completed' && w.status !== 'placeholder';
+    return w.community === community && w.status !== 'completed' && w.status !== 'placeholder' && w.status !== 'archived';
   });
 
   if (!wos.length && !open.length) { toast('No work orders to export'); return; }
@@ -8077,7 +8163,7 @@ function downloadAllWOPhotos(community) {
 
 function exportWOReport(community) {
   if (typeof XLSX === 'undefined') { toast('Export not available offline'); return; }
-  var wos = (state.workOrders || []).filter(function(w) { return w.community === community; });
+  var wos = (state.workOrders || []).filter(function(w) { return w.community === community && w.status !== 'archived'; });
   var wb = XLSX.utils.book_new();
 
   var rows = [['WO #','Type','Date','Address','Village','Owner','Request Type','Details','Assigned To','Status','Completed On','Completed By','Has Photo']];
