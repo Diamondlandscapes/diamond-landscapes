@@ -1480,7 +1480,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-27-v5';
+var APP_VERSION='2026-05-30-v5';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -7970,6 +7970,7 @@ function openWOReport(community) {
           }).join('') +
         '</div>' : '') +
       '<div style="display:flex;gap:8px;">' +
+        '<button class="btn" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);" onclick="translateAllWONotes(\'' + community.replace(/'/g,"\\'") + '\')">&#x1F310; Translate Notes</button>' +
         '<button class="btn btn-green" style="flex:1;" onclick="exportWOPDF(\'' + community.replace(/'/g,"\\'") + '\')">📄 Export PDF with Photos</button>' +
         '<button class="btn" style="background:var(--bg3);color:var(--text2);" onclick="exportWOReport(\'' + community.replace(/'/g,"\\'") + '\')">📊 Excel</button>' +
       '</div>' +
@@ -8050,7 +8051,7 @@ function exportWOPDF(community) {
       '</div>' +
       '<div style="font-size:13px;color:#374151;margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
       '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
-      (w.completedNotes ? '<div style="font-size:11px;color:#6b7280;margin-top:4px;">Notes: ' + w.completedNotes + '</div>' : '') +
+      (w.completedNotes ? '<div style="font-size:11px;color:#6b7280;margin-top:4px;"><strong>Notes:</strong> ' + w.completedNotes + (w.completedNotesOriginal ? ' <em style="color:#9ca3af;font-size:10px;">(Original: ' + w.completedNotesOriginal + ')</em>' : '') + '</div>' : '') +
       (getWOPhoto(w)
       ? '<img src="' + getWOPhoto(w) + '" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;"/>' +
           '<div style="font-size:11px;color:#6b7280;text-align:center;margin-top:4px;">📱 Long press → Save to Photos &nbsp;|&nbsp; 💻 Right-click → Save Image</div>'
@@ -8765,6 +8766,48 @@ function readFileAsDataUrl(file, callback) {
   img.src = objectUrl;
 }
 
+
+// ── Auto-translate completion notes to English ────────────────────────────────
+function translateNotes(text, onDone) {
+  if (!text || !text.trim()) { onDone(text); return; }
+  var hasAccents = /[\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00f1\u00bf\u00a1]/i.test(text);
+  var hasSpanish = /\b(los|las|del|que|con|para|pero|esta|este|como|una|uno|todo|fue|hay|por|sin|mas|muy|bien|el|la|se|le|al|es|en|su|un|de|lo|nuevo|nuevos|dos|tres|perfecto|espersores|roto|funciona|agua|sistema|trabaja|cabeza|tuberia)\b/i.test(text);
+  if (!hasAccents && !hasSpanish) { onDone(text); return; }
+  fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=es|en')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var t = d && d.responseData && d.responseData.translatedText;
+      if (t && d.responseStatus === 200 && t.toLowerCase() !== text.toLowerCase()) {
+        onDone(t, text);
+      } else {
+        onDone(text);
+      }
+    })
+    .catch(function() { onDone(text); });
+}
+
+function translateAllWONotes(community) {
+  var wos = (state.workOrders||[]).filter(function(w) {
+    return w.community === community && w.status === 'completed'
+      && w.completedNotes && w.completedNotes.trim() && !w.completedNotesOriginal;
+  });
+  if (!wos.length) { toast('No untranslated notes found'); return; }
+  toast('Translating ' + wos.length + ' note(s)...');
+  var done = 0;
+  wos.forEach(function(wo) {
+    translateNotes(wo.completedNotes, function(translated, original) {
+      done++;
+      if (original) {
+        wo.completedNotes = translated;
+        wo.completedNotesOriginal = original;
+        save();
+        gsSave('workOrders', wo);
+      }
+      if (done === wos.length) toast('All notes translated \u2713 \u2014 re-open report to see');
+    });
+  });
+}
+
 function submitCrewWOComplete(woId, photoData) {
   var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
   if (!wo) return;
@@ -8799,6 +8842,18 @@ function submitCrewWOComplete(woId, photoData) {
     renderCrewWorkOrders();
     if (document.getElementById('wo-community-list')) renderWorkOrders();
     toast('✓ Work order completed');
+    // Auto-translate notes in background — WO already saved so safe to fail
+    if (notes && notes.trim()) {
+      translateNotes(notes, function(translated, original) {
+        if (original) {
+          wo.completedNotes = translated;
+          wo.completedNotesOriginal = original;
+          save();
+          gsSave('workOrders', wo);
+          toast('Notes translated to English');
+        }
+      });
+    }
 
     // Step 5: save WO to Sheets with placeholder while upload runs
     var woForSheets = Object.assign({}, wo, { completedPhoto: '[uploading]' });
