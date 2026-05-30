@@ -8792,7 +8792,7 @@ function translateToEnglish(text, onDone) {
   var nonAscii = (text.match(/[^ -]/g) || []).length;
   var words = text.trim().split(/\s+/).length;
   // If less than 20% non-ASCII and no Spanish-specific chars, probably already English
-  var hasSpanishChars = /[áéíóúüñ¿¡]/i.test(text);
+  var hasSpanishChars = /[\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00f1\u00bf\u00a1]/i.test(text);
   var commonSpanish = /(los|las|del|que|con|para|pero|esta|este|como|una|uno|todo|fue|hay|por|sin|más|muy|bien|hizo|está)/i.test(text);
   if (!hasSpanishChars && !commonSpanish && nonAscii / Math.max(text.length, 1) < 0.1) {
     onDone(text); return; // Already English
