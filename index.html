@@ -1483,7 +1483,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-30-v11';
+var APP_VERSION='2026-05-30-v12';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -5011,6 +5011,14 @@ function gsLoad() {
           });
         }
         if(!Array.isArray(state.attendance))state.attendance=[];
+        // Auto-remove ghost placeholder community after sync
+        (function(){
+          var ghosts=['community'];
+          ghosts.forEach(function(g){
+            var hasActive=(state.workOrders||[]).some(function(w){return w.community===g&&w.status!=='archived'&&w.status!=='placeholder';});
+            if(!hasActive) state.workOrders=(state.workOrders||[]).filter(function(w){return w.community!==g;});
+          });
+        })();
         // Fix any JSON string fields that came back from Sheets as strings
         (state.routes||[]).forEach(function(r) {
           if (typeof r.stops === 'string') { try { r.stops = JSON.parse(r.stops); } catch(e) { r.stops = []; } }
@@ -7201,6 +7209,18 @@ function renderWorkOrders() {
     '<button class="btn-sm" onclick="openAddCommunityWO()" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">+ Add Community</button>' +
     '</div>';
 
+  // Filter out placeholder community names unless they have real WOs
+  communities = communities.filter(function(c){
+    if (!c || !c.trim()) return false;
+    // Allow "community" only if it has non-archived WOs
+    if (c.toLowerCase() === 'community') {
+      var hasReal = (state.workOrders||[]).some(function(w){
+        return w.community===c && w.status!=='archived';
+      });
+      return hasReal;
+    }
+    return true;
+  });
   communities.forEach(function(comm) {
     var commWOs = wos.filter(function(w) { return w.community === comm && w.status !== 'placeholder'; });
     var open = commWOs.filter(function(w) { return w.status === 'open'; }).length;
@@ -7410,11 +7430,20 @@ function openCommunityWO(community) {
     if(q('wop-report')) q('wop-report').onclick=function(){openWOReport(community);};
     if(q('wop-arch-btn')) q('wop-arch-btn').onclick=function(){openArchiveWOs(community);};
     if(q('wop-del-comm')) q('wop-del-comm').onclick=function(){
-      var n=(state.workOrders||[]).filter(function(w){return w.community===community;}).length;
-      if(!confirm('Delete ALL '+n+' work orders in "'+community+'" and remove this community? This cannot be undone.')) return;
-      (state.workOrders||[]).filter(function(w){return w.community===community;}).forEach(function(w){gsDelete('workOrders',w.id);});
+      var toDelete=(state.workOrders||[]).filter(function(w){return w.community===community;});
+      if(!confirm('Delete ALL '+toDelete.length+' work orders in "'+community+'" and remove this community?\nThis cannot be undone.')) return;
+      // Delete each WO from Sheets
+      toDelete.forEach(function(w){
+        try { gsDelete('workOrders', w.id); } catch(e){}
+      });
+      // Remove from local state
       state.workOrders=(state.workOrders||[]).filter(function(w){return w.community!==community;});
-      save(); panel.remove(); renderWorkOrders(); toast('Community deleted ✓');
+      save();
+      // Close panel and refresh
+      var p=document.getElementById('wo-community-panel');
+      if(p) p.remove();
+      renderWorkOrders();
+      toast('Community deleted ✓');
     };
     if(q('wop-upload2'))q('wop-upload2').onclick=function(){openUploadWO(community);};
     if(q('wo-filter-clear'))  q('wo-filter-clear').onclick=function(){window._woDateFrom='';window._woDateTo='';window._woVillage='';build();};
