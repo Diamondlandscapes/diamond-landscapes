@@ -114,8 +114,11 @@ select.inp{cursor:pointer;}
 /* overlay sheet */
 .overlay{position:fixed;inset:0;z-index:300;background:linear-gradient(to bottom,rgba(0,0,0,0) 0%,rgba(0,0,0,.6) 40%);display:none;align-items:flex-end;justify-content:center;}
 .overlay.open{display:flex;}
-.sheet{width:100%;max-width:480px;background:var(--bg2);border-radius:24px 24px 0 0;padding:20px 16px calc(20px + var(--safe-bottom));max-height:85dvh;max-height:85vh;overflow-y:auto;box-shadow:0 -4px 32px rgba(0,0,0,.5);}
+.sheet{width:100%;max-width:480px;background:var(--bg2);border-radius:24px 24px 0 0;padding:20px 16px calc(20px + var(--safe-bottom));max-height:85dvh;max-height:85vh;overflow-y:auto;box-shadow:0 -4px 32px rgba(0,0,0,.5);-webkit-overflow-scrolling:touch;}
 .sheet-title{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:17px;font-weight:800;margin-bottom:16px;}
+.sheet-hdr{position:sticky;top:0;z-index:10;background:var(--bg2);display:flex;justify-content:space-between;align-items:center;padding:16px 0 12px;margin:-4px 0 12px;border-bottom:1px solid var(--border);}
+.sheet-hdr .sheet-title{margin-bottom:0;}
+.sheet-close{background:none;border:none;font-size:28px;cursor:pointer;color:var(--text3);padding:0 4px;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 
 /* toast */
 #toast{position:fixed;top:calc(16px + var(--safe-top));left:50%;
@@ -1383,7 +1386,7 @@ select.inp{cursor:pointer;}
 
   <div id="login-overlay" class="overlay">
     <div class="sheet">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div class="sheet-hdr">
         <div class="sheet-title" style="margin-bottom:0;" id="login-sheet-title">Sign In</div>
         <button onclick="closeOverlay('login-overlay')" style="background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;">✕</button>
       </div>
@@ -1480,7 +1483,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-05-27-v5';
+var APP_VERSION='2026-05-30-v18';
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2734,7 +2737,12 @@ function uploadPhotoViaPost(base64Data, filename, onSuccess, onError) {
   .then(function(data) {
     console.log('ImgBB response:', JSON.stringify(data).slice(0,200));
     if (data && data.success && data.data && data.data.url) {
-      var url = data.data.url;
+      // Prefer display_url or medium.url — more reliable on mobile than direct url
+      var url = (data.data.medium && data.data.medium.url)
+             || data.data.display_url
+             || data.data.url;
+      // Ensure using https
+      if (url && url.startsWith('http:')) url = url.replace('http:', 'https:');
       console.log('Photo URL:', url);
       onSuccess(url);
     } else {
@@ -2977,10 +2985,10 @@ function openEditFlag(flagId) {
   var PRIORITIES = ['Low','Medium','High','Urgent'];
 
   inner.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
-      '<div class="sheet-title" style="margin-bottom:0;">Edit Flag</div>' +
-      '<button onclick="editFlagClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
-    '</div>' +
+    '<div class="sheet-hdr">' +
+        '<div class="sheet-title">Edit Flag</div>' +
+        '<button onclick="editFlagClose()" class="sheet-close">&#x2715;</button>' +
+      '</div>' +
     '<div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:4px;">PROPERTY</div>' +
     '<div style="font-size:14px;font-weight:700;margin-bottom:12px;">' + (prop ? prop.name : 'Unknown') + '</div>' +
     '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">SERVICE</div>' +
@@ -3073,7 +3081,7 @@ function resolveFlag(flagId, propId) {
   sheetDiv.insertBefore(handle, sheetDiv.firstChild);
 
   sheetDiv.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+    '<div class="sheet-hdr">' +
       '<div class="sheet-title" style="margin-bottom:0;">Resolve Flag</div>' +
       '<button id="mgr-resolve-close" style="background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;">✕</button>' +
     '</div>' +
@@ -5003,6 +5011,14 @@ function gsLoad() {
           });
         }
         if(!Array.isArray(state.attendance))state.attendance=[];
+        // Auto-remove ghost placeholder community after sync
+        (function(){
+          var ghosts=['community'];
+          ghosts.forEach(function(g){
+            var hasActive=(state.workOrders||[]).some(function(w){return w.community===g&&w.status!=='archived'&&w.status!=='placeholder';});
+            if(!hasActive) state.workOrders=(state.workOrders||[]).filter(function(w){return w.community!==g;});
+          });
+        })();
         // Fix any JSON string fields that came back from Sheets as strings
         (state.routes||[]).forEach(function(r) {
           if (typeof r.stops === 'string') { try { r.stops = JSON.parse(r.stops); } catch(e) { r.stops = []; } }
@@ -6238,7 +6254,7 @@ function bulkAssignToRoute() {
     `<option value="${c.id}">${c.name}</option>`).join('');
 
   sheet.innerHTML = `<div class="sheet">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+    <div class="sheet-hdr">
       <div class="sheet-title" style="margin-bottom:0;">Add to Route</div>
       <button onclick="document.getElementById('bulk-route-sheet').remove()" style="background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;">✕</button>
     </div>
@@ -6923,7 +6939,7 @@ function showCalendarDay(day, dayName) {
 
   // header
   const hdr = document.createElement('div');
-  hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;';
+  hdr.className = 'sheet-hdr';
   const title = document.createElement('div');
   title.style.cssText = "font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;font-weight:800;";
   title.textContent = dateStr;
@@ -7175,7 +7191,7 @@ function renderWorkOrders() {
   const wos = state.workOrders || [];
 
   // Get unique communities
-  const communities = [...new Set(wos.map(w => w.community).filter(Boolean))].sort();
+  let communities = [...new Set(wos.map(w => w.community).filter(Boolean))].sort();
 
   if (!communities.length) {
     el.innerHTML =
@@ -7189,10 +7205,22 @@ function renderWorkOrders() {
   }
 
   let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
-    '<div style="font-size:13px;color:var(--text3);">' + communities.length + ' communities · ' + wos.length + ' work orders</div>' +
+    '<div style="font-size:13px;color:var(--text3);">' + communities.length + ' communit' + (communities.length===1?'y':'ies') + ' · ' + wos.filter(function(w){return w.status!=='archived';}).length + ' work orders</div>' +
     '<button class="btn-sm" onclick="openAddCommunityWO()" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">+ Add Community</button>' +
     '</div>';
 
+  // Filter out placeholder community names unless they have real WOs
+  communities = communities.filter(function(c){
+    if (!c || !c.trim()) return false;
+    // Allow "community" only if it has non-archived WOs
+    if (c.toLowerCase() === 'community') {
+      var hasReal = (state.workOrders||[]).some(function(w){
+        return w.community===c && w.status!=='archived';
+      });
+      return hasReal;
+    }
+    return true;
+  });
   communities.forEach(function(comm) {
     var commWOs = wos.filter(function(w) { return w.community === comm && w.status !== 'placeholder'; });
     var open = commWOs.filter(function(w) { return w.status === 'open'; }).length;
@@ -7227,6 +7255,21 @@ function renderWorkOrders() {
 }
 
 // ── Open community detail ─────────────────────────────────────────────────────
+
+function deleteCommunityWOs(community) {
+  var toDelete = (state.workOrders||[]).filter(function(w){ return w.community===community; });
+  if (!confirm('Delete ALL ' + toDelete.length + ' work orders in "' + community + '" and remove this community? This cannot be undone.')) return;
+  toDelete.forEach(function(w){
+    try { gsDelete('workOrders', w.id); } catch(e){}
+  });
+  state.workOrders = (state.workOrders||[]).filter(function(w){ return w.community !== community; });
+  save();
+  var p = document.getElementById('wo-community-panel');
+  if (p) p.remove();
+  renderWorkOrders();
+  toast('Community deleted ✓');
+}
+
 function openCommunityWO(community) {
   window._woVillage=''; window._woType='all'; window._woDateFrom=''; window._woDateTo='';
   window._woBulkMode=false; window._woBulkSel=new Set();
@@ -7345,6 +7388,7 @@ function openCommunityWO(community) {
       +'<button id="wop-upload" class="btn-sm" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">&#x2B06; Upload</button>'
       +'<button id="wop-report" class="btn-sm" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">&#x1F4C4; Report</button>'
       +'<button id="wop-arch-btn" class="btn-sm" style="background:rgba(148,163,184,.12);color:var(--text3);border:1px solid var(--border2);">&#x1F4E6; Archive</button>'
+      +'<button onclick="deleteCommunityWOs(\'' + community.replace(/'/g,"\\'") + '\')" class="btn-sm" style="background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.3);">&#x1F5D1; Del</button>'
       +'</div>'
       +'<div style="padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg2);">'
       +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">'
@@ -7400,6 +7444,22 @@ function openCommunityWO(community) {
     if(q('wop-upload')) q('wop-upload').onclick=function(){openUploadWO(community);};
     if(q('wop-report')) q('wop-report').onclick=function(){openWOReport(community);};
     if(q('wop-arch-btn')) q('wop-arch-btn').onclick=function(){openArchiveWOs(community);};
+    if(q('wop-del-comm')) q('wop-del-comm').onclick=function(){
+      var toDelete=(state.workOrders||[]).filter(function(w){return w.community===community;});
+      if(!confirm('Delete ALL '+toDelete.length+' work orders in "'+community+'" and remove this community?\nThis cannot be undone.')) return;
+      // Delete each WO from Sheets
+      toDelete.forEach(function(w){
+        try { gsDelete('workOrders', w.id); } catch(e){}
+      });
+      // Remove from local state
+      state.workOrders=(state.workOrders||[]).filter(function(w){return w.community!==community;});
+      save();
+      // Close panel and refresh
+      var p=document.getElementById('wo-community-panel');
+      if(p) p.remove();
+      renderWorkOrders();
+      toast('Community deleted ✓');
+    };
     if(q('wop-upload2'))q('wop-upload2').onclick=function(){openUploadWO(community);};
     if(q('wo-filter-clear'))  q('wo-filter-clear').onclick=function(){window._woDateFrom='';window._woDateTo='';window._woVillage='';build();};
     if(q('wo-filter-clear2')) q('wo-filter-clear2').onclick=function(){window._woDateFrom='';window._woDateTo='';window._woVillage='';build();};
@@ -7467,10 +7527,10 @@ function openAddCommunityWO() {
   var inner = document.createElement('div');
   inner.className = 'sheet';
   inner.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
-      '<div class="sheet-title" style="margin-bottom:0;">Add Community</div>' +
-      '<button id="add-comm-close" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
-    '</div>' +
+    '<div class="sheet-hdr">' +
+        '<div class="sheet-title">Add Community</div>' +
+        '<button id="add-comm-close" class="sheet-close">&#x2715;</button>' +
+      '</div>' +
     '<div style="font-size:13px;color:var(--text3);margin-bottom:10px;">Enter the community name</div>' +
     '<input id="new-comm-name" class="inp" placeholder="e.g. Palm Beach Gardens" style="margin-bottom:14px;"/>' +
     '<button id="add-comm-save" class="btn btn-green">Save Community</button>';
@@ -7553,7 +7613,7 @@ function openUploadWO(community) {
 
   // Header row
   var hdr = document.createElement('div');
-  hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+  hdr.className = 'sheet-hdr';
   var title = document.createElement('div');
   title.className = 'sheet-title';
   title.style.marginBottom = '0';
@@ -7808,10 +7868,10 @@ function openWODetail(woId) {
   var typeLabel = wo.type === 'irrigation' ? '💧 Irrigation' : '🌿 Landscaping';
 
   sheet.innerHTML =
-    '<div class="sheet" style="max-height:92vh;">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
+    '<div class="sheet" style="max-height:92dvh;max-height:92vh;padding-top:0;">' +
+      '<div class="sheet-hdr">' +
         '<div class="sheet-title" style="margin-bottom:0;">Work Order #' + (wo.woNumber||wo.id.slice(-4)) + '</div>' +
-        '<button onclick="document.getElementById(\'wo-detail-sheet\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+        '<button onclick="document.getElementById(\'wo-detail-sheet\').remove()" class="sheet-close">✕</button>' +
       '</div>' +
 
       '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:14px;border:1px solid var(--border);">' +
@@ -7847,14 +7907,26 @@ function openWODetail(woId) {
       '</div>' +
 
 
+      (wo.status === 'completed' ?
+        '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:14px;">' +
+          '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">COMPLETION DETAILS</div>' +
+          (wo.completedBy ? '<div style="font-size:12px;color:var(--text2);margin-bottom:6px;">&#x2713; Completed by <strong>' + wo.completedBy + '</strong>' + (wo.completedOn ? ' on ' + wo.completedOn : '') + '</div>' : '') +
+          (wo.completedNotes ?
+            '<div style="font-size:13px;color:var(--text);margin-bottom:6px;padding:10px;background:var(--bg2);border-radius:8px;border-left:3px solid var(--green);">' +
+              '<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">CREW NOTES</div>' +
+              wo.completedNotes +
+              (wo.completedNotesOriginal ? '<div style="font-size:10px;color:var(--text4);margin-top:6px;font-style:italic;">Original: ' + wo.completedNotesOriginal + '</div>' : '') +
+            '</div>' : '') +
+        '</div>'
+      : '') +
+
       '<div style="margin-bottom:14px;">' +
         '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">COMPLETION PHOTO</div>' +
         (getWOPhoto(wo) ?
-          '<img src="' + getWOPhoto(wo) + '" style="width:100%;border-radius:10px;max-height:200px;object-fit:cover;margin-top:8px;"/>' +
-          (wo.completedBy ? '<div style="font-size:11px;color:var(--text3);margin-top:6px;">Completed by ' + wo.completedBy + (wo.completedOn ? ' on ' + wo.completedOn : '') + '</div>' : '')
+          '<img src="' + getWOPhoto(wo) + '" referrerpolicy="no-referrer" crossorigin="anonymous" style="width:100%;border-radius:10px;max-height:200px;object-fit:cover;margin-top:8px;" onerror="this.onerror=null;this.src=\'' + getWOPhoto(wo) + '\';this.style.opacity=\'0.7\'"/>'
         : wo.status === 'completed' ?
           '<div style="background:var(--bg3);border-radius:10px;padding:14px;text-align:center;">' +
-            '<div style="font-size:24px;margin-bottom:6px;">📷</div>' +
+            '<div style="font-size:24px;margin-bottom:6px;">&#x1F4F7;</div>' +
             '<div style="font-size:13px;font-weight:700;color:var(--text2);">Photo taken by crew</div>' +
             '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Photo stored on crew device. New completions will sync here automatically.</div>' +
           '</div>'
@@ -7902,78 +7974,81 @@ function deleteWO(woId) {
 }
 
 // ── Work Order Report ─────────────────────────────────────────────────────────
-function openWOReport(community) {
-  var wos = (state.workOrders || []).filter(function(w) { return w.community === community && w.status !== 'archived'; });
-  var completed = wos.filter(function(w) { return w.status === 'completed'; });
-  var open = wos.filter(function(w) { return w.status !== 'completed' && w.status !== 'placeholder'; });
+function openWOReport(community, filterType) {
+  filterType = filterType || 'all';
+  var allWOs = (state.workOrders||[]).filter(function(w){ return w.community===community && w.status!=='archived'; });
+  var wos = filterType==='all' ? allWOs : allWOs.filter(function(w){ return w.type===filterType; });
+  var completed = wos.filter(function(w){ return w.status==='completed'; });
+  var open = wos.filter(function(w){ return w.status!=='completed' && w.status!=='placeholder'; });
 
   var existing = document.getElementById('wo-report-sheet');
   if (existing) existing.remove();
-
   var sheet = document.createElement('div');
   sheet.id = 'wo-report-sheet';
   sheet.className = 'overlay open';
+  sheet.style.zIndex = '600';
 
-  var rows = '';
-  completed.forEach(function(w) {
-    var crew = (state.crew || []).find(function(c) { return c.id === w.assignedTo; });
-    var typeIcon = w.type === 'irrigation' ? '💧' : '🌿';
-    rows +=
-      '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px;border-left:3px solid var(--green);">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
-          '<div>' +
-            '<div style="font-weight:800;font-size:13px;">' + typeIcon + ' #' + (w.woNumber||w.id.slice(-4)) + ' · ' + (w.ownerName||'') + '</div>' +
-            '<div style="font-size:11px;color:var(--text3);">' + (w.address||'') + (w.village ? ' · Village ' + w.village : '') + '</div>' +
-          '</div>' +
-          '<span class="badge badge-green">✓ Done</span>' +
-        '</div>' +
-        '<div style="font-size:12px;color:var(--text2);margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
-        '<div style="font-size:11px;color:var(--text3);">Completed by ' + (w.completedBy || (crew ? crew.name : 'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
-        (getWOPhoto(w) ?
-          '<img src="' + getWOPhoto(w) + '" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-top:8px;cursor:pointer;"/>' +
-          '<div style="display:flex;gap:8px;margin-top:8px;">' +
-            '<button onclick="dlPhotoFromBtn(this)" data-woid="' + w.id + '" style="flex:1;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">⬇ Download Photo</button>' +
-          '</div>' : '') +
-      '</div>';
-  });
+  var commE = community.replace(/'/g,"\\'");
+
+  function pill(label, type, color) {
+    var active = filterType === type;
+    var cnt = allWOs.filter(function(w){ return (type==='all'||w.type===type) && w.status==='completed'; }).length;
+    return '<button onclick="openWOReport(\''+commE+'\',\''+type+'\')" style="padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;'
+      +'border:2px solid '+(active?color:'var(--border2)')+';background:'+(active?'rgba(100,200,100,.12)':'var(--bg3)')+';color:'+(active?color:'var(--text3)')+';">'
+      +label+' ('+cnt+')</button>';
+  }
+
+  function buildRows(list) {
+    return list.map(function(w) {
+      var crew = (state.crew||[]).find(function(c){ return c.id===w.assignedTo; });
+      var typeIcon = w.type==='irrigation'?'&#x1F4A7;':'&#x1F33F;';
+      var photo = getWOPhoto(w);
+      return '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px;border-left:3px solid var(--green);">'
+        +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
+        +'<div><div style="font-weight:800;font-size:13px;">'+typeIcon+' #'+(w.woNumber||w.id.slice(-4))+' &middot; '+(w.ownerName||'')+'</div>'
+        +'<div style="font-size:11px;color:var(--text3);">'+(w.address||'')+(w.village?' &middot; Village '+w.village:'')+'</div></div>'
+        +'<span class="badge badge-green">&#x2713; Done</span></div>'
+        +'<div style="font-size:12px;color:var(--text2);margin-bottom:6px;"><strong>'+(w.requestType||'')+'</strong>'+(w.details?': '+w.details:'')+'</div>'
+        +(w.completedNotes?'<div style="font-size:12px;color:var(--text);margin:6px 0;padding:8px 10px;background:var(--bg2);border-radius:8px;border-left:2px solid var(--green);"><span style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px;">CREW NOTES</span>'+w.completedNotes+(w.completedNotesOriginal?'<span style="font-size:10px;color:var(--text4);display:block;font-style:italic;">Original: '+w.completedNotesOriginal+'</span>':'')+'</div>':'')
+        +'<div style="font-size:11px;color:var(--text3);">Completed by '+(w.completedBy||(crew?crew.name:'Unknown'))+(w.completedOn?' &middot; '+w.completedOn:'')+'</div>'
+        +(photo?'<img src="'+photo+'" referrerpolicy="no-referrer" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-top:8px;"/>'
+          +'<div style="margin-top:8px;"><button onclick="dlPhotoFromBtn(this)" data-woid="'+w.id+'" style="width:100%;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">&#x2B07; Download Photo</button></div>':'')
+        +'</div>';
+    }).join('');
+  }
+
+  var typeLabel = filterType==='landscape'?' &middot; Landscaping':filterType==='irrigation'?' &middot; Irrigation':'';
 
   sheet.innerHTML =
-    '<div class="sheet" style="max-height:92vh;">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
-        '<div class="sheet-title" style="margin-bottom:0;">📄 ' + community + ' Report</div>' +
-        '<button onclick="document.getElementById(\'wo-report-sheet\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
-      '</div>' +
-      '<div style="display:flex;gap:8px;margin-bottom:14px;">' +
-        '<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;">' +
-          '<div style="font-size:24px;font-weight:800;color:var(--green);">' + completed.length + '</div>' +
-          '<div style="font-size:11px;color:var(--text3);">Completed</div>' +
-        '</div>' +
-        '<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;">' +
-          '<div style="font-size:24px;font-weight:800;color:var(--red);">' + open.length + '</div>' +
-          '<div style="font-size:11px;color:var(--text3);">Remaining</div>' +
-        '</div>' +
-        '<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;">' +
-          '<div style="font-size:24px;font-weight:800;color:var(--teal);">' + wos.length + '</div>' +
-          '<div style="font-size:11px;color:var(--text3);">Total</div>' +
-        '</div>' +
-      '</div>' +
-      (completed.length ?
-        '<div style="margin-bottom:10px;"><div class="sec-title">Completed Work Orders</div>' + rows + '</div>' :
-        '<div style="text-align:center;color:var(--text4);font-size:13px;padding:24px;">No completed work orders yet</div>') +
-      (open.length ?
-        '<div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.2);border-radius:12px;padding:12px;margin-bottom:14px;">' +
-          '<div style="font-size:11px;color:var(--red);font-weight:700;margin-bottom:8px;">⏳ ' + open.length + ' REMAINING</div>' +
-          open.map(function(w) {
-            return '<div style="font-size:12px;color:var(--text2);padding:4px 0;border-bottom:1px solid rgba(248,113,113,.1);">' +
-              (w.type==='irrigation'?'💧':'🌿') + ' #' + (w.woNumber||'') + ' · ' + (w.ownerName||'') + ' — ' + (w.requestType||'') +
-              '</div>';
-          }).join('') +
-        '</div>' : '') +
-      '<div style="display:flex;gap:8px;">' +
-        '<button class="btn btn-green" style="flex:1;" onclick="exportWOPDF(\'' + community.replace(/'/g,"\\'") + '\')">📄 Export PDF with Photos</button>' +
-        '<button class="btn" style="background:var(--bg3);color:var(--text2);" onclick="exportWOReport(\'' + community.replace(/'/g,"\\'") + '\')">📊 Excel</button>' +
-      '</div>' +
-    '</div>';
+    '<div class="sheet" style="max-height:92dvh;max-height:92vh;">'
+    +'<div class="sheet-hdr">'
+      +'<div class="sheet-title">&#x1F4C4; '+community+' Report'+typeLabel+'</div>'
+      +'<button onclick="document.getElementById(\'wo-report-sheet\').remove()" class="sheet-close">&#x2715;</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">'
+      +pill('All','all','var(--teal)')
+      +pill('&#x1F33F; Landscaping','landscape','var(--green)')
+      +pill('&#x1F4A7; Irrigation','irrigation','var(--blue)')
+    +'</div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:14px;">'
+      +'<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;"><div style="font-size:24px;font-weight:800;color:var(--green);">'+completed.length+'</div><div style="font-size:11px;color:var(--text3);">Completed</div></div>'
+      +'<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;"><div style="font-size:24px;font-weight:800;color:var(--red);">'+open.length+'</div><div style="font-size:11px;color:var(--text3);">Remaining</div></div>'
+      +'<div style="flex:1;background:var(--bg3);border-radius:10px;padding:12px;text-align:center;"><div style="font-size:24px;font-weight:800;color:var(--teal);">'+wos.length+'</div><div style="font-size:11px;color:var(--text3);">Total</div></div>'
+    +'</div>'
+    +(completed.length
+      ?'<div style="margin-bottom:10px;"><div class="sec-title">Completed Work Orders</div>'+buildRows(completed)+'</div>'
+      :'<div style="text-align:center;color:var(--text4);font-size:13px;padding:24px;">No completed work orders'+(filterType!=='all'?' for this type':'')+'</div>')
+    +(open.length
+      ?'<div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.2);border-radius:12px;padding:12px;margin-bottom:14px;">'
+        +'<div style="font-size:11px;color:var(--red);font-weight:700;margin-bottom:8px;">&#x23F3; '+open.length+' REMAINING</div>'
+        +open.map(function(w){ return '<div style="font-size:12px;color:var(--text2);padding:4px 0;border-bottom:1px solid rgba(248,113,113,.1);">'+(w.type==='irrigation'?'&#x1F4A7;':'&#x1F33F;')+' #'+(w.woNumber||'')+' &middot; '+(w.ownerName||'')+' &mdash; '+(w.requestType||'')+'</div>'; }).join('')
+        +'</div>':'')
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+      +'<button class="btn" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);" onclick="translateAllWONotes(\''+commE+'\')">&#x1F310; Translate Notes</button>'
+      +'<button class="btn btn-green" style="flex:1;" onclick="exportWOPDF(\''+commE+'\',\''+filterType+'\')">&#x1F4C4; Export PDF</button>'
+      +'<button class="btn" style="background:var(--bg3);color:var(--text2);" onclick="exportWOReport(\''+commE+'\')">&#x1F4CA; Excel</button>'
+    +'</div>'
+    +'</div>';
 
   document.body.appendChild(sheet);
 }
@@ -8016,12 +8091,16 @@ function exportWOPDFDownload() {
 
 function pdfClose() { var o=document.getElementById('pdf-print-overlay'); if(o)o.remove(); }
 
-function exportWOPDF(community) {
+function exportWOPDF(community, filterType) {
+  filterType = filterType || 'all';
   var wos = (state.workOrders||[]).filter(function(w) {
-    return w.community === community && w.status === 'completed';
+    return w.community === community && w.status === 'completed'
+      && (filterType === 'all' || w.type === filterType);
   });
   var open = (state.workOrders||[]).filter(function(w) {
-    return w.community === community && w.status !== 'completed' && w.status !== 'placeholder' && w.status !== 'archived';
+    return w.community === community && w.status !== 'completed'
+      && w.status !== 'placeholder' && w.status !== 'archived'
+      && (filterType === 'all' || w.type === filterType);
   });
 
   if (!wos.length && !open.length) { toast('No work orders to export'); return; }
@@ -8050,9 +8129,9 @@ function exportWOPDF(community) {
       '</div>' +
       '<div style="font-size:13px;color:#374151;margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
       '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
-      (w.completedNotes ? '<div style="font-size:11px;color:#6b7280;margin-top:4px;">Notes: ' + w.completedNotes + '</div>' : '') +
+      (w.completedNotes ? '<div style="font-size:11px;color:#6b7280;margin-top:4px;"><strong>Notes:</strong> ' + w.completedNotes + (w.completedNotesOriginal ? ' <em style="color:#9ca3af;font-size:10px;">(Original: ' + w.completedNotesOriginal + ')</em>' : '') + '</div>' : '') +
       (getWOPhoto(w)
-      ? '<img src="' + getWOPhoto(w) + '" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;"/>' +
+      ? '<img src="' + getWOPhoto(w) + ' referrerpolicy="no-referrer"" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;"/>' +
           '<div style="font-size:11px;color:#6b7280;text-align:center;margin-top:4px;">📱 Long press → Save to Photos &nbsp;|&nbsp; 💻 Right-click → Save Image</div>'
         : '<div style="background:#f3f4f6;border-radius:8px;padding:16px;text-align:center;color:#9ca3af;font-size:12px;margin-top:10px;">No photo attached</div>') +
     '</div>';
@@ -8085,6 +8164,10 @@ function exportWOPDF(community) {
     '<div style="max-width:720px;margin:0 auto;">' +
       '<div style="font-size:11px;font-weight:700;color:#6b7280;letter-spacing:1px;margin-bottom:4px;">WORK ORDER REPORT</div>' +
       '<div style="font-size:24px;font-weight:800;color:#111;margin-bottom:4px;">' + community + '</div>' +
+      (filterType && filterType !== 'all' ?
+        '<div style="display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:800;margin-bottom:8px;' +
+        (filterType==='irrigation'?'background:#dbeafe;color:#1d4ed8;':'background:#dcfce7;color:#15803d;') + '">' +
+        (filterType==='irrigation'?'&#x1F4A7; Irrigation Only':'&#x1F33F; Landscaping Only') + '</div>' : '') +
       '<div style="font-size:13px;color:#6b7280;margin-bottom:20px;">Generated ' + dateStr + ' · Diamond Landscapes</div>' +
       '<div style="display:flex;gap:12px;margin-bottom:20px;">' +
         '<div style="flex:1;background:#fff;border-radius:10px;padding:14px;text-align:center;border:1px solid #e5e7eb;">' +
@@ -8309,7 +8392,7 @@ function openCrewPropFlags(propId) {
   var rows = flags.map(function(f) {
     var photo = getFlagPhoto(f);
     return '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px;border-left:3px solid var(--red);">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+      '<div class="sheet-hdr">' +
         '<div>' +
           '<span class="badge badge-red" style="margin-right:6px;">' + f.priority + '</span>' +
           '<span style="font-size:12px;color:var(--blue);font-weight:700;">' + f.service + '</span>' +
@@ -8325,12 +8408,12 @@ function openCrewPropFlags(propId) {
   }).join('');
 
   inner.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+    '<div class="sheet-hdr">' +
       '<div>' +
         '<div class="sheet-title" style="margin-bottom:2px;">⚑ Open Flags</div>' +
         '<div style="font-size:12px;color:var(--text3);">' + (prop ? prop.name : '') + '</div>' +
-      '<button onclick="crewPropFlagsClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
-      '<button onclick="crewPropFlagsClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+      '<button onclick="crewPropFlagsClose()" class="sheet-close">✕</button>' +
+      '<button onclick="crewPropFlagsClose()" class="sheet-close">✕</button>' +
     '</div>' +
     rows;
 }
@@ -8356,9 +8439,9 @@ function openCrewWODetail(woId) {
 
   function buildContent(reqLabel, detailLabel, isSpanish) {
     inner.innerHTML =
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
+      '<div class="sheet-hdr">' +
         '<div class="sheet-title" style="margin-bottom:0;">' + typeIcon + '</div>' +
-        '<button onclick="crewWODetailClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+        '<button onclick="crewWODetailClose()" class="sheet-close">✕</button>' +
       '</div>' +
 
       '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:12px;">' +
@@ -8509,9 +8592,9 @@ function openCrewWOComplete(woId) {
 
   sheet.innerHTML =
     '<div class="sheet">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
-        '<div class="sheet-title" style="margin-bottom:0;">Complete Work Order</div>' +
-        '<button onclick="document.getElementById(\'crew-wo-complete-sheet\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
+      '<div class="sheet-hdr">' +
+        '<div class="sheet-title">Complete Work Order</div>' +
+        '<button onclick="document.getElementById(\'crew-wo-complete-sheet\').remove()" class="sheet-close">&#x2715;</button>' +
       '</div>' +
       '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:14px;">' +
         '<div style="font-weight:700;font-size:14px;">#' + (wo.woNumber||'') + ' · ' + (wo.ownerName||'') + '</div>' +
@@ -8690,17 +8773,21 @@ function clearOldPhotos() {
 
 function getWOPhoto(wo) {
   if (!wo) return null;
-  // Check dlphotos localStorage first (full quality on originating device)
+  // 1. Check individual localStorage key first (fastest, local device)
+  try {
+    var local = localStorage.getItem('dlphoto_' + wo.id);
+    if (local && local.length > 100) return local;
+  } catch(e) {}
+  // 2. Check dlphotos map
   try {
     var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
     var lp = photos[wo.id];
-    if (lp && lp.length > 5) return lp;
+    if (lp && lp.length > 100) return lp;
   } catch(e) {}
-  var local = localStorage.getItem('dlphoto_' + wo.id);
-  if (local && local.length > 5) return local;
-  // Return completedPhoto from Sheets (ImgBB URL or data:)
-  if (wo.completedPhoto && wo.completedPhoto.length > 5 &&
-      !wo.completedPhoto.startsWith('[')) return wo.completedPhoto;
+  // 3. Use remote URL from Sheets
+  if (wo.completedPhoto && !wo.completedPhoto.startsWith('[') && wo.completedPhoto.length > 10) {
+    return wo.completedPhoto;
+  }
   return null;
 }
 
@@ -8765,6 +8852,48 @@ function readFileAsDataUrl(file, callback) {
   img.src = objectUrl;
 }
 
+
+// ── Auto-translate completion notes to English ────────────────────────────────
+function translateNotes(text, onDone) {
+  if (!text || !text.trim()) { onDone(text); return; }
+  var hasAccents = /[\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00f1\u00bf\u00a1]/i.test(text);
+  var hasSpanish = /\b(los|las|del|que|con|para|pero|esta|este|como|una|uno|todo|fue|hay|por|sin|mas|muy|bien|el|la|se|le|al|es|en|su|un|de|lo|nuevo|nuevos|dos|tres|perfecto|espersores|roto|funciona|agua|sistema|trabaja|cabeza|tuberia)\b/i.test(text);
+  if (!hasAccents && !hasSpanish) { onDone(text); return; }
+  fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=es|en')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var t = d && d.responseData && d.responseData.translatedText;
+      if (t && d.responseStatus === 200 && t.toLowerCase() !== text.toLowerCase()) {
+        onDone(t, text);
+      } else {
+        onDone(text);
+      }
+    })
+    .catch(function() { onDone(text); });
+}
+
+function translateAllWONotes(community) {
+  var wos = (state.workOrders||[]).filter(function(w) {
+    return w.community === community && w.status === 'completed'
+      && w.completedNotes && w.completedNotes.trim() && !w.completedNotesOriginal;
+  });
+  if (!wos.length) { toast('No untranslated notes found'); return; }
+  toast('Translating ' + wos.length + ' note(s)...');
+  var done = 0;
+  wos.forEach(function(wo) {
+    translateNotes(wo.completedNotes, function(translated, original) {
+      done++;
+      if (original) {
+        wo.completedNotes = translated;
+        wo.completedNotesOriginal = original;
+        save();
+        gsSave('workOrders', wo);
+      }
+      if (done === wos.length) toast('All notes translated \u2713 \u2014 re-open report to see');
+    });
+  });
+}
+
 function submitCrewWOComplete(woId, photoData) {
   var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
   if (!wo) return;
@@ -8799,6 +8928,18 @@ function submitCrewWOComplete(woId, photoData) {
     renderCrewWorkOrders();
     if (document.getElementById('wo-community-list')) renderWorkOrders();
     toast('✓ Work order completed');
+    // Auto-translate notes in background — WO already saved so safe to fail
+    if (notes && notes.trim()) {
+      translateNotes(notes, function(translated, original) {
+        if (original) {
+          wo.completedNotes = translated;
+          wo.completedNotesOriginal = original;
+          save();
+          gsSave('workOrders', wo);
+          toast('Notes translated to English');
+        }
+      });
+    }
 
     // Step 5: save WO to Sheets with placeholder while upload runs
     var woForSheets = Object.assign({}, wo, { completedPhoto: '[uploading]' });
@@ -9594,10 +9735,10 @@ function openCreateWO(presetCommunity) {
   function close() { sheet.remove(); }
 
   inner.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
-      '<div class="sheet-title" style="margin-bottom:0;">New Work Order</div>' +
-      '<button onclick="createWOClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">✕</button>' +
-    '</div>' +
+    '<div class="sheet-hdr">' +
+        '<div class="sheet-title">New Work Order</div>' +
+        '<button onclick="createWOClose()" class="sheet-close">&#x2715;</button>' +
+      '</div>' +
     '<div style="display:flex;flex-direction:column;gap:10px;">' +
     '<div style="display:flex;gap:8px;margin-bottom:0;">' +
     '<button id="cwo-type-land" class="pill active" onclick="cwoSetType(\'land\')">🌿 Landscaping</button>' +
@@ -9698,7 +9839,7 @@ function openCreateWO(community) {
   var inner=document.createElement('div');inner.className='sheet';inner.style.maxHeight='92vh';
   inner.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
     +'<div class="sheet-title" style="margin-bottom:0;">&#x2795; New Work Order</div>'
-    +'<button id="woc-close" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">&#x2715;</button></div>'
+    +'<button id="woc-close" class="sheet-close">&#x2715;</button></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'
     +'<div><div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">TYPE</div>'
     +'<select id="woc-type" class="inp" style="margin-bottom:0;"><option value="landscape">&#x1F33F; Landscaping</option><option value="irrigation">&#x1F4A7; Irrigation</option></select></div>'
@@ -9771,7 +9912,7 @@ function openArchiveWOs(community) {
   sheet.innerHTML='<div class="sheet" style="max-height:90vh;">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
     +'<div class="sheet-title" style="margin-bottom:0;">&#x1F4E6; Archive Completed WOs</div>'
-    +'<button id="wo-archive-close" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);">&#x2715;</button></div>'
+    +'<button id="wo-archive-close" class="sheet-close">&#x2715;</button></div>'
     +'<div style="font-size:13px;color:var(--text3);margin-bottom:14px;">Archived WOs are hidden but never deleted. Restore anytime.</div>'
     +'<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">ARCHIVE BY AGE</div>'
     +presetBtns
@@ -9900,9 +10041,15 @@ function renderAttendance() {
         name: c.name, role: c.role||'', status: 'present', note: ''
       });
     });
-    // Add day laborers for this date
+    // Add day laborers: saved ones from attendance records
     dayRecords.filter(function(r){ return r.crewId==='temp'; })
       .forEach(function(r){ roster.push(r); });
+    // Also preserve any unsaved laborers added this session (not yet in dayRecords)
+    var savedTempIds = dayRecords.filter(function(r){return r.crewId==='temp';}).map(function(r){return r.id;});
+    (window._attRoster||[]).filter(function(r){
+      return r.crewId==='temp' && !savedTempIds.includes(r.id) &&
+             normalizeAttDate(r.date) === normalizeAttDate(dateStr);
+    }).forEach(function(r){ roster.push(r); });
 
     window._attRoster = roster;
 
@@ -10013,7 +10160,7 @@ function renderAttendance() {
     var dateHdrs = dates.map(function(d){
       var dt=new Date(d.indexOf('T')>=0?d:d+'T12:00:00');var isValidDt=!isNaN(dt.getTime());
       return '<th style="font-size:10px;font-weight:700;color:var(--text3);padding:4px 3px;text-align:center;white-space:nowrap;">'
-        + isValidDt?dt.toLocaleDateString('en-US',{month:'short',day:'numeric'}):d + '</th>';
+        + (isValidDt ? dt.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : d) + '</th>';
     }).join('');
 
     var tableRows = peopleList.map(function(p){
@@ -10039,8 +10186,6 @@ function renderAttendance() {
         + cells
         + '<td style="text-align:center;font-weight:800;color:var(--green);font-size:13px;">' + (totals.present||0) + '</td>'
         + '<td style="text-align:center;font-weight:800;color:var(--red);font-size:13px;">'    + (totals.absent||0)  + '</td>'
-        + '<td style="text-align:center;font-weight:800;color:#f59e0b;font-size:13px;">'       + (totals.late||0)    + '</td>'
-        + '<td style="text-align:center;font-weight:800;color:#f97316;font-size:13px;">'       + (totals.halfday||0) + '</td>'
         + '</tr>';
     }).join('');
 
@@ -10062,10 +10207,7 @@ function renderAttendance() {
       +     ' style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:7px 8px;color:var(--text);font-size:13px;"/>'
       + '</div>'
       + '<div style="display:flex;gap:8px;">'
-      +   '<button onclick="attApplyReport()"'
-      +     ' style="flex:1;padding:8px;border-radius:8px;background:var(--blue);color:#fff;border:none;'
-      +     'font-size:13px;font-weight:700;cursor:pointer;">Apply</button>'
-      +     'font-size:13px;font-weight:700;cursor:pointer;">Apply</button>'
+      +   '<button onclick="attApplyReport()" style="flex:1;padding:8px;border-radius:8px;background:var(--blue);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;">Apply</button>'
       +   (rFrom||rTo ? '<button onclick="attClearReport()"'
       +     ' style="padding:8px 14px;border-radius:8px;background:rgba(248,113,113,.15);color:var(--red);'
       +     'border:1px solid rgba(248,113,113,.3);font-size:13px;font-weight:700;cursor:pointer;">✕ Clear</button>' : '')
@@ -10078,10 +10220,8 @@ function renderAttendance() {
           + '<thead><tr>'
           + '<th style="text-align:left;padding:6px;font-size:12px;font-weight:700;color:var(--text3);">Name</th>'
           + dateHdrs
-          + '<th style="text-align:center;font-size:11px;padding:4px 3px;color:var(--green);">✓</th>'
-          + '<th style="text-align:center;font-size:11px;padding:4px 3px;color:var(--red);">✗</th>'
-          + '<th style="text-align:center;font-size:11px;padding:4px 3px;color:#f59e0b;">L</th>'
-          + '<th style="text-align:center;font-size:11px;padding:4px 3px;color:#f97316;">½</th>'
+          + '<th style="text-align:center;font-size:11px;padding:4px 6px;color:var(--green);white-space:nowrap;">&#x2713; Present</th>'
+          + '<th style="text-align:center;font-size:11px;padding:4px 6px;color:var(--red);white-space:nowrap;">&#x2717; Absent</th>'
           + '</tr></thead>'
           + '<tbody>' + tableRows + '</tbody>'
           + '</table></div>'
