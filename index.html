@@ -2639,7 +2639,7 @@ function openAddFlag(propId) {
         <label class="photo-zone" for="flag-photo-input">
           <div style="font-size:28px;margin-bottom:6px;">📷</div>
           <div style="font-size:13px;color:var(--text3);">Tap to take/choose photo</div>
-          <input type="file" id="flag-photo-input" accept="image/*"  style="display:none;" onchange="previewFlagPhoto(this)"/>
+          <input type="file" id="flag-photo-input" accept="image/*" capture="environment" style="display:none;" onchange="previewFlagPhoto(this)"/>
         </label>
         <img id="flag-photo-preview" style="display:none;width:100%;border-radius:10px;margin-top:8px;max-height:200px;object-fit:cover;"/>
       </div>
@@ -3006,7 +3006,7 @@ function openEditFlag(flagId) {
     '<label style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:10px 14px;cursor:pointer;margin-bottom:12px;">' +
       '<span style="font-size:20px;">📷</span>' +
       '<span style="font-size:13px;font-weight:700;">'+( getFlagPhoto(f) ? 'Replace Photo' : 'Add Photo' )+'</span>' +
-      '<input type="file" accept="image/*" style="display:none;" data-flagid="' + flagId + '" onchange="editFlagPhotoPreview(this)"/>' +
+      '<input type="file" accept="image/*" capture="environment" style="display:none;" data-flagid="' + flagId + '" onchange="editFlagPhotoPreview(this)"/>' +
     '</label>' +
     '<img id="ef-photo-preview" style="display:none;width:100%;border-radius:10px;max-height:180px;object-fit:cover;margin-bottom:12px;"/>' +
     '<button class="btn btn-green" data-flagid="' + flagId + '" onclick="saveEditFlag(this.dataset.flagid)" style="margin-bottom:8px;">Save Changes</button>' +
@@ -3094,7 +3094,7 @@ function resolveFlag(flagId, propId) {
     '<label class="photo-zone" for="mgr-resolve-input" id="mgr-resolve-zone" style="margin-bottom:12px;padding:16px;cursor:pointer;">' +
       '<div style="font-size:28px;margin-bottom:6px;">📷</div>' +
       '<div style="font-size:13px;color:var(--text3);">Tap to take or choose a photo</div>' +
-      '<input type="file" id="mgr-resolve-input" accept="image/*"  style="display:none;"/>' +
+      '<input type="file" id="mgr-resolve-input" accept="image/*" capture="environment" style="display:none;"/>' +
     '</label>' +
 
     '<button id="mgr-resolve-submit-btn" class="btn btn-green" style="margin-bottom:8px;opacity:.4;cursor:not-allowed;">📷 Add photo to resolve</button>' +
@@ -4936,10 +4936,18 @@ function gsLoad() {
               if (!remoteHasRealPhoto && (localHasRealPhoto || hasLocalStoredPhoto)) {
                 rw.completedPhoto = lw.completedPhoto;
               }
-              // Keep local completed status if local says completed but remote doesn't yet
-              // (handles race condition where gsLoad fires before gsSave completes)
-              if (lw.status === 'completed' && rw.status !== 'completed') {
-                return lw; // keep entire local version
+              // Keep the more-progressed status between local and remote to handle
+              // race conditions where gsLoad fires before gsSave fully propagates.
+              // Status priority: completed > in_progress > open
+              const STATUS_RANK = { open: 0, in_progress: 1, completed: 2 };
+              const localRank  = STATUS_RANK[lw.status]  || 0;
+              const remoteRank = STATUS_RANK[rw.status] || 0;
+              if (localRank > remoteRank) {
+                // Local is further along — keep local version entirely so
+                // completedBy / completedOn / completedNotes are preserved
+                return Object.assign({}, lw, {
+                  completedPhoto: remoteHasRealPhoto ? rw.completedPhoto : lw.completedPhoto
+                });
               }
               return rw;
             });
@@ -5052,6 +5060,8 @@ function gsLoad() {
         lastSync   = new Date();
         syncOnline = true;
         setSyncStatus('ok', 'Synced ' + lastSync.toLocaleTimeString());
+        // Flush any writes that failed while offline
+        setTimeout(_flushPendingSaves, 500);
         const activeTab = document.querySelector('.nb.active')?.dataset?.tab || 'dashboard';
         const refreshes = { dashboard:renderDashboard, routes:renderRoutes,
           properties:renderProperties, crew:renderCrew, inventory:renderInventory,
@@ -5076,27 +5086,48 @@ function gsLoad() {
   });
 }
 
-// ── save a single record to Google Sheets ────────────────────────────────
-function gsSave(table, record) {
-  // Check if record JSON is small enough for JSONP URL (~1500 chars safe limit)
+// ── pending-save queue: retried on next gsLoad / auto-sync ───────────────
+var _pendingSaves = [];   // [{table, record, attempts}]
+
+function _flushPendingSaves() {
+  if (!syncOnline || !_pendingSaves.length) return;
+  var toRetry = _pendingSaves.slice();
+  _pendingSaves = [];
+  toRetry.forEach(function(item) {
+    gsSave(item.table, item.record, (item.attempts || 0) + 1);
+  });
+}
+
+// ── save a single record to Google Sheets (with retry) ───────────────────
+function gsSave(table, record, _attempt) {
+  _attempt = _attempt || 0;
+  // Strip oversized base64 from payload — photos are uploaded separately
   const recStr = JSON.stringify(record);
-  // For workOrders, allow larger records (thumbnail photo in completedPhoto)
   const limit = (table === 'workOrders' || table === 'flags') ? 10000 : 1500;
+  var toSend = record;
   if (recStr.length > limit) {
-    const slim = { ...record };
-    if (slim.resolvePhoto && slim.resolvePhoto.startsWith('data:') && JSON.stringify(slim).length > 10000) slim.resolvePhoto = '[photo]';
-    if (slim.photo && slim.photo.startsWith('data:') && JSON.stringify(slim).length > 10000) slim.photo = '[photo]';
-    if (slim.completedPhoto && slim.completedPhoto.startsWith('data:') && JSON.stringify(slim).length > 10000) {
-      slim.completedPhoto = '[photo local only]';
-    }
-    gsJSONP({ action: 'set', table, id: slim.id, record: slim })
-      .then(() => { syncOnline = true; })
-      .catch(err => { console.warn('gsSave failed:', err); syncOnline = false; });
-  } else {
-    gsJSONP({ action: 'set', table, id: record.id, record: record })
-      .then(() => { syncOnline = true; })
-      .catch(err => { console.warn('gsSave failed:', err); syncOnline = false; });
+    const slim = Object.assign({}, record);
+    if (slim.resolvePhoto && slim.resolvePhoto.startsWith('data:')) slim.resolvePhoto = '[photo]';
+    if (slim.photo        && slim.photo.startsWith('data:'))        slim.photo        = '[photo]';
+    if (slim.completedPhoto && slim.completedPhoto.startsWith('data:')) slim.completedPhoto = '[photo local only]';
+    toSend = slim;
   }
+  gsJSONP({ action: 'set', table: table, id: toSend.id, record: toSend })
+    .then(function() { syncOnline = true; })
+    .catch(function(err) {
+      console.warn('gsSave attempt ' + (_attempt+1) + ' failed:', err);
+      syncOnline = false;
+      if (_attempt < 3) {
+        // Exponential backoff: 2s, 4s, 8s
+        setTimeout(function() {
+          gsSave(table, record, _attempt + 1);
+        }, Math.pow(2, _attempt + 1) * 1000);
+      } else {
+        // Queue for next online cycle
+        _pendingSaves.push({ table: table, record: record, attempts: _attempt });
+        console.warn('gsSave queued for later retry:', table, record.id);
+      }
+    });
 }
 
 // ── delete a single record from Google Sheets ────────────────────────────
@@ -7993,7 +8024,8 @@ function openWOReport(community, filterType) {
   function pill(label, type, color) {
     var active = filterType === type;
     var cnt = allWOs.filter(function(w){ return (type==='all'||w.type===type) && w.status==='completed'; }).length;
-    return '<button onclick="openWOReport(\''+commE+'\',\''+type+'\')" style="padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;'
+    // Use data-wofilter attribute instead of inline onclick to avoid escaping issues
+    return '<button data-wofilter="'+type+'" style="padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;'
       +'border:2px solid '+(active?color:'var(--border2)')+';background:'+(active?'rgba(100,200,100,.12)':'var(--bg3)')+';color:'+(active?color:'var(--text3)')+';">'
       +label+' ('+cnt+')</button>';
   }
@@ -8044,13 +8076,27 @@ function openWOReport(community, filterType) {
         +open.map(function(w){ return '<div style="font-size:12px;color:var(--text2);padding:4px 0;border-bottom:1px solid rgba(248,113,113,.1);">'+(w.type==='irrigation'?'&#x1F4A7;':'&#x1F33F;')+' #'+(w.woNumber||'')+' &middot; '+(w.ownerName||'')+' &mdash; '+(w.requestType||'')+'</div>'; }).join('')
         +'</div>':'')
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
-      +'<button class="btn" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);" onclick="translateAllWONotes(\''+commE+'\')">&#x1F310; Translate Notes</button>'
-      +'<button class="btn btn-green" style="flex:1;" onclick="exportWOPDF(\''+commE+'\',\''+filterType+'\')">&#x1F4C4; Export PDF</button>'
-      +'<button class="btn" style="background:var(--bg3);color:var(--text2);" onclick="exportWOReport(\''+commE+'\')">&#x1F4CA; Excel</button>'
+      +'<button class="btn" data-wo-action="translate" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">&#x1F310; Translate Notes</button>'
+      +'<button class="btn btn-green" data-wo-action="pdf" style="flex:1;">&#x1F4C4; Export PDF</button>'
+      +'<button class="btn" data-wo-action="excel" style="background:var(--bg3);color:var(--text2);">&#x1F4CA; Excel</button>'
     +'</div>'
     +'</div>';
 
   document.body.appendChild(sheet);
+
+  // Wire up all buttons using JS event listeners — avoids inline onclick
+  // escaping issues with community names containing quotes or special chars
+  sheet.querySelectorAll('[data-wofilter]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      openWOReport(community, btn.dataset.wofilter);
+    });
+  });
+  var translateBtn = sheet.querySelector('[data-wo-action="translate"]');
+  if (translateBtn) translateBtn.addEventListener('click', function() { translateAllWONotes(community); });
+  var pdfBtn = sheet.querySelector('[data-wo-action="pdf"]');
+  if (pdfBtn) pdfBtn.addEventListener('click', function() { exportWOPDF(community, filterType); });
+  var excelBtn = sheet.querySelector('[data-wo-action="excel"]');
+  if (excelBtn) excelBtn.addEventListener('click', function() { exportWOReport(community); });
 }
 
 
@@ -8533,7 +8579,7 @@ function crewWOSaveEdit(woId) {
 
 function crewWOAddPhoto(woId) {
   var fi = document.createElement('input');
-  fi.type = 'file'; fi.accept = 'image/*';
+  fi.type = 'file'; fi.accept = 'image/*'; fi.capture = 'environment';
   fi.style.cssText = 'position:fixed;top:-999px;left:-999px;opacity:0;';
   document.body.appendChild(fi);
   fi.addEventListener('change', function() {
@@ -8604,7 +8650,7 @@ function openCrewWOComplete(woId) {
       '<label class="photo-zone" for="wo-photo-input" id="wo-photo-zone" style="margin-bottom:12px;">' +
         '<div style="font-size:28px;margin-bottom:6px;">📷</div>' +
         '<div style="font-size:13px;color:var(--text3);">Tap to take or choose a photo</div>' +
-        '<input type="file" id="wo-photo-input" accept="image/*"  style="display:none;"/>' +
+        '<input type="file" id="wo-photo-input" accept="image/*" capture="environment" style="display:none;"/>' +
       '</label>' +
       '<img id="wo-photo-preview" style="display:none;width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;"/>' +
       '<textarea id="wo-complete-notes" class="inp" rows="2" placeholder="Completion notes (optional)..." style="margin-bottom:12px;"></textarea>' +
@@ -8826,29 +8872,61 @@ function compressPhoto(dataUrl, maxSize, quality, callback) {
 
 // Handle file input including HEIC - converts any format to usable dataUrl
 function readFileAsDataUrl(file, callback) {
-  // For HEIC on iOS - the browser can display it but FileReader gives raw bytes
-  // Use createObjectURL which lets the browser decode natively
+  // First try: createObjectURL lets the browser decode HEIC/HEIF natively on iOS
   var objectUrl = URL.createObjectURL(file);
   var img = new Image();
-  img.onload = function() {
-    var canvas = document.createElement('canvas');
-    canvas.width = img.width;
-    canvas.height = img.height;
-    var ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0);
+  var settled = false;
+
+  function settle(result) {
+    if (settled) return;
+    settled = true;
     URL.revokeObjectURL(objectUrl);
-    callback(canvas.toDataURL('image/jpeg', 0.92));
+    callback(result);
+  }
+
+  img.onload = function() {
+    // Guard against zero-dimension images (corrupt or unsupported format)
+    if (!img.width || !img.height) {
+      img.onerror();
+      return;
+    }
+    try {
+      var canvas = document.createElement('canvas');
+      canvas.width  = img.width;
+      canvas.height = img.height;
+      var ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      settle(canvas.toDataURL('image/jpeg', 0.92));
+    } catch(e) {
+      // Canvas tainted or other draw error — fall back to FileReader
+      img.onerror();
+    }
   };
+
   img.onerror = function() {
-    // Fallback: use FileReader directly
+    // Fallback: read raw bytes via FileReader (works for standard formats
+    // on Android and desktop; HEIC on Android will arrive as raw bytes
+    // which compressPhoto can usually still handle via canvas)
     URL.revokeObjectURL(objectUrl);
     var reader = new FileReader();
-    reader.onload = function(e) { callback(e.target.result); };
-    reader.onerror = function() { callback(null); };
+    reader.onload = function(e) {
+      if (!e.target.result || e.target.result.length < 100) {
+        // File is genuinely unreadable — show a clear message
+        toast('⚠ Could not read photo. Try taking a new photo (not from Files).');
+        settle(null);
+        return;
+      }
+      settle(e.target.result);
+    };
+    reader.onerror = function() {
+      toast('⚠ Photo could not be read. Please try again.');
+      settle(null);
+    };
     reader.readAsDataURL(file);
   };
+
   img.src = objectUrl;
 }
 
