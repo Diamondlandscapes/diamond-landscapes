@@ -8203,12 +8203,17 @@ function renderCrewWorkOrders() {
     if(w.status==='completed'||w.status==='placeholder'||w.status==='archived') return false;
     if(w.assignedTo===crewId) return true;
     if(crew&&w.assignedTo===crew.name) return true;
-    if(w.assignedTo==='__team__') return myCommunities.length===0||myCommunities.includes(w.community);
+    // Always show General Team WOs — any crew member can action them
+    if(w.assignedTo==='__team__') return true;
     return false;
   });
   var doneWOs = allWOs.filter(function(w){
-    return w.status==='completed'&&(w.completedBy===(crew?crew.name:'')||w.assignedTo===crewId||(w.assignedTo==='__team__'&&(myCommunities.length===0||myCommunities.includes(w.community))));
-  }).slice(-10);
+    if(w.status!=='completed') return false;
+    if(w.completedBy===(crew?crew.name:'')) return true;
+    if(w.assignedTo===crewId) return true;
+    if(w.assignedTo==='__team__') return true;
+    return false;
+  }).slice(-20);
   if (!myWOs.length && !doneWOs.length) {
     el.innerHTML = '<div class="card" style="text-align:center;padding:32px;"><div style="font-size:40px;margin-bottom:12px;">&#x2705;</div><div style="font-weight:700;font-size:15px;">All caught up!</div><div style="font-size:13px;color:var(--text3);margin-top:6px;">No work orders assigned to you</div></div>';
     return;
@@ -8258,11 +8263,11 @@ function renderCrewWorkOrders() {
     html+='<div class="sec-title" style="margin-top:16px;">Recently Completed</div>';
     doneWOs.forEach(function(w){
       var typeIcon=w.type==='irrigation'?'&#x1F4A7;':'&#x1F33F;';
-      html+='<div class="card-flat" style="margin-bottom:8px;border-left:3px solid var(--green);">'
+      html+='<div class="card-flat" style="margin-bottom:8px;border-left:3px solid var(--green);cursor:pointer;" onclick="openCrewWODetail(\''+w.id+'\')">'
         +'<div style="display:flex;justify-content:space-between;align-items:center;">'
         +'<div><div style="font-weight:700;font-size:13px;">'+typeIcon+' #'+(w.woNumber||'')+' &middot; '+(w.ownerName||'')+(w.village?' <span style="color:var(--blue);font-size:11px;">V'+w.village+'</span>':'')+'</div>'
-        +'<div style="font-size:11px;color:var(--text3);">'+(w.dateCompleted||w.completedOn||'')+'</div></div>'
-        +'<span class="badge badge-green">&#x2713;</span></div>'
+        +'<div style="font-size:11px;color:var(--text3);">'+(w.completedBy?'&#x2713; '+w.completedBy+' &middot; ':'')+( w.completedOn||w.dateCompleted||'')+'</div></div>'
+        +'<span class="badge badge-green">&#x2713; Done</span></div>'
         +(typeof getWOPhoto==='function'&&getWOPhoto(w)?'<img src="'+getWOPhoto(w)+'" style="width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-top:8px;"/>':'')
         +'</div>';
     });
@@ -8456,24 +8461,43 @@ function crewWOAddPhoto(woId) {
     var file = fi.files && fi.files[0];
     fi.remove();
     if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function(e) {
-      compressPhoto(e.target.result, 1000, 0.75, function(compressed) {
+    readFileAsDataUrl(file, function(dataUrl) {
+      if (!dataUrl) { toast('Could not read photo'); return; }
+      compressPhoto(dataUrl, 1200, 0.90, function(compressed) {
         var wo = (state.workOrders||[]).find(function(w){return w.id===woId;});
         if (!wo) return;
-        toast('📤 Uploading photo...');
-        saveWOPhoto(woId, compressed, function() {
-          save();
-          var slim = Object.assign({}, wo);
-          if (slim.completedPhoto && slim.completedPhoto.startsWith('data:')) slim.completedPhoto = '[photo]';
-          gsSave('workOrders', slim);
-          crewWODetailClose();
-          openCrewWODetail(woId);
-          toast('Photo added ✓');
-        });
+        // Cache locally for instant display
+        wo.completedPhoto = compressed;
+        try {
+          var ph = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+          ph[woId] = compressed;
+          localStorage.setItem('dlphotos', JSON.stringify(ph));
+        } catch(e) {}
+        save();
+        crewWODetailClose();
+        openCrewWODetail(woId);
+        // Upload to Firebase Storage
+        var storagePath = 'photos/workOrders/' + woId + '_' + Date.now() + '.jpg';
+        uploadPhotoToStorage(compressed, storagePath,
+          function(url) {
+            wo.completedPhoto = url;
+            try {
+              var ph2 = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+              ph2[woId] = url;
+              localStorage.setItem('dlphotos', JSON.stringify(ph2));
+            } catch(e) {}
+            save();
+            gsSave('workOrders', wo);
+            toast('Photo uploaded ✓');
+          },
+          function(err) {
+            console.warn('crewWOAddPhoto upload failed:', err);
+            gsSave('workOrders', wo);
+            toast('Photo saved locally');
+          }
+        );
       });
-    };
-    reader.readAsDataURL(file);
+    });
   });
   fi.click();
 }
