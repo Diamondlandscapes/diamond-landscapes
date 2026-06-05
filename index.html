@@ -4934,6 +4934,7 @@ function gsLoad() {
         ref:            stMod.ref,
         uploadString:   stMod.uploadString,
         getDownloadURL: stMod.getDownloadURL,
+        deleteObject:   stMod.deleteObject,
       };
 
       // Version check — auto-reload devices when a new index.html is deployed
@@ -5056,8 +5057,25 @@ function uploadPhotoToStorage(base64Data, storagePath, onSuccess, onError) {
     });
 }
 
-// ── Pending-saves compat stubs (no longer needed with Firebase) ───────────
-var _pendingSaves = [];
+// ── Delete a photo from Firebase Storage by its full URL ─────────────────
+// Safe to call even if the URL is empty or not a Storage URL
+function deleteStoragePhoto(url) {
+  if (!url || !url.includes('firebasestorage.googleapis.com')) return;
+  if (!_fbReady || !_storage) return;
+  try {
+    // Extract the storage path from the URL
+    // URL format: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{encoded-path}?...
+    var match = url.match(/\/o\/([^?]+)/);
+    if (!match) return;
+    var path = decodeURIComponent(match[1]);
+    var storageRef = window._fbSDK.ref(_storage, path);
+    window._fbSDK.deleteObject(storageRef)
+      .then(function() { console.log('Storage photo deleted:', path); })
+      .catch(function(err) { console.warn('Storage delete failed (may already be gone):', err.message); });
+  } catch(e) {
+    console.warn('deleteStoragePhoto error:', e.message);
+  }
+}
 function _flushPendingSaves() {}
 
 // ── Legacy compat stubs ───────────────────────────────────────────────────
@@ -7831,13 +7849,13 @@ function openWODetail(woId) {
 
       '<div style="margin-bottom:14px;">' +
         '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">COMPLETION PHOTO</div>' +
-        (getWOPhoto(wo) ?
+        (wo.status === 'completed' && getWOPhoto(wo) ?
           '<img src="' + getWOPhoto(wo) + '" referrerpolicy="no-referrer" crossorigin="anonymous" style="width:100%;border-radius:10px;max-height:200px;object-fit:cover;margin-top:8px;" onerror="this.onerror=null;this.src=\'' + getWOPhoto(wo) + '\';this.style.opacity=\'0.7\'"/>'
         : wo.status === 'completed' ?
           '<div style="background:var(--bg3);border-radius:10px;padding:14px;text-align:center;">' +
             '<div style="font-size:24px;margin-bottom:6px;">&#x1F4F7;</div>' +
-            '<div style="font-size:13px;font-weight:700;color:var(--text2);">Photo taken by crew</div>' +
-            '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Photo stored on crew device. New completions will sync here automatically.</div>' +
+            '<div style="font-size:13px;font-weight:700;color:var(--text2);">No photo attached</div>' +
+            '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Crew can add a photo by opening this WO on their device.</div>' +
           '</div>'
         : '<div style="font-size:12px;color:var(--text4);padding:8px 0;">No photo yet</div>'
         ) +
@@ -7865,7 +7883,16 @@ function saveWODetail(woId) {
     if (!wo.completedOn)   wo.completedOn   = new Date().toLocaleDateString();
     if (!wo.dateCompleted) wo.dateCompleted = new Date().toLocaleDateString();
   } else {
-    // Reopening — clear all completion fields so check mark disappears
+    // Reopening — delete photo from Firebase Storage then clear all completion fields
+    var oldPhotoUrl = wo.completedPhoto || '';
+    deleteStoragePhoto(oldPhotoUrl);
+    // Also clear local cache
+    try {
+      var ph = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+      delete ph[wo.id];
+      localStorage.setItem('dlphotos', JSON.stringify(ph));
+    } catch(e) {}
+    localStorage.removeItem('dlphoto_' + wo.id);
     wo.completedOn              = '';
     wo.dateCompleted            = '';
     wo.completedBy              = '';
@@ -8525,6 +8552,15 @@ function crewWOAddPhoto(woId) {
 function crewWOReopenWO(woId) {
   var wo = (state.workOrders||[]).find(function(w){return w.id===woId;});
   if (!wo) return;
+  // Delete photo from Firebase Storage
+  deleteStoragePhoto(wo.completedPhoto || '');
+  // Clear local photo cache
+  try {
+    var ph = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+    delete ph[woId];
+    localStorage.setItem('dlphotos', JSON.stringify(ph));
+  } catch(e) {}
+  localStorage.removeItem('dlphoto_' + woId);
   wo.status                 = 'open';
   wo.completedOn            = '';
   wo.dateCompleted          = '';
