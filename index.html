@@ -2711,87 +2711,23 @@ function previewFlagPhoto(input) {
 
 
 
-// ─── PHOTO UPLOAD VIA IMGBB (free, fast, CORS-enabled) ──────────────────────
-// Sign up at imgbb.com to get your free API key (takes 30 seconds)
-// Replace the key below with yours
-var IMGBB_API_KEY = '4c9fe12ddc83e08b69eccabaf1f3080d';
-
+// ─── PHOTO UPLOAD VIA FIREBASE STORAGE ──────────────────────────────────────
+// uploadPhotoViaPost is the single entry point for all photo uploads.
+// It wraps uploadPhotoToStorage (defined in the Firebase layer above).
+// Path: photos/{collection}/{id}_{timestamp}.jpg
 function uploadPhotoViaPost(base64Data, filename, onSuccess, onError) {
   toast('📤 Uploading photo...');
-  console.log('Uploading to ImgBB, size:', Math.round(base64Data.length/1024) + 'KB');
-
-  // Strip data URL prefix - ImgBB wants raw base64
-  var raw = base64Data;
-  var comma = base64Data.indexOf(',');
-  if (comma !== -1) raw = base64Data.slice(comma + 1);
-
-  var form = new FormData();
-  form.append('image', raw);
-  form.append('name', filename || ('photo_' + Date.now()));
-
-  fetch('https://api.imgbb.com/1/upload?key=' + IMGBB_API_KEY, {
-    method: 'POST',
-    body: form
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    console.log('ImgBB response:', JSON.stringify(data).slice(0,200));
-    if (data && data.success && data.data && data.data.url) {
-      // Prefer display_url or medium.url — more reliable on mobile than direct url
-      var url = (data.data.medium && data.data.medium.url)
-             || data.data.display_url
-             || data.data.url;
-      // Ensure using https
-      if (url && url.startsWith('http:')) url = url.replace('http:', 'https:');
-      console.log('Photo URL:', url);
-      onSuccess(url);
-    } else {
-      var err = (data && data.error && data.error.message) || 'Upload failed';
-      console.error('ImgBB error:', err);
-      onError(err);
-    }
-  })
-  .catch(function(err) {
-    console.error('ImgBB fetch error:', err);
-    onError(err.toString());
-  });
+  var storagePath = 'photos/' + (filename || ('photo_' + Date.now())) + '.jpg';
+  uploadPhotoToStorage(base64Data, storagePath, onSuccess, onError);
 }
 
-// Keep for compatibility
+// Compat stub
 function pollForUploadResult(uploadId, attempt, onSuccess, onError) {
-  onError('Polling not used with ImgBB');
+  onError('Not used with Firebase Storage');
 }
 
 
-function uploadFlagPhotoToSheets(flagId, photoData) {
-  // Send full quality photo to Apps Script via POST
-  // Apps Script stores it in the sheet cell (up to 50KB fits in a cell)
-  fetch(GS_URL, {
-    method: 'POST',
-    mode: 'no-cors',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({
-      secret: GS_SECRET,
-      action: 'saveFlagPhoto',
-      flagId: flagId,
-      photo: photoData
-    })
-  })
-  .then(function() {
-    console.log('Flag photo sent to Sheets for:', flagId);
-    // Reload after 3s to get the updated photo from Sheets
-    setTimeout(function() {
-      gsLoad().then(function() {
-        renderDashboard();
-        renderProperties();
-        renderReports();
-      });
-    }, 3000);
-  })
-  .catch(function(err) {
-    console.warn('Flag photo upload failed:', err);
-  });
-}
+// uploadFlagPhotoToSheets removed — photos now go to Firebase Storage
 
 function saveFlagPhoto(flagId, photoData) {
   try {
@@ -2806,27 +2742,28 @@ function saveFlagPhoto(flagId, photoData) {
 
 function getFlagPhoto(flag) {
   if (!flag) return null;
-  // Check dlphotos localStorage first (full quality on originating device)
+  // Firebase Storage URL on the record is canonical — use it first
+  if (flag.photo && flag.photo.startsWith('https://')) return flag.photo;
+  // Fall back to local cache (same device, before upload completes)
   try {
     var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
     var lp = photos['flag_' + flag.id];
-    if (lp) return lp;
+    if (lp && lp.length > 10) return lp;
   } catch(e) {}
   var local = localStorage.getItem('dlphoto_flag_' + flag.id);
-  if (local) return local;
-  // Return flag.photo from Sheets - handles BOTH data: AND https:// URLs
-  if (flag.photo && flag.photo.length > 5) return flag.photo;
+  if (local && local.length > 10) return local;
   return null;
 }
 
 function getFlagResolvePhoto(flag) {
   if (!flag) return null;
+  // Firebase Storage URL is canonical
+  if (flag.resolvePhoto && flag.resolvePhoto.startsWith('https://')) return flag.resolvePhoto;
   try {
     var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
     var rp = photos['flagresolve_' + flag.id];
-    if (rp) return rp;
+    if (rp && rp.length > 10) return rp;
   } catch(e) {}
-  if (flag.resolvePhoto && flag.resolvePhoto.length > 5) return flag.resolvePhoto;
   return null;
 }
 
@@ -2859,57 +2796,44 @@ function saveFlag() {
     return;
   }
 
-  // Has photo - compress, save locally, upload to Drive via chunks
-  compressPhoto(rawPhoto, 800, 0.82, function(compressed) {
-    // 1. Save full quality locally for immediate display on this device
+  // Has photo - compress then upload to Firebase Storage
+  compressPhoto(rawPhoto, 1000, 0.88, function(compressed) {
+    // 1. Keep a local copy for immediate display while upload runs
     saveFlagPhoto(newFlag.id, compressed);
     newFlag.photo = compressed;
 
-    // 2. Save flag to state + close sheet immediately
+    // 2. Save flag to state and close sheet immediately
     state.flags.push(newFlag);
     save();
+    gsSave('flags', Object.assign({}, newFlag, { photo: '[uploading]' }));
 
-    // 3. Save to Sheets with placeholder while upload runs
-    var flagForSheets = Object.assign({}, newFlag, { photo: '[uploading]' });
-    gsSave('flags', flagForSheets);
-
-    // 4. Close sheet and show UI
+    // 3. Close sheet and show UI right away
     document.getElementById('flag-sheet')?.remove();
     showFlagConfirmation(newFlag);
     renderDashboard();
     renderProperties();
-    toast('📤 Uploading photo to Drive...');
 
-    // 5. Upload to Drive via chunked JSONP
-    var filename = 'flag_' + newFlag.id + '_' + Date.now();
-    uploadPhotoViaPost(compressed, filename,
-      function(driveUrl) {
-        // Drive upload success - update flag with permanent URL
-        console.log('Flag photo URL:', driveUrl);
-        newFlag.photo = driveUrl;
-        // Update dlphotos with ImgBB URL
+    // 4. Upload to Firebase Storage — permanent URL, visible on all devices
+    var storagePath = 'photos/flags/' + newFlag.id + '_' + Date.now() + '.jpg';
+    uploadPhotoToStorage(compressed, storagePath,
+      function(storageUrl) {
+        newFlag.photo = storageUrl;
+        // Cache the URL locally too
         try {
           var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-          photos['flag_' + newFlag.id] = driveUrl;
+          photos['flag_' + newFlag.id] = storageUrl;
           localStorage.setItem('dlphotos', JSON.stringify(photos));
         } catch(e) {}
         save();
-        // Save URL to Sheets - ImgBB URL is short so fits in JSONP easily
-        console.log('Saving ImgBB URL to Sheets:', driveUrl.slice(0,50));
         gsSave('flags', newFlag);
         renderDashboard();
         renderProperties();
         toast('✓ Photo uploaded — visible on all devices');
       },
       function(err) {
-        // Drive upload failed - fall back to 150px thumbnail in Sheets
-        console.warn('Chunked upload failed, using thumbnail fallback:', err);
-        compressPhoto(rawPhoto, 150, 0.7, function(thumb) {
-          newFlag.photo = thumb;
-          save();
-          gsSave('flags', newFlag);
-        });
-        toast('Photo saved locally (upload failed)');
+        console.warn('Flag photo upload failed:', err);
+        // Photo stays local — still visible on this device
+        toast('Photo saved locally');
       }
     );
   });
@@ -3152,12 +3076,11 @@ function resolveFlag(flagId, propId) {
     renderReports();
     toast('📤 Uploading resolve photo...');
 
-    // Upload to ImgBB for cross-device access
-    var filename = 'resolve_' + f.id + '_' + Date.now();
-    uploadPhotoViaPost(photo, filename,
+    // Upload to Firebase Storage for cross-device access
+    var storagePath = 'photos/resolves/' + f.id + '_' + Date.now() + '.jpg';
+    uploadPhotoToStorage(photo, storagePath,
       function(url) {
         f.resolvePhoto = url;
-        // Store in dlphotos
         try {
           var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
           photos['flagresolve_' + f.id] = url;
@@ -3170,7 +3093,6 @@ function resolveFlag(flagId, propId) {
         toast('Flag resolved ✓');
       },
       function(err) {
-        // Fallback - save compressed locally
         console.warn('Resolve photo upload failed:', err);
         gsSave('flags', f);
         toast('Flag resolved (photo local only)');
@@ -3201,19 +3123,26 @@ function submitMgrResolve(flagId, propId) {
     f.resolveDate = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     f.resolved = true;
     if (photo) {
-      // Store full quality locally
-      compressPhoto(photo, 400, 0.5, function(full) {
-        try {
-          var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-          photos['flagresolve_' + f.id] = full;
-          localStorage.setItem('dlphotos', JSON.stringify(photos));
-        } catch(e) {}
-        // Store thumbnail in Sheets
-        compressPhoto(photo, 120, 0.4, function(thumb) {
-          f.resolvePhoto = thumb;
-          save(); gsSave('flags', f);
-        });
-      });
+      // Keep local copy immediately, then upload to Firebase Storage
+      f.resolvePhoto = photo;
+      save();
+      var storagePath2 = 'photos/resolves/' + f.id + '_' + Date.now() + '.jpg';
+      uploadPhotoToStorage(photo, storagePath2,
+        function(url) {
+          f.resolvePhoto = url;
+          try {
+            var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+            photos['flagresolve_' + f.id] = url;
+            localStorage.setItem('dlphotos', JSON.stringify(photos));
+          } catch(e) {}
+          save();
+          gsSave('flags', f);
+        },
+        function(err) {
+          console.warn('Manager resolve photo upload failed:', err);
+          gsSave('flags', f);
+        }
+      );
     } else {
       gsSave('flags', f);
     }
@@ -4838,197 +4767,72 @@ function signOut() {
 }
 
 
-// ─── GOOGLE SHEETS SYNC ───────────────────────────────────────────────────
-const GS_URL    = 'https://script.google.com/macros/s/AKfycbwl5MiunX5FKs54dg-219XTyZ3uEDQk5sj3eCtbD_3kGQYGhvl2lV-8IqXcvXuoviDozw/exec';
-const GS_SECRET = 'DL2024secure';
-let syncPending = false;
-let syncTimer   = null;
-let lastSync    = null;
-let syncOnline  = true;
+// Legacy compat — GS_URL/GS_SECRET retained for dead-code paths that haven't been removed yet
+var GS_URL    = '';
+var GS_SECRET = '';
 
-// ── JSONP helper — used for ALL Sheets operations (GET + writes) ──────────
-function gsJSONP(params) {
-  return new Promise((resolve, reject) => {
-    const cbName = 'gs_cb_' + Date.now() + '_' + Math.floor(Math.random()*9999);
-    const script = document.createElement('script');
-    const timer  = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, 30000);
-    function cleanup() {
-      clearTimeout(timer);
-      delete window[cbName];
-      if (script.parentNode) script.parentNode.removeChild(script);
-    }
-    window[cbName] = function(data) { cleanup(); resolve(data); };
-    script.onerror = () => { cleanup(); reject(new Error('load error')); };
-    const qs = Object.entries({ ...params, key: GS_SECRET, callback: cbName })
-      .map(([k,v]) => {
-        const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
-        return encodeURIComponent(k) + '=' + encodeURIComponent(val);
-      }).join('&');
-    script.src = GS_URL + '?' + qs;
-    document.head.appendChild(script);
-  });
+// ─── FIREBASE REAL-TIME DATA LAYER ──────────────────────────────────────────
+// Replaces Google Sheets JSONP polling with Firestore live listeners.
+// Every write goes directly to Firestore. Every read is pushed automatically
+// to all connected devices via onSnapshot - no polling, no refresh button needed.
+
+// APP_VERSION defined above at top of script
+let _db        = null;   // Firestore instance (assigned after SDK init)
+let _storage   = null;   // Firebase Storage instance
+let _fbReady   = false;  // true once Firebase is initialized
+let _listeners = {};     // active onSnapshot unsubscribe handles
+let syncOnline = true;   // kept for compatibility with existing code refs
+let lastSync   = null;
+
+// ── show/hide sync status (no-op kept for compat) ────────────────────────
+function setSyncStatus(status, msg) { /* handled by Firebase SDK */ }
+
+// ── Normalize a Firestore document snapshot into a plain object ──────────
+function _docToObj(docSnap) {
+  return Object.assign({ id: docSnap.id }, docSnap.data());
 }
 
-// ── show/hide sync status bar ─────────────────────────────────────────────
-function setSyncStatus(status, msg) {
-  return; // notifications disabled
-  const configs = {
-    syncing: { bg:'rgba(10,15,10,.95)', border:'rgba(96,165,250,.4)',  color:'var(--blue)',   text: '⟳ ' + (msg||'Syncing...') },
-    ok:      { bg:'rgba(10,15,10,.95)', border:'rgba(74,222,128,.4)',  color:'var(--green)',  text: '✓ ' + (msg||'All data synced') },
-    error:   { bg:'rgba(10,15,10,.95)', border:'rgba(248,113,113,.4)', color:'var(--red)',    text: '⚠ ' + (msg||'Offline — saved locally') },
-    offline: { bg:'rgba(10,15,10,.95)', border:'rgba(250,204,21,.4)',  color:'var(--yellow)', text: '● ' + (msg||'Offline mode') },
+// ── Re-render whichever tab is currently visible ─────────────────────────
+function _renderActiveTab() {
+  var activeScreen = document.querySelector('.screen.active');
+  if (!activeScreen) return;
+  var tab = activeScreen.id.replace('screen-', '');
+  var renders = {
+    dashboard:  renderDashboard,
+    routes:     renderRoutes,
+    properties: renderProperties,
+    crew:       renderCrew,
+    inventory:  renderInventory,
+    equipment:  renderEquipment,
+    field:      renderFieldView,
+    workorders: renderWorkOrders,
+    'wo-crew':  renderCrewWorkOrders,
+    attendance: renderAttendance,
+    reports:    renderReports,
+    schedule:   renderSchedule,
   };
-  const c = configs[status] || configs.ok;
-  bar.style.background  = c.bg;
-  bar.style.borderColor = c.border;
-  bar.style.color       = c.color;
-  bar.textContent       = c.text;
-  bar.style.display     = 'block';
-  bar.style.opacity     = '1';
-  if (status === 'ok') {
-    setTimeout(() => {
-      bar.style.opacity = '0';
-      setTimeout(() => { bar.style.display = 'none'; }, 300);
-    }, 2000);
-  }
+  try { if (renders[tab]) renders[tab](); } catch(e) { console.warn('render error:', e); }
+  if (tab !== 'dashboard') try { renderDashboard(); } catch(e) {}
 }
 
-// ── load all data from Google Sheets via JSONP (bypasses CORS) ────────────
-function gsLoad() {
-  setSyncStatus('syncing', 'Loading data...');
-  return new Promise((resolve) => {
-    const cbName = 'gs_cb_' + Date.now();
-    const script  = document.createElement('script');
-    const timeout = setTimeout(() => {
-      cleanup();
-      console.warn('gsLoad timeout');
-      syncOnline = false;
-      setSyncStatus('offline', 'Using local data');
-      resolve(false);
-    }, 10000);
+// ── Attach a real-time listener to a single Firestore collection ──────────
+// When any document in the collection changes, state[name] is updated and
+// the active tab re-renders automatically on every connected device.
+function _listenCollection(name) {
+  if (!_db) return;
+  if (_listeners[name]) { _listeners[name](); delete _listeners[name]; }
+  var colRef = window._fbSDK.collection(_db, name);
+  _listeners[name] = window._fbSDK.onSnapshot(colRef,
+    function(snapshot) {
+      var docs = [];
+      snapshot.forEach(function(d) { docs.push(_docToObj(d)); });
+      state[name] = docs;
+      syncOnline = true;
+      lastSync = new Date();
 
-    function cleanup() {
-      clearTimeout(timeout);
-      delete window[cbName];
-      if (script.parentNode) script.parentNode.removeChild(script);
-    }
-
-    window[cbName] = function(remote) {
-      cleanup();
-      try {
-        console.log('gsLoad response:', JSON.stringify(remote).slice(0,200));
-        if (remote.error) throw new Error(remote.error);
-        // smart merge — remote wins for most tables, but for flags
-        // keep local version if it's been resolved locally (prevents re-appearing)
-        const merge = (key) => {
-          if (!remote || !Array.isArray(remote[key]) || remote[key].length === 0) return;
-          if (key === 'workOrders') {
-            // Smart merge: keep local photos since Sheets only stores placeholders
-            const localById = {};
-            (state.workOrders||[]).forEach(w => { localById[w.id] = w; });
-            state.workOrders = remote[key].map(rw => {
-              const lw = localById[rw.id];
-              if (!lw) return rw;
-              // Keep local photo if it's real data and remote only has placeholder
-              const remoteHasRealPhoto = rw.completedPhoto && (rw.completedPhoto.startsWith('data:') || rw.completedPhoto.startsWith('http'));
-              const localHasRealPhoto  = lw.completedPhoto && (lw.completedPhoto.startsWith('data:') || lw.completedPhoto.startsWith('http') || lw.completedPhoto.startsWith('local:'));
-              const hasLocalStoredPhoto = lw.completedPhoto && lw.completedPhoto.startsWith('local:') && getPhotoLocally(lw.id);
-              if (!remoteHasRealPhoto && (localHasRealPhoto || hasLocalStoredPhoto)) {
-                rw.completedPhoto = lw.completedPhoto;
-              }
-              // Keep the more-progressed status between local and remote to handle
-              // race conditions where gsLoad fires before gsSave fully propagates.
-              // Status priority: completed > in_progress > open
-              const STATUS_RANK = { open: 0, in_progress: 1, completed: 2 };
-              const localRank  = STATUS_RANK[lw.status]  || 0;
-              const remoteRank = STATUS_RANK[rw.status] || 0;
-              if (localRank > remoteRank) {
-                // Local is further along — keep local version entirely so
-                // completedBy / completedOn / completedNotes are preserved
-                return Object.assign({}, lw, {
-                  completedPhoto: remoteHasRealPhoto ? rw.completedPhoto : lw.completedPhoto
-                });
-              }
-              return rw;
-            });
-            // Add any local WOs not yet in remote
-            (state.workOrders||[]).forEach(lw => {
-              if (!remote[key].find(rw => rw.id === lw.id)) {
-                state.workOrders.push(lw);
-              }
-            });
-            return;
-          }
-          if (key === 'flags') {
-            // merge flags: prefer local resolved state over remote unresolved
-            const localById = {};
-            (state.flags||[]).forEach(f => { localById[f.id] = f; });
-            state.flags = remote[key].map(rf => {
-              const lf = localById[rf.id];
-              // if local version is resolved but remote isn't, keep local
-              if (lf && lf.resolved && !rf.resolved) return lf;
-              // preserve local photo if remote has placeholder or empty
-              if (lf && lf.photo && lf.photo.startsWith('data:') &&
-                  (!rf.photo || !rf.photo.startsWith('data:'))) {
-                rf.photo = lf.photo;
-              }
-              // otherwise remote wins
-              return rf;
-            });
-            // add any local flags not yet in remote (just submitted)
-            (state.flags||[]).forEach(lf => {
-              if (!remote[key].find(rf => rf.id === lf.id)) {
-                state.flags.push(lf);
-              }
-            });
-          } else {
-            state[key] = remote[key];
-          }
-        };
-        merge('crew');
-        merge('properties');
-        merge('routes');
-        merge('inventory');
-        // Smart merge for flags - preserve photo URLs
-        if (Array.isArray(remote['flags']) && remote['flags'].length > 0) {
-          var localFlagsById = {};
-          (state.flags||[]).forEach(function(f) { localFlagsById[f.id] = f; });
-          state.flags = remote['flags'].map(function(rf) {
-            var lf = localFlagsById[rf.id];
-            if (!lf) return rf;
-            // If remote has real URL (http) use it - it's the canonical version
-            var remoteHasUrl = rf.photo && rf.photo.startsWith('http');
-            var localHasUrl  = lf.photo && (lf.photo.startsWith('http') || lf.photo.startsWith('data:'));
-            if (remoteHasUrl) return rf; // remote has Drive/ImgBB URL - use it
-            if (localHasUrl) { rf.photo = lf.photo; } // keep local photo if remote is placeholder
-            return rf;
-          });
-          // Add local flags not yet in remote
-          (state.flags||[]).forEach(function(lf) {
-            if (!remote['flags'].find(function(rf) { return rf.id === lf.id; })) {
-              state.flags.push(lf);
-            }
-          });
-        }
-        merge('equipment');
-        merge('workOrders');
-        if(remote&&Array.isArray(remote['attendance'])){
-          state.attendance=remote['attendance'].map(function(r){
-            if(r&&r.date) r.date=normalizeAttDate(r.date);
-            return r;
-          });
-        }
-        if(!Array.isArray(state.attendance))state.attendance=[];
-        // Auto-remove ghost placeholder community after sync
-        (function(){
-          var ghosts=['community'];
-          ghosts.forEach(function(g){
-            var hasActive=(state.workOrders||[]).some(function(w){return w.community===g&&w.status!=='archived'&&w.status!=='placeholder';});
-            if(!hasActive) state.workOrders=(state.workOrders||[]).filter(function(w){return w.community!==g;});
-          });
-        })();
-        // Fix any JSON string fields that came back from Sheets as strings
-        (state.routes||[]).forEach(function(r) {
+      // Normalize array fields that Firestore may return as strings
+      if (name === 'routes') {
+        state.routes.forEach(function(r) {
           if (typeof r.stops === 'string') { try { r.stops = JSON.parse(r.stops); } catch(e) { r.stops = []; } }
           if (!Array.isArray(r.stops)) r.stops = [];
           r.stops.forEach(function(s) {
@@ -5036,155 +4840,209 @@ function gsLoad() {
             if (!Array.isArray(s.completedServices)) s.completedServices = [];
           });
         });
-        (state.properties||[]).forEach(function(p) {
-          if (typeof p.services === 'string') { try { p.services = JSON.parse(p.services); } catch(e) { p.services = []; } }
-          if (!Array.isArray(p.services)) p.services = [];
-          if (typeof p.flagNotes === 'string') { try { p.flagNotes = JSON.parse(p.flagNotes); } catch(e) { p.flagNotes = []; } }
-          if (!Array.isArray(p.flagNotes)) p.flagNotes = [];
+      }
+      if (name === 'properties') {
+        state.properties.forEach(function(p) {
+          if (typeof p.services === 'string')    { try { p.services    = JSON.parse(p.services);    } catch(e) { p.services    = []; } }
           if (typeof p.serviceDays === 'string') { try { p.serviceDays = JSON.parse(p.serviceDays); } catch(e) { p.serviceDays = []; } }
+          if (!Array.isArray(p.services))    p.services    = [];
           if (!Array.isArray(p.serviceDays)) p.serviceDays = [];
         });
-        (state.workOrders||[]).forEach(function(w) {
-          if (!w.status) w.status = 'open';
-          var storedPhoto = getWOPhoto(w);
-          if (storedPhoto) w.completedPhoto = storedPhoto;
-        });
-        // Restore flag photos from local storage
-        (state.flags||[]).forEach(function(f) {
-          var fp = getFlagPhoto(f);
-          if (fp) f.photo = fp;
-          var rp = getFlagResolvePhoto(f);
-          if (rp) f.resolvePhoto = rp;
-        });
-        save();
-        lastSync   = new Date();
-        syncOnline = true;
-        setSyncStatus('ok', 'Synced ' + lastSync.toLocaleTimeString());
-        // Flush any writes that failed while offline
-        setTimeout(_flushPendingSaves, 500);
-        const activeTab = document.querySelector('.nb.active')?.dataset?.tab || 'dashboard';
-        const refreshes = { dashboard:renderDashboard, routes:renderRoutes,
-          properties:renderProperties, crew:renderCrew, inventory:renderInventory,
-          equipment:renderEquipment, field:renderFieldView,
-          workorders:renderWorkOrders, 'wo-crew':renderCrewWorkOrders,
-          attendance:renderAttendance };
-        refreshes[activeTab]?.();
-        // also refresh reports if it has a pending flag count
-        if (activeTab !== 'reports') refreshes['dashboard']?.();
-        resolve(true);
-      } catch(err) {
-        console.warn('gsLoad callback error:', err);
-        syncOnline = false;
-        setSyncStatus('offline', 'Using local data');
-        resolve(false);
       }
-    };
+      if (name === 'workOrders') {
+        state.workOrders.forEach(function(w) { if (!w.status) w.status = 'open'; });
+      }
+      if (name === 'attendance') {
+        state.attendance = state.attendance.map(function(r) {
+          if (r && r.date) r.date = normalizeAttDate(r.date);
+          return r;
+        });
+      }
 
-    script.src = GS_URL + '?key=' + GS_SECRET + '&action=getAll&callback=' + cbName;
-    script.onerror = (e) => { console.error('gsLoad script error:', e); cleanup(); syncOnline = false; setSyncStatus('offline','Using local data'); resolve(false); };
-    document.head.appendChild(script);
+      // Persist to localStorage as offline cache
+      save();
+
+      // Live-update the UI
+      _renderActiveTab();
+    },
+    function(err) {
+      console.warn('Firestore listener error [' + name + ']:', err.message);
+      syncOnline = false;
+    }
+  );
+}
+
+// ── Initialize Firebase and start all real-time listeners ─────────────────
+function gsLoad() {
+  return new Promise(function(resolve) {
+    if (_fbReady && _db) { syncOnline = true; resolve(true); return; }
+
+    var BASE = 'https://www.gstatic.com/firebasejs/10.12.0/';
+    Promise.all([
+      import(BASE + 'firebase-app.js'),
+      import(BASE + 'firebase-firestore.js'),
+      import(BASE + 'firebase-storage.js'),
+    ]).then(function(mods) {
+      var appMod = mods[0], fsMod = mods[1], stMod = mods[2];
+
+      var firebaseConfig = {
+        apiKey:            "AIzaSyBYcBBQ2IFVgL4Oq0Oob54ttzxuntwdY2Q",
+        authDomain:        "diamond-landscapes-f676b.firebaseapp.com",
+        projectId:         "diamond-landscapes-f676b",
+        storageBucket:     "diamond-landscapes-f676b.firebasestorage.app",
+        messagingSenderId: "795500111307",
+        appId:             "1:795500111307:web:39379296ce4d91a509824e"
+      };
+
+      var fbApp;
+      try { fbApp = appMod.getApp(); }
+      catch(e) { fbApp = appMod.initializeApp(firebaseConfig); }
+
+      _db      = fsMod.getFirestore(fbApp);
+      _storage = stMod.getStorage(fbApp);
+      _fbReady = true;
+
+      // Expose SDK helpers globally so all functions below can reach them
+      window._fbSDK = {
+        collection:     fsMod.collection,
+        doc:            fsMod.doc,
+        setDoc:         fsMod.setDoc,
+        getDoc:         fsMod.getDoc,
+        deleteDoc:      fsMod.deleteDoc,
+        onSnapshot:     fsMod.onSnapshot,
+        writeBatch:     fsMod.writeBatch,
+        ref:            stMod.ref,
+        uploadString:   stMod.uploadString,
+        getDownloadURL: stMod.getDownloadURL,
+      };
+
+      // Version check — auto-reload devices when a new index.html is deployed
+      fsMod.getDoc(fsMod.doc(_db, 'config', 'app')).then(function(snap) {
+        if (snap.exists()) {
+          var remote = snap.data();
+          if (remote.version && remote.version !== APP_VERSION) {
+            console.log('New app version detected:', remote.version, '— reloading');
+            if ('caches' in window) {
+              caches.keys().then(function(keys) {
+                return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+              }).finally(function() { location.reload(true); });
+            } else {
+              location.reload(true);
+            }
+            return;
+          }
+        }
+        fsMod.setDoc(fsMod.doc(_db, 'config', 'app'), { version: APP_VERSION }, { merge: true });
+      }).catch(function() {});
+
+      // Start live listeners for all collections
+      var COLLECTIONS = ['crew','properties','routes','flags','workOrders',
+                         'inventory','equipment','attendance'];
+      COLLECTIONS.forEach(function(name) { _listenCollection(name); });
+
+      syncOnline = true;
+      lastSync   = new Date();
+      resolve(true);
+
+    }).catch(function(err) {
+      console.error('Firebase init failed:', err);
+      syncOnline = false;
+      resolve(false);
+    });
   });
 }
 
-// ── pending-save queue: retried on next gsLoad / auto-sync ───────────────
-var _pendingSaves = [];   // [{table, record, attempts}]
-
-function _flushPendingSaves() {
-  if (!syncOnline || !_pendingSaves.length) return;
-  var toRetry = _pendingSaves.slice();
-  _pendingSaves = [];
-  toRetry.forEach(function(item) {
-    gsSave(item.table, item.record, (item.attempts || 0) + 1);
-  });
-}
-
-// ── save a single record to Google Sheets (with retry) ───────────────────
+// ── Write one record to Firestore ─────────────────────────────────────────
 function gsSave(table, record, _attempt) {
-  _attempt = _attempt || 0;
-  // Strip oversized base64 from payload — photos are uploaded separately
-  const recStr = JSON.stringify(record);
-  const limit = (table === 'workOrders' || table === 'flags') ? 10000 : 1500;
-  var toSend = record;
-  if (recStr.length > limit) {
-    const slim = Object.assign({}, record);
-    if (slim.resolvePhoto && slim.resolvePhoto.startsWith('data:')) slim.resolvePhoto = '[photo]';
-    if (slim.photo        && slim.photo.startsWith('data:'))        slim.photo        = '[photo]';
-    if (slim.completedPhoto && slim.completedPhoto.startsWith('data:')) slim.completedPhoto = '[photo local only]';
-    toSend = slim;
+  if (!_fbReady || !_db) {
+    setTimeout(function() { gsSave(table, record, (_attempt||0)+1); }, 2000);
+    return;
   }
-  gsJSONP({ action: 'set', table: table, id: toSend.id, record: toSend })
+  if (!record || !record.id) { console.warn('gsSave: missing id', table); return; }
+
+  // Never store raw base64 in Firestore — photos go to Firebase Storage
+  var toSave = Object.assign({}, record);
+  if (toSave.completedPhoto && toSave.completedPhoto.startsWith('data:')) toSave.completedPhoto = '';
+  if (toSave.photo          && toSave.photo.startsWith('data:'))          toSave.photo          = '';
+  if (toSave.resolvePhoto   && toSave.resolvePhoto.startsWith('data:'))   toSave.resolvePhoto   = '';
+
+  // Sanitize undefined values — Firestore rejects them
+  var safe = JSON.parse(JSON.stringify(toSave, function(k,v) { return v === undefined ? null : v; }));
+
+  window._fbSDK.setDoc(window._fbSDK.doc(_db, table, String(record.id)), safe, { merge: true })
     .then(function() { syncOnline = true; })
     .catch(function(err) {
-      console.warn('gsSave attempt ' + (_attempt+1) + ' failed:', err);
+      console.warn('gsSave failed [' + table + ']:', err.message);
       syncOnline = false;
-      if (_attempt < 3) {
-        // Exponential backoff: 2s, 4s, 8s
-        setTimeout(function() {
-          gsSave(table, record, _attempt + 1);
-        }, Math.pow(2, _attempt + 1) * 1000);
-      } else {
-        // Queue for next online cycle
-        _pendingSaves.push({ table: table, record: record, attempts: _attempt });
-        console.warn('gsSave queued for later retry:', table, record.id);
+      if ((_attempt||0) < 3) {
+        setTimeout(function() { gsSave(table, record, (_attempt||0)+1); },
+          Math.pow(2, (_attempt||0)+1) * 1000);
       }
     });
 }
 
-// ── delete a single record from Google Sheets ────────────────────────────
+// ── Delete one record from Firestore ──────────────────────────────────────
 function gsDelete(table, id) {
-  gsJSONP({ action: 'delete', table, id })
-    .catch(err => console.warn('gsDelete failed:', err));
+  if (!_fbReady || !_db) return;
+  window._fbSDK.deleteDoc(window._fbSDK.doc(_db, table, String(id)))
+    .catch(function(err) { console.warn('gsDelete failed:', err.message); });
 }
 
-// ── push entire table (used after bulk import) ────────────────────────────
+// ── Bulk-write an array of records in Firestore batches ───────────────────
 async function gsPushAll(table, records) {
-  // Clear the table first then save each record individually
-  // (avoids URL length limits with large datasets)
+  if (!_fbReady || !_db) { console.warn('gsPushAll: Firebase not ready'); return; }
+  var BATCH_SIZE = 400;
   try {
-    // Step 1: clear the table
-    await gsJSONP({ action: 'clearTable', table });
-    // Step 2: save each record one at a time with small delay
-    for (let i = 0; i < records.length; i++) {
-      await gsJSONP({ action: 'set', table, id: records[i].id, record: records[i] });
-      // small delay every 5 records to avoid rate limiting
-      if (i > 0 && i % 5 === 0) await new Promise(r => setTimeout(r, 300));
+    for (var i = 0; i < records.length; i += BATCH_SIZE) {
+      var batch = window._fbSDK.writeBatch(_db);
+      records.slice(i, i + BATCH_SIZE).forEach(function(r) {
+        if (!r || !r.id) return;
+        var safe = JSON.parse(JSON.stringify(r, function(k,v) { return v === undefined ? null : v; }));
+        batch.set(window._fbSDK.doc(_db, table, String(r.id)), safe);
+      });
+      await batch.commit();
+      if (i + BATCH_SIZE < records.length) await new Promise(function(r) { setTimeout(r, 200); });
     }
     syncOnline = true;
-    console.log(table + ' pushed OK — ' + records.length + ' records');
   } catch(err) {
-    console.warn('gsPushAll failed:', err);
+    console.warn('gsPushAll failed:', err.message);
     syncOnline = false;
   }
 }
 
-// ── debounced save + sync ─────────────────────────────────────────────────
-function saveAndSync(table, record) {
-  save(); // always save locally first
-  setSyncStatus('syncing');
-  gsSave(table, record);
+// ── saveAndSync and deleteAndSync ─────────────────────────────────────────
+function saveAndSync(table, record) { save(); gsSave(table, record); }
+function deleteAndSync(table, id)   { save(); gsDelete(table, id); }
+
+// ── startAutoSync — no-op: listeners handle everything ───────────────────
+function startAutoSync() { /* real-time listeners replace polling */ }
+
+// ── Firebase Storage photo upload ─────────────────────────────────────────
+// Uploads a base64/dataURL photo and returns a permanent HTTPS download URL.
+// Path format: e.g. 'workOrders/wo_123_photo.jpg' or 'flags/flag_456_photo.jpg'
+function uploadPhotoToStorage(base64Data, storagePath, onSuccess, onError) {
+  if (!_fbReady || !_storage) {
+    // Fallback: keep photo local if storage not ready
+    onError('Firebase Storage not ready');
+    return;
+  }
+  var storageRef = window._fbSDK.ref(_storage, storagePath);
+  window._fbSDK.uploadString(storageRef, base64Data, 'data_url')
+    .then(function(snapshot) { return window._fbSDK.getDownloadURL(snapshot.ref); })
+    .then(function(url) { onSuccess(url); })
+    .catch(function(err) {
+      console.error('Storage upload failed:', err.message);
+      onError(err.message);
+    });
 }
 
-function deleteAndSync(table, id) {
-  save();
-  gsDelete(table, id);
-}
+// ── Pending-saves compat stubs (no longer needed with Firebase) ───────────
+var _pendingSaves = [];
+function _flushPendingSaves() {}
 
-// ── auto-refresh every 30 seconds (so manager sees crew updates live) ─────
-function startAutoSync() {
-  setInterval(async () => {
-    if (!syncOnline) return;
-    await gsLoad();
-    // Re-render active tab silently
-    var activeScreen = document.querySelector('.screen.active');
-    if (activeScreen) {
-      var tab = activeScreen.id.replace('screen-','');
-      var r = { dashboard:renderDashboard, workorders:renderWorkOrders,
-        'wo-crew':renderCrewWorkOrders, 'attendance':renderAttendance, attendance:renderAttendance,
-        crew:renderCrew, reports:renderReports };
-      if (r[tab]) try { r[tab](); } catch(e){}
-    }
-  }, 8000);
-}
+// ── Legacy compat stubs ───────────────────────────────────────────────────
+function gsJSONP(params) { return Promise.resolve({}); }
+
 
 
 // ─── REPORTS ──────────────────────────────────────────────────────────────
@@ -8819,21 +8677,21 @@ function clearOldPhotos() {
 
 function getWOPhoto(wo) {
   if (!wo) return null;
-  // 1. Check individual localStorage key first (fastest, local device)
-  try {
-    var local = localStorage.getItem('dlphoto_' + wo.id);
-    if (local && local.length > 100) return local;
-  } catch(e) {}
-  // 2. Check dlphotos map
+  // 1. Firebase Storage URL on the record is canonical — fastest for all devices
+  if (wo.completedPhoto && wo.completedPhoto.startsWith('https://') &&
+      !wo.completedPhoto.startsWith('[')) {
+    return wo.completedPhoto;
+  }
+  // 2. Local cache (same device, while upload is in progress)
   try {
     var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
     var lp = photos[wo.id];
     if (lp && lp.length > 100) return lp;
   } catch(e) {}
-  // 3. Use remote URL from Sheets
-  if (wo.completedPhoto && !wo.completedPhoto.startsWith('[') && wo.completedPhoto.length > 10) {
-    return wo.completedPhoto;
-  }
+  try {
+    var local = localStorage.getItem('dlphoto_' + wo.id);
+    if (local && local.length > 100) return local;
+  } catch(e) {}
   return null;
 }
 
@@ -8976,14 +8834,13 @@ function submitCrewWOComplete(woId, photoData) {
   var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
   if (!wo) return;
 
-  var crew = state.loggedInCrewId ? (state.crew || []).find(function(c) { return c.id === state.loggedInCrewId; }) : null;
+  var crew  = state.loggedInCrewId ? (state.crew||[]).find(function(c) { return c.id === state.loggedInCrewId; }) : null;
   var notes = document.getElementById('wo-complete-notes')?.value || '';
 
-  // Step 1: compress to good quality (matches flag photo pipeline)
-  compressPhoto(photoData, 800, 0.82, function(compressed) {
-    toast('📷 Photo ready - saving...');
+  // Compress photo at high quality — Firebase Storage has no size limit so keep it crisp
+  compressPhoto(photoData, 1200, 0.90, function(compressed) {
 
-    // Step 2: save locally for immediate display
+    // 1. Cache locally for instant display while upload happens
     wo.completedPhoto = compressed;
     try {
       var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
@@ -8993,24 +8850,28 @@ function submitCrewWOComplete(woId, photoData) {
       try { localStorage.setItem('dlphoto_' + woId, compressed); } catch(e2) {}
     }
 
-    // Step 3: update WO status
-    wo.status = 'completed';
-    wo.completedOn = new Date().toLocaleDateString();
-    wo.completedBy = crew ? crew.name : 'Crew';
+    // 2. Mark WO as completed
+    wo.status        = 'completed';
+    wo.completedOn   = new Date().toLocaleDateString();
+    wo.completedBy   = crew ? crew.name : 'Crew';
     wo.completedNotes = notes;
+    wo.dateCompleted = new Date().toLocaleDateString();
 
-    // Step 4: save state and close sheet
+    // 3. Save locally and close sheet immediately
     save();
     var completeSheet = document.getElementById('crew-wo-complete-sheet');
     if (completeSheet) completeSheet.remove();
     renderCrewWorkOrders();
-    if (document.getElementById('wo-community-list')) renderWorkOrders();
     toast('✓ Work order completed');
-    // Auto-translate notes in background — WO already saved so safe to fail
+
+    // 4. Write WO to Firestore immediately (photo URL will be updated once upload finishes)
+    gsSave('workOrders', Object.assign({}, wo, { completedPhoto: '[uploading]' }));
+
+    // 5. Auto-translate notes if Spanish detected
     if (notes && notes.trim()) {
       translateNotes(notes, function(translated, original) {
         if (original) {
-          wo.completedNotes = translated;
+          wo.completedNotes         = translated;
           wo.completedNotesOriginal = original;
           save();
           gsSave('workOrders', wo);
@@ -9019,73 +8880,30 @@ function submitCrewWOComplete(woId, photoData) {
       });
     }
 
-    // Step 5: save WO to Sheets with placeholder while upload runs
-    var woForSheets = Object.assign({}, wo, { completedPhoto: '[uploading]' });
-    gsSave('workOrders', woForSheets);
+    // 6. Upload to Firebase Storage — permanent URL, visible on all devices instantly
+    var woFilename = 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' +
+      (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now();
+    var storagePath = 'photos/workOrders/' + woFilename + '.jpg';
 
-    // Step 6: upload to ImgBB - same as flag photos
-    toast('📤 Uploading photo...');
-    var woFilename = 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now();
-    uploadPhotoViaPost(compressed, woFilename,
-      function(imgbbUrl) {
-        wo.completedPhoto = imgbbUrl;
+    uploadPhotoToStorage(compressed, storagePath,
+      function(storageUrl) {
+        wo.completedPhoto = storageUrl;
         try {
-          var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-          photos[wo.id] = imgbbUrl;
-          localStorage.setItem('dlphotos', JSON.stringify(photos));
+          var ph = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+          ph[wo.id] = storageUrl;
+          localStorage.setItem('dlphotos', JSON.stringify(ph));
         } catch(e) {}
         save();
         gsSave('workOrders', wo);
-        renderCrewWorkOrders();
-        if (document.getElementById('wo-community-list')) renderWorkOrders();
         toast('✓ Photo uploaded — visible on all devices');
       },
       function(err) {
         console.warn('WO photo upload failed:', err);
-        // Fallback: save compressed locally, sync without photo
+        // WO is already saved as completed — photo will stay local on this device
         gsSave('workOrders', wo);
-        toast('Photo saved locally');
+        toast('Completed — photo saved locally');
       }
     );
-    var photoDisabled = null;
-    if (photoDisabled) {
-      console.log('disabled');
-      var uploadPayload = JSON.stringify({
-        secret: GS_SECRET,
-        action: 'uploadWOPhoto',
-        woId: wo.id,
-        photo: photo,
-        filename: 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' + (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now()
-      });
-
-      // Try regular POST first (works if CORS configured)
-      fetch(GS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: uploadPayload
-      })
-      .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(function(result) {
-        console.log('Photo upload result:', result);
-        if (result && result.photoUrl) {
-          wo.completedPhoto = result.photoUrl;
-          try {
-            var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-            photos[wo.id] = result.photoUrl;
-            localStorage.setItem('dlphotos', JSON.stringify(photos));
-          } catch(e) {}
-          save();
-          toast('✓ Photo uploaded to Drive');
-          renderCrewWorkOrders();
-          if (document.getElementById('wo-community-list')) renderWorkOrders();
-        } else {
-          toast('✓ Completed (photo upload issue: ' + JSON.stringify(result) + ')');
-        }
-      })
-    } // end photoDisabled block
   });
 }
 
@@ -10464,9 +10282,9 @@ function attExportPDF() {
   document.body.appendChild(overlay);
 }
 
-gsLoad().then(() => {
-  startAutoSync();
-  setTimeout(function(){if(typeof retryPendingWOPhotos==='function')retryPendingWOPhotos();},3000);
+// Initialize Firebase — listeners attach automatically and push live data
+gsLoad().then(function(ok) {
+  if (!ok) console.warn('Firebase init failed — app running on local cache');
 });
 document.title = 'Diamond Landscapes';
 var tdEl2 = document.getElementById('topbar-date'); if(tdEl2) tdEl2.textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
