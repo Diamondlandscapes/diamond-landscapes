@@ -4939,11 +4939,38 @@ function gsLoad() {
       };
 
       // Sign in anonymously — gives Firebase Auth a valid token so
-      // security rules can check request.auth != null
+      // security rules can check request.auth != null.
+      // Collections start AFTER auth so all reads are authenticated.
       var fbAuth = authMod.getAuth(fbApp);
       authMod.signInAnonymously(fbAuth)
-        .then(function() { console.log('Firebase: signed in anonymously'); })
-        .catch(function(err) { console.warn('Firebase anon auth failed:', err.message); });
+        .then(function() {
+          console.log('Firebase: signed in anonymously');
+          window._authReady = true;
+          // Flush any writes that were queued before auth was ready
+          if (window._authQueue && window._authQueue.length) {
+            var q = window._authQueue.slice();
+            window._authQueue = [];
+            q.forEach(function(item) { gsSave(item.table, item.record, 0); });
+          }
+          // Start live listeners now that auth is confirmed
+          var COLLECTIONS = ['crew','properties','routes','flags','workOrders',
+                             'inventory','equipment','attendance'];
+          COLLECTIONS.forEach(function(name) { _listenCollection(name); });
+          syncOnline = true;
+          lastSync   = new Date();
+          resolve(true);
+        })
+        .catch(function(err) {
+          console.warn('Firebase anon auth failed:', err.message);
+          // Start listeners anyway — rules may still allow reads
+          window._authReady = true;
+          var COLLECTIONS = ['crew','properties','routes','flags','workOrders',
+                             'inventory','equipment','attendance'];
+          COLLECTIONS.forEach(function(name) { _listenCollection(name); });
+          syncOnline = true;
+          lastSync   = new Date();
+          resolve(true);
+        });
 
       // Version check — auto-reload devices when a new index.html is deployed
       fsMod.getDoc(fsMod.doc(_db, 'config', 'app')).then(function(snap) {
@@ -4964,15 +4991,6 @@ function gsLoad() {
         fsMod.setDoc(fsMod.doc(_db, 'config', 'app'), { version: APP_VERSION }, { merge: true });
       }).catch(function() {});
 
-      // Start live listeners for all collections
-      var COLLECTIONS = ['crew','properties','routes','flags','workOrders',
-                         'inventory','equipment','attendance'];
-      COLLECTIONS.forEach(function(name) { _listenCollection(name); });
-
-      syncOnline = true;
-      lastSync   = new Date();
-      resolve(true);
-
     }).catch(function(err) {
       console.error('Firebase init failed:', err);
       syncOnline = false;
@@ -4985,6 +5003,17 @@ function gsLoad() {
 function gsSave(table, record, _attempt) {
   if (!_fbReady || !_db) {
     setTimeout(function() { gsSave(table, record, (_attempt||0)+1); }, 2000);
+    return;
+  }
+  // If auth hasn't completed yet, queue the write — avoids permission denied
+  if (!window._authReady) {
+    if (!window._authQueue) window._authQueue = [];
+    // Deduplicate by id — keep latest version only
+    window._authQueue = window._authQueue.filter(function(i) {
+      return !(i.table === table && i.record && i.record.id === record.id);
+    });
+    window._authQueue.push({ table: table, record: record });
+    console.log('gsSave queued (auth pending):', table, record.id);
     return;
   }
   if (!record || !record.id) { console.warn('gsSave: missing id', table); return; }
@@ -5053,6 +5082,13 @@ function uploadPhotoToStorage(base64Data, storagePath, onSuccess, onError) {
   if (!_fbReady || !_storage) {
     // Fallback: keep photo local if storage not ready
     onError('Firebase Storage not ready');
+    return;
+  }
+  // Wait for auth before uploading — Storage rules require request.auth != null
+  if (!window._authReady) {
+    setTimeout(function() {
+      uploadPhotoToStorage(base64Data, storagePath, onSuccess, onError);
+    }, 1000);
     return;
   }
   var storageRef = window._fbSDK.ref(_storage, storagePath);
