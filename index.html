@@ -7216,7 +7216,7 @@ function openCommunityWO(community) {
       +'<div style="font-size:11px;color:var(--text3);">'+sub+'</div>'
       +'<div style="font-size:11px;color:var(--text3);margin-top:2px;">'+(w.requestType||'')+'</div></div>'
       +'<div style="text-align:right;flex-shrink:0;">'+aLbl(w)
-      +(w.dateCompleted||w.completedOn?'<div style="font-size:10px;color:var(--green);">&#x2713; '+(w.dateCompleted||w.completedOn)+'</div>':'')
+      +(w.status==='completed' && (w.dateCompleted||w.completedOn)?'<div style="font-size:10px;color:var(--green);">&#x2713; '+(w.dateCompleted||w.completedOn)+'</div>':'')
       +'</div></div>'+(w.details?'<div style="font-size:11px;color:var(--text3);margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">'+w.details+'</div>':'')+'</div>';
   }
   function archCard(w){
@@ -7836,12 +7836,24 @@ function saveWODetail(woId) {
   var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
   if (!wo) return;
   wo.assignedTo = document.getElementById('wo-assign-crew').value;
-  wo.status = document.getElementById('wo-status-sel').value;
-  wo.type = document.getElementById('wo-type-sel')?.value || wo.type;
-  wo.dueDate = document.getElementById('wo-due-date')?.value || wo.dueDate || '';
-  if (wo.status === 'completed' && !wo.completedOn) {
-    wo.completedOn = new Date().toLocaleDateString();
+  wo.status     = document.getElementById('wo-status-sel').value;
+  wo.type       = document.getElementById('wo-type-sel')?.value || wo.type;
+  wo.dueDate    = document.getElementById('wo-due-date')?.value || wo.dueDate || '';
+
+  if (wo.status === 'completed') {
+    // Set completion date if not already set
+    if (!wo.completedOn)   wo.completedOn   = new Date().toLocaleDateString();
+    if (!wo.dateCompleted) wo.dateCompleted = new Date().toLocaleDateString();
+  } else {
+    // Reopening — clear all completion fields so check mark disappears
+    wo.completedOn              = '';
+    wo.dateCompleted            = '';
+    wo.completedBy              = '';
+    wo.completedNotes           = '';
+    wo.completedNotesOriginal   = '';
+    wo.completedPhoto           = '';
   }
+
   saveAndSync('workOrders', wo);
   document.getElementById('wo-detail-sheet')?.remove();
   toast('Work order saved ✓');
@@ -8469,11 +8481,13 @@ function crewWOAddPhoto(woId) {
 function crewWOReopenWO(woId) {
   var wo = (state.workOrders||[]).find(function(w){return w.id===woId;});
   if (!wo) return;
-  wo.status = 'open';
-  wo.completedOn = '';
-  wo.completedBy = '';
-  wo.completedPhoto = '';
-  wo.completedNotes = '';
+  wo.status                 = 'open';
+  wo.completedOn            = '';
+  wo.dateCompleted          = '';
+  wo.completedBy            = '';
+  wo.completedPhoto         = '';
+  wo.completedNotes         = '';
+  wo.completedNotesOriginal = '';
   save();
   gsSave('workOrders', wo);
   crewWODetailClose();
