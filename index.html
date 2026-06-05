@@ -4902,8 +4902,9 @@ function gsLoad() {
       import(BASE + 'firebase-app.js'),
       import(BASE + 'firebase-firestore.js'),
       import(BASE + 'firebase-storage.js'),
+      import(BASE + 'firebase-auth.js'),
     ]).then(function(mods) {
-      var appMod = mods[0], fsMod = mods[1], stMod = mods[2];
+      var appMod = mods[0], fsMod = mods[1], stMod = mods[2], authMod = mods[3];
 
       var firebaseConfig = {
         apiKey:            "AIzaSyBYcBBQ2IFVgL4Oq0Oob54ttzxuntwdY2Q",
@@ -4936,6 +4937,13 @@ function gsLoad() {
         getDownloadURL: stMod.getDownloadURL,
         deleteObject:   stMod.deleteObject,
       };
+
+      // Sign in anonymously — gives Firebase Auth a valid token so
+      // security rules can check request.auth != null
+      var fbAuth = authMod.getAuth(fbApp);
+      authMod.signInAnonymously(fbAuth)
+        .then(function() { console.log('Firebase: signed in anonymously'); })
+        .catch(function(err) { console.warn('Firebase anon auth failed:', err.message); });
 
       // Version check — auto-reload devices when a new index.html is deployed
       fsMod.getDoc(fsMod.doc(_db, 'config', 'app')).then(function(snap) {
