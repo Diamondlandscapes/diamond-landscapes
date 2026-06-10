@@ -1483,7 +1483,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-06-10-v2';
+var APP_VERSION='2026-06-10-v3'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -4950,12 +4950,21 @@ function gsLoad() {
           console.log('Firebase: signed in anonymously');
           window._authReady = true;
 
-          // Version check — now auth is ready so Firestore read will succeed
+          // Version management — fully automatic:
+          // 1. Always write current version to Firestore so all devices know latest
+          // 2. Only reload if Firestore has a NEWER version than what's running
+          // This means you only need to bump APP_VERSION in the code when deploying —
+          // Firestore updates itself, no manual config changes needed.
           fsMod.getDoc(fsMod.doc(_db, 'config', 'app')).then(function(snap) {
-            if (snap.exists()) {
-              var remote = snap.data();
-              if (remote.version && remote.version !== APP_VERSION) {
-                console.log('New app version detected:', remote.version, '— reloading');
+            var remoteVersion = snap.exists() ? (snap.data().version || '') : '';
+            // Always write our version — we are the latest deployment
+            fsMod.setDoc(fsMod.doc(_db, 'config', 'app'), { version: APP_VERSION }, { merge: true });
+            // Only reload if remote is strictly newer than us (another device deployed something newer)
+            if (remoteVersion && remoteVersion !== APP_VERSION) {
+              // Compare versions — only reload if remote is newer
+              // Version format: YYYY-MM-DD-vN — higher = newer
+              if (remoteVersion > APP_VERSION) {
+                console.log('Newer app version on server:', remoteVersion, '— reloading');
                 if ('caches' in window) {
                   caches.keys().then(function(keys) {
                     return Promise.all(keys.map(function(k) { return caches.delete(k); }));
@@ -4963,11 +4972,12 @@ function gsLoad() {
                 } else {
                   location.reload(true);
                 }
-                return;
               }
             }
-            fsMod.setDoc(fsMod.doc(_db, 'config', 'app'), { version: APP_VERSION }, { merge: true });
-          }).catch(function() {});
+          }).catch(function() {
+            // Config read failed — just write our version silently
+            fsMod.setDoc(fsMod.doc(_db, 'config', 'app'), { version: APP_VERSION }, { merge: true }).catch(function(){});
+          });
 
           // Flush any writes that were queued before auth was ready
           if (window._authQueue && window._authQueue.length) {
