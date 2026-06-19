@@ -1483,7 +1483,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-06-10-v3'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-06-19-v5'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -8153,8 +8153,9 @@ function exportWOPDF(community, filterType) {
       '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
       (w.completedNotes ? '<div style="font-size:11px;color:#6b7280;margin-top:4px;"><strong>Notes:</strong> ' + w.completedNotes + (w.completedNotesOriginal ? ' <em style="color:#9ca3af;font-size:10px;">(Original: ' + w.completedNotesOriginal + ')</em>' : '') + '</div>' : '') +
       (getWOPhoto(w)
-      ? '<img src="' + getWOPhoto(w) + ' referrerpolicy="no-referrer"" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;"/>' +
-          '<div style="font-size:11px;color:#6b7280;text-align:center;margin-top:4px;">📱 Long press → Save to Photos &nbsp;|&nbsp; 💻 Right-click → Save Image</div>'
+      ? '<img src="' + getWOPhoto(w) + '" referrerpolicy="no-referrer" crossorigin="anonymous" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;" onerror="this.onerror=null;this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';"/>' +
+          '<div style="font-size:11px;color:#6b7280;text-align:center;margin-top:4px;">📱 Long press → Save to Photos &nbsp;|&nbsp; 💻 Right-click → Save Image</div>' +
+          '<div style="display:none;background:#fef2f2;border-radius:8px;padding:12px;text-align:center;color:#dc2626;font-size:11px;margin-top:6px;">⚠ Photo failed to load — check your connection and try refreshing</div>'
         : '<div style="background:#f3f4f6;border-radius:8px;padding:16px;text-align:center;color:#9ca3af;font-size:12px;margin-top:10px;">No photo attached</div>') +
     '</div>';
   }).join('');
