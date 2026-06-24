@@ -1483,7 +1483,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-06-19-v5'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-06-24-v1'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -8113,7 +8113,7 @@ function exportWOPDFDownload() {
 
 function pdfClose() { var o=document.getElementById('pdf-print-overlay'); if(o)o.remove(); }
 
-function exportWOPDF(community, filterType) {
+async function exportWOPDF(community, filterType) {
   filterType = filterType || 'all';
   var wos = (state.workOrders||[]).filter(function(w) {
     return w.community === community && w.status === 'completed'
@@ -8131,6 +8131,28 @@ function exportWOPDF(community, filterType) {
   var existing = document.getElementById('pdf-print-overlay');
   if (existing) existing.remove();
 
+  // Pre-fetch all photos as base64 so the report is fully self-contained
+  // This fixes iOS Safari CORS issues with Firebase Storage URLs in downloaded files
+  toast('📄 Building report...');
+  var photoCache = {};
+  await Promise.all(wos.map(async function(w) {
+    var url = getWOPhoto(w);
+    if (!url || !url.startsWith('http')) return;
+    try {
+      var resp = await fetch(url, { mode: 'cors', referrerPolicy: 'no-referrer' });
+      if (!resp.ok) return;
+      var blob = await resp.blob();
+      await new Promise(function(resolve) {
+        var reader = new FileReader();
+        reader.onload = function(e) { photoCache[w.id] = e.target.result; resolve(); };
+        reader.onerror = function() { resolve(); };
+        reader.readAsDataURL(blob);
+      });
+    } catch(e) {
+      console.warn('Photo fetch failed for WO', w.woNumber, e.message);
+    }
+  }));
+
   var dateStr = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
 
   var overlay = document.createElement('div');
@@ -8140,6 +8162,8 @@ function exportWOPDF(community, filterType) {
   var completedHTML = wos.map(function(w) {
     var crew = (state.crew||[]).find(function(c) { return c.id === w.assignedTo; });
     var typeIcon = w.type === 'irrigation' ? '💧 Irrigation' : '🌿 Landscaping';
+    // Use pre-fetched base64 if available, fall back to URL
+    var photoSrc = photoCache[w.id] || getWOPhoto(w);
     return '<div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #e5e7eb;">' +
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
         '<div>' +
@@ -8150,12 +8174,11 @@ function exportWOPDF(community, filterType) {
         '<div style="background:#dcfce7;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:800;color:#16a34a;">✓ COMPLETED</div>' +
       '</div>' +
       '<div style="font-size:13px;color:#374151;margin-bottom:6px;"><strong>' + (w.requestType||'') + '</strong>' + (w.details ? ': ' + w.details : '') + '</div>' +
-      '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + (w.completedOn ? ' · ' + w.completedOn : '') + '</div>' +
+      '<div style="font-size:11px;color:#6b7280;">Completed by ' + (w.completedBy||(crew?crew.name:'Unknown')) + (w.completedOn ? ' · ' + fmtWODate(w.completedOn) : '') + '</div>' +
       (w.completedNotes ? '<div style="font-size:11px;color:#6b7280;margin-top:4px;"><strong>Notes:</strong> ' + w.completedNotes + (w.completedNotesOriginal ? ' <em style="color:#9ca3af;font-size:10px;">(Original: ' + w.completedNotesOriginal + ')</em>' : '') + '</div>' : '') +
-      (getWOPhoto(w)
-      ? '<img src="' + getWOPhoto(w) + '" referrerpolicy="no-referrer" crossorigin="anonymous" data-wo="WO_' + (w.woNumber||w.id.slice(-4)) + '_' + (w.ownerName||'photo').replace(/[^a-zA-Z0-9]/g,'_') + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;" onerror="this.onerror=null;this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';"/>' +
-          '<div style="font-size:11px;color:#6b7280;text-align:center;margin-top:4px;">📱 Long press → Save to Photos &nbsp;|&nbsp; 💻 Right-click → Save Image</div>' +
-          '<div style="display:none;background:#fef2f2;border-radius:8px;padding:12px;text-align:center;color:#dc2626;font-size:11px;margin-top:6px;">⚠ Photo failed to load — check your connection and try refreshing</div>'
+      (photoSrc
+        ? '<img src="' + photoSrc + '" style="width:100%;max-height:320px;object-fit:cover;border-radius:8px;margin-top:10px;"/>' +
+          '<div style="font-size:11px;color:#6b7280;text-align:center;margin-top:4px;">📱 Long press → Save to Photos &nbsp;|&nbsp; 💻 Right-click → Save Image</div>'
         : '<div style="background:#f3f4f6;border-radius:8px;padding:16px;text-align:center;color:#9ca3af;font-size:12px;margin-top:10px;">No photo attached</div>') +
     '</div>';
   }).join('');
