@@ -1483,7 +1483,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-06-24-v1'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-06-25-v1'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2784,7 +2784,7 @@ function saveFlag() {
     priority: document.getElementById('flag-priority').value,
     note: note, photo: '',
     by: document.getElementById('flag-by').value || 'Team',
-    date: new Date().toLocaleDateString(), resolved: false
+    date: new Date().toLocaleDateString('en-US'), resolved: false
   };
 
   if (!hasPhoto) {
@@ -3539,6 +3539,24 @@ function fmtWODate(d) {
     if (isNaN(dt.getTime())) return d;
     return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   } catch(e) { return d; }
+}
+
+// Parse a date string safely regardless of locale format
+// Handles: MM/DD/YYYY, DD/MM/YYYY, ISO, "Jun 5, 2026", "6/25/2026" etc.
+function parseSafeDate(d) {
+  if (!d) return null;
+  // ISO format — parse directly
+  if (/^\d{4}-\d{2}-\d{2}/.test(d)) return new Date(d);
+  // Text format like "Jun 5, 2026" — parse directly
+  var dt = new Date(d);
+  if (!isNaN(dt.getTime())) return dt;
+  // Try swapping day/month for DD/MM/YYYY like "25/6/2026"
+  var parts = d.split('/');
+  if (parts.length === 3) {
+    var swapped = new Date(parts[2] + '/' + parts[1] + '/' + parts[0]);
+    if (!isNaN(swapped.getTime())) return swapped;
+  }
+  return null;
 }
 
 function daysUntil(dateStr) {
@@ -5881,7 +5899,7 @@ function confirmGenerateRoute() {
   const draft = {
     id: uid(), name, day, crewId,
     status: 'Draft', optimized: false, isDraft: true,
-    createdAt: new Date().toLocaleDateString(),
+    createdAt: new Date().toLocaleDateString('en-US'),
     stops: checked.map(pid => ({
       propId: pid, completed: false, completedServices: [], photos: [], notes: ''
     }))
@@ -6126,7 +6144,7 @@ function assignFlagToRoute(flagId) {
   if (!f || !route) return;
   f.assignedRouteId   = routeId;
   f.assignedRouteName = route.name;
-  f.assignedDate      = new Date().toLocaleDateString();
+  f.assignedDate      = new Date().toLocaleDateString('en-US');
   saveAndSync('flags', f);
   document.getElementById('report-flag-panel')?.remove();
   renderReports();
@@ -7793,7 +7811,7 @@ function processWOUpload(community) {
       type: autoType,
       community: community,
       date: date,
-      dateReceived: new Date().toLocaleDateString(),
+      dateReceived: new Date().toLocaleDateString('en-US'),
       dateCompleted: '',
       woNumber: woNum,
       address: address,
@@ -7807,7 +7825,7 @@ function processWOUpload(community) {
       completedPhoto: '',
       completedBy: '',
       dueDate: '',
-      createdAt: new Date().toLocaleDateString()
+      createdAt: new Date().toLocaleDateString('en-US')
     });
     imported++;
   });
@@ -7939,8 +7957,8 @@ function saveWODetail(woId) {
 
   if (wo.status === 'completed') {
     // Set completion date if not already set
-    if (!wo.completedOn)   wo.completedOn   = new Date().toLocaleDateString();
-    if (!wo.dateCompleted) wo.dateCompleted = new Date().toLocaleDateString();
+    if (!wo.completedOn)   wo.completedOn   = new Date().toLocaleDateString('en-US');
+    if (!wo.dateCompleted) wo.dateCompleted = new Date().toLocaleDateString('en-US');
   } else {
     // Reopening — delete photo from Firebase Storage then clear all completion fields
     var oldPhotoUrl = wo.completedPhoto || '';
@@ -8349,14 +8367,30 @@ function renderCrewWorkOrders() {
     return;
   }
   var vf = window._crewWOVillage || '';
+  var tf = window._crewWOType || '';
   var villages = [];
   myWOs.forEach(function(w){var v=(w.village||'').toString().trim();if(v&&!villages.includes(v))villages.push(v);});
   villages.sort(function(a,b){return (parseInt(a)||0)-(parseInt(b)||0);});
-  var filteredWOs = vf ? myWOs.filter(function(w){return (w.village||'').toString().trim()===vf;}) : myWOs;
+  var filteredWOs = myWOs
+    .filter(function(w){ return !vf || (w.village||'').toString().trim()===vf; })
+    .filter(function(w){ return !tf || w.type===tf; });
+  var filteredDoneWOs = doneWOs
+    .filter(function(w){ return !tf || w.type===tf; });
   var html = '';
+
+  // Type filter pills — always visible
+  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">';
+  html += '<button class="pill'+(tf===''?' active':'')+'" onclick="window._crewWOType=\'\';renderCrewWorkOrders()">All ('+myWOs.length+')</button>';
+  var landCount = myWOs.filter(function(w){return w.type!=='irrigation';}).length;
+  var irrCount  = myWOs.filter(function(w){return w.type==='irrigation';}).length;
+  if (landCount) html += '<button class="pill'+(tf==='landscape'?' active':'')+'" onclick="window._crewWOType=\'landscape\';renderCrewWorkOrders()">🌿 Landscape ('+landCount+')</button>';
+  if (irrCount)  html += '<button class="pill'+(tf==='irrigation'?' active':'')+'" onclick="window._crewWOType=\'irrigation\';renderCrewWorkOrders()">💧 Irrigation ('+irrCount+')</button>';
+  html += '</div>';
+
+  // Village filter pills — only show if multiple villages
   if (villages.length > 1) {
     html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">';
-    html += '<button class="pill'+(!vf?' active':'')+'" onclick="window._crewWOVillage=\'\';renderCrewWorkOrders()">All ('+myWOs.length+')</button>';
+    html += '<button class="pill'+(!vf?' active':'')+'" onclick="window._crewWOVillage=\'\';renderCrewWorkOrders()">All Villages</button>';
     villages.forEach(function(v){
       var cnt=myWOs.filter(function(w){return (w.village||'').toString().trim()===v;}).length;
       html += '<button class="pill'+(vf===v?' active':'')+'" onclick="window._crewWOVillage=\''+v+'\';renderCrewWorkOrders()">V'+v+' ('+cnt+')</button>';
@@ -8364,7 +8398,7 @@ function renderCrewWorkOrders() {
     html += '</div>';
   }
   if (filteredWOs.length) {
-    html += '<div class="sec-title">Assigned to Me ('+filteredWOs.length+(vf?' &middot; Village '+vf:'')+')</div>';
+    html += '<div class="sec-title">Assigned to Me ('+filteredWOs.length+(vf?' &middot; Village '+vf:'')+(tf?' &middot; '+(tf==='irrigation'?'💧 Irrigation':'🌿 Landscape'):'')+')</div>';
     filteredWOs.forEach(function(w){
       var typeIcon=w.type==='irrigation'?'&#x1F4A7;':'&#x1F33F;';
       var statusColor=w.status==='in_progress'?'yellow':'red';
@@ -8389,9 +8423,9 @@ function renderCrewWorkOrders() {
   } else if (vf) {
     html+='<div style="text-align:center;color:var(--text4);padding:20px;font-size:13px;">No open WOs for Village '+vf+'</div>';
   }
-  if (doneWOs.length) {
+  if (filteredDoneWOs.length) {
     html+='<div class="sec-title" style="margin-top:16px;">Recently Completed</div>';
-    doneWOs.forEach(function(w){
+    filteredDoneWOs.forEach(function(w){
       var typeIcon=w.type==='irrigation'?'&#x1F4A7;':'&#x1F33F;';
       html+='<div class="card-flat" style="margin-bottom:8px;border-left:3px solid var(--green);cursor:pointer;" onclick="openCrewWODetail(\''+w.id+'\')">'
         +'<div style="display:flex;justify-content:space-between;align-items:center;">'
@@ -9029,10 +9063,10 @@ function submitCrewWOComplete(woId, photoData) {
 
     // 2. Mark WO as completed
     wo.status        = 'completed';
-    wo.completedOn   = new Date().toLocaleDateString();
+    wo.completedOn   = new Date().toLocaleDateString('en-US');
     wo.completedBy   = crew ? crew.name : 'Crew';
     wo.completedNotes = notes;
-    wo.dateCompleted = new Date().toLocaleDateString();
+    wo.dateCompleted = new Date().toLocaleDateString('en-US');
 
     // 3. Save locally and close sheet immediately
     save();
@@ -9853,7 +9887,7 @@ function saveCreatedWO() {
     id:          'wo_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
     type:        isIrr ? 'irrigation' : 'landscape',
     community:   community,
-    date:        new Date().toLocaleDateString(),
+    date:        new Date().toLocaleDateString('en-US'),
     woNumber:    document.getElementById('cwo-wo-number')?.value.trim() || '',
     address:     address,
     village:     document.getElementById('cwo-village')?.value.trim() || '',
@@ -9864,7 +9898,7 @@ function saveCreatedWO() {
     assignedTo:  document.getElementById('cwo-assign')?.value || '',
     status:      'open',
     completedOn: '', completedPhoto: '', completedBy: '', completedNotes: '',
-    createdAt:   new Date().toLocaleDateString()
+    createdAt:   new Date().toLocaleDateString('en-US')
   };
 
   state.workOrders = state.workOrders || [];
@@ -9948,10 +9982,10 @@ function openCreateWO(community) {
     var owner=document.getElementById('woc-owner').value.trim();
     if(!owner){toast('Owner name is required');return;}
     var dv=document.getElementById('woc-date').value;
-    var ds=dv?new Date(dv).toLocaleDateString():new Date().toLocaleDateString();
+    var ds=dv?new Date(dv).toLocaleDateString():new Date().toLocaleDateString('en-US');
     var wo={id:'wo_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
       type:document.getElementById('woc-type').value,community:community,date:ds,
-      dateReceived:new Date().toLocaleDateString(),dateCompleted:'',
+      dateReceived:new Date().toLocaleDateString('en-US'),dateCompleted:'',
       woNumber:document.getElementById('woc-num').value.trim(),
       address:document.getElementById('woc-address').value.trim(),
       village:document.getElementById('woc-village').value.trim(),
@@ -9960,7 +9994,7 @@ function openCreateWO(community) {
       assignedTo:document.getElementById('woc-crew').value,
       status:document.getElementById('woc-status').value,
       dueDate:document.getElementById('woc-due').value,
-      completedOn:'',completedPhoto:'',completedBy:'',createdAt:new Date().toLocaleDateString()};
+      completedOn:'',completedPhoto:'',completedBy:'',createdAt:new Date().toLocaleDateString('en-US')};
     state.workOrders=state.workOrders||[];state.workOrders.push(wo);saveAndSync('workOrders',wo);
     sheet.remove();renderWorkOrders();
     var panel=document.getElementById('wo-community-panel');if(panel){panel.remove();openCommunityWO(community);}
@@ -10009,12 +10043,14 @@ function confirmArchiveWOs(community,days,before) {
   var toArchive=(state.workOrders||[]).filter(function(w){
     if(w.community!==community||w.status!=='completed')return false;
     var dc=w.dateCompleted||w.completedOn||'';if(!dc)return false;
-    return new Date(dc)<=cutoff;
+    var parsed=parseSafeDate(dc);
+    if(!parsed||isNaN(parsed.getTime()))return false;
+    return parsed<=cutoff;
   });
   if(!toArchive.length){toast('No completed WOs match that range');return;}
-  var label=before?'completed before '+new Date(before).toLocaleDateString():'older than '+days+' days';
+  var label=before?'completed before '+new Date(before).toLocaleDateString('en-US'):'older than '+days+' days';
   if(!confirm('Archive '+toArchive.length+' work order'+(toArchive.length!==1?'s':'')+' '+label+'? They will be hidden but never deleted.'))return;
-  toArchive.forEach(function(w){w.status='archived';w.archivedAt=new Date().toLocaleDateString();saveAndSync('workOrders',w);});
+  toArchive.forEach(function(w){w.status='archived';w.archivedAt=new Date().toLocaleDateString('en-US');saveAndSync('workOrders',w);});
   document.getElementById('wo-archive-sheet')?.remove();
   var panel=document.getElementById('wo-community-panel');
   if(panel&&window._woCommunity){panel.remove();openCommunityWO(window._woCommunity);}
@@ -10430,7 +10466,7 @@ function attExportPDF() {
     +'<div style="display:flex;justify-content:space-between;margin-bottom:20px;">'
     +'<div><div style="font-size:22px;font-weight:800;">Diamond Landscapes</div>'
     +'<div style="color:#6b7280;">Attendance Report &middot; '+rangeLabel+'</div></div>'
-    +'<div style="font-size:11px;color:#6b7280;">Generated '+new Date().toLocaleDateString()+'</div></div>'
+    +'<div style="font-size:11px;color:#6b7280;">Generated '+new Date().toLocaleDateString('en-US')+'</div></div>'
     +'<div style="display:flex;gap:16px;margin-bottom:12px;font-size:12px;">'
     +'<span><b>P</b> = Present</span><span><b>A</b> = Absent</span><span><b>L</b> = Late</span><span><b>H</b> = Half Day</span></div>'
     +'<table><thead><tr><th style="text-align:left;padding:6px;border:1px solid #e5e7eb;">Name</th>'
@@ -10440,7 +10476,7 @@ function attExportPDF() {
     +'<th style="text-align:center;color:#d97706;border:1px solid #e5e7eb;font-size:12px;">L</th>'
     +'<th style="text-align:center;color:#ea580c;border:1px solid #e5e7eb;font-size:12px;">½</th>'
     +'</tr></thead><tbody>'+tableRows+'</tbody></table>'
-    +'<div style="margin-top:20px;font-size:11px;color:#9ca3af;text-align:center;">Diamond Landscapes &middot; Attendance &middot; '+new Date().toLocaleDateString()+'</div>'
+    +'<div style="margin-top:20px;font-size:11px;color:#9ca3af;text-align:center;">Diamond Landscapes &middot; Attendance &middot; '+new Date().toLocaleDateString('en-US')+'</div>'
     +'</body></html>';
 
   var overlay=document.createElement('div');
