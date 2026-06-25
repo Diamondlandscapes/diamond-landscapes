@@ -1483,7 +1483,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-06-25-v3'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-06-25-v4'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -7486,7 +7486,14 @@ function openCommunityWO(community) {
     if(q('wo-arch-from'))     q('wo-arch-from').onchange=function(){window._woArchDateFrom=this.value;build();};
     if(q('wo-arch-to'))       q('wo-arch-to').onchange=function(){window._woArchDateTo=this.value;build();};
     if(q('wo-arch-clear'))    q('wo-arch-clear').onclick=function(){window._woArchVillage='';window._woArchDateFrom='';window._woArchDateTo='';window._woArchType='';window._woArchSearch='';build();};
-    if(q('wo-arch-search'))   q('wo-arch-search').oninput=function(){window._woArchSearch=this.value;build();};
+    if(q('wo-arch-search'))   q('wo-arch-search').oninput=function(){
+      window._woArchSearch=this.value;
+      var val=this.value, pos=this.selectionStart;
+      build();
+      // Restore focus and cursor position after re-render
+      var newInput=q('wo-arch-search');
+      if(newInput){newInput.focus();try{newInput.setSelectionRange(pos,pos);}catch(e){}}
+    };
     panel.querySelectorAll('[data-archtype]').forEach(function(btn){
       btn.addEventListener('click', function(){ window._woArchType=btn.dataset.archtype; build(); });
     });
