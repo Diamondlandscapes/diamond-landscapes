@@ -1483,7 +1483,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-06-25-v2'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-06-25-v3'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -7424,12 +7424,12 @@ function openCommunityWO(community) {
           +(window._woShowArch
             ?'<div style="margin-top:10px;background:var(--bg2);border-radius:10px;padding:10px;">'
               +'<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;">'
-              +'<button class="pill'+(atf===''?' active':'')+'" style="font-size:11px;" onclick="window._woArchType=\'\';build()">All Types</button>'
-              +'<button class="pill'+(atf==='landscape'?' active':'')+'" style="font-size:11px;" onclick="window._woArchType=\'landscape\';build()">🌿 Land</button>'
-              +'<button class="pill'+(atf==='irrigation'?' active':'')+'" style="font-size:11px;" onclick="window._woArchType=\'irrigation\';build()">💧 Irr</button>'
+              +'<button class="pill'+(atf===''?' active':'')+'" data-archtype="" style="font-size:11px;">All Types</button>'
+              +'<button class="pill'+(atf==='landscape'?' active':'')+'" data-archtype="landscape" style="font-size:11px;">🌿 Land</button>'
+              +'<button class="pill'+(atf==='irrigation'?' active':'')+'" data-archtype="irrigation" style="font-size:11px;">💧 Irr</button>'
               +'</div>'
               +'<div style="margin-bottom:8px;">'
-              +'<input type="text" id="wo-arch-search" placeholder="🔍 Search by WO# or name..." value="'+(asq||'')+'" style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12px;box-sizing:border-box;" oninput="window._woArchSearch=this.value;build()"/>'
+              +'<input type="text" id="wo-arch-search" placeholder="🔍 Search by WO# or name..." value="'+(asq||'')+'" style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12px;box-sizing:border-box;"/>'
               +'</div>'
               +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border);">'
               +'<div style="font-size:11px;font-weight:700;color:var(--text3);">&#x1F3D8;</div>'
@@ -7486,6 +7486,10 @@ function openCommunityWO(community) {
     if(q('wo-arch-from'))     q('wo-arch-from').onchange=function(){window._woArchDateFrom=this.value;build();};
     if(q('wo-arch-to'))       q('wo-arch-to').onchange=function(){window._woArchDateTo=this.value;build();};
     if(q('wo-arch-clear'))    q('wo-arch-clear').onclick=function(){window._woArchVillage='';window._woArchDateFrom='';window._woArchDateTo='';window._woArchType='';window._woArchSearch='';build();};
+    if(q('wo-arch-search'))   q('wo-arch-search').oninput=function(){window._woArchSearch=this.value;build();};
+    panel.querySelectorAll('[data-archtype]').forEach(function(btn){
+      btn.addEventListener('click', function(){ window._woArchType=btn.dataset.archtype; build(); });
+    });
     if(bulk){
       window.woBulkToggle=function(cb){
         if(cb.checked)sel.add(cb.dataset.woid);else sel.delete(cb.dataset.woid);
