@@ -1481,7 +1481,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-07-13-v2'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-07-13-v3'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -3333,7 +3333,7 @@ function openEditInv(id) {
   var sheet=document.createElement('div'); sheet.id='edit-inv-sheet'; sheet.className='overlay open';
   sheet.innerHTML='<div class="sheet">'
     +'<div class="sheet-hdr"><div class="sheet-title">Edit Item</div>'
-    +'<button onclick="document.getElementById('edit-inv-sheet').remove()" class="sheet-close">&#x2715;</button></div>'
+    +'<button id="ei-close-btn" class="sheet-close">&#x2715;</button></div>'
     +'<div style="display:flex;flex-direction:column;gap:10px;">'
     +'<input class="inp" id="ei-name" value="'+(item.name||'').replace(/"/g,'&quot;')+'" placeholder="Item name"/>'
     +'<input class="inp" id="ei-category" value="'+(item.category||'').replace(/"/g,'&quot;')+'" placeholder="Type (e.g. Mulch, Chemical, Parts...)"/>'
@@ -3349,6 +3349,7 @@ function openEditInv(id) {
   document.body.appendChild(sheet);
   document.getElementById('ei-save-btn').addEventListener('click', function() { saveEditInv(id); });
   document.getElementById('ei-cancel-btn').addEventListener('click', function() { sheet.remove(); });
+  document.getElementById('ei-close-btn').addEventListener('click', function() { sheet.remove(); });
 }
 
 function saveEditInv(id) {
