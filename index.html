@@ -1236,15 +1236,13 @@ select.inp{cursor:pointer;}
       <div class="sheet-title">Add Inventory Item</div>
       <div style="display:flex;flex-direction:column;gap:10px;">
         <input class="inp" id="ni-name" placeholder="Item name (e.g. Mulch - Brown)"/>
-        <select class="inp" id="ni-category">
-          <option>Mulch</option><option>Rock/Gravel</option><option>Fertilizer</option>
-          <option>Chemicals</option><option>Equipment</option><option>Other</option>
-        </select>
+        <input class="inp" id="ni-category" placeholder="Type (e.g. Mulch, Chemical, Parts...)"/>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-          <input class="inp" id="ni-qty" placeholder="Quantity" type="number"/>
-          <input class="inp" id="ni-unit" placeholder="Unit (bags, yards...)"/>
+          <input class="inp" id="ni-qty" placeholder="Quantity" type="number" min="0"/>
+          <input class="inp" id="ni-unit" placeholder="Unit (bags, units...)"/>
         </div>
-        <input class="inp" id="ni-low" placeholder="Low stock alert at..." type="number"/>
+        <input class="inp" id="ni-low" placeholder="Low stock alert at..." type="number" min="0"/>
+        <textarea class="inp" id="ni-notes" rows="2" placeholder="Notes (optional)..."></textarea>
         <button class="btn btn-green" onclick="saveInventory()">Save Item</button>
         <button class="btn btn-outline" onclick="closeOverlay('add-inv-overlay')">Cancel</button>
       </div>
@@ -1483,7 +1481,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-06-25-v4'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-07-13-v1'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -3243,68 +3241,140 @@ function deleteCrew(id) {
 
 // ─── INVENTORY ────────────────────────────────────────────────────────────
 function renderInventory() {
-  const el = document.getElementById('inventory-list');
-  if (!state.inventory.length) {
-    el.innerHTML = `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">No inventory tracked yet. Tap + Add Item.</div>`;
-    return;
+  var el = document.getElementById('inventory-list');
+  if (!el) return;
+  var sq = window._invSearch || '';
+  var inv = state.inventory || [];
+  var searchBar = '<div style="margin-bottom:12px;">'
+    + '<input type="text" id="inv-search" placeholder="🔍 Search inventory..." value="' + sq.replace(/"/g,'&quot;') + '" '
+    + 'style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;'
+    + 'padding:9px 12px;color:var(--text);font-size:13px;box-sizing:border-box;"/>'
+    + '</div>';
+  if (!inv.length) {
+    el.innerHTML = searchBar + '<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">No inventory tracked yet. Tap + Add Item.</div>';
+    wireInvSearch(); return;
   }
-  const grouped = {};
-  state.inventory.forEach(i => { if(!grouped[i.category]) grouped[i.category]=[]; grouped[i.category].push(i); });
-  el.innerHTML = Object.entries(grouped).map(([cat, items]) => `
-    <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">${cat}</div>
-    ${items.map(i => {
-      const pct = Math.min(100, (+i.qty / Math.max(+i.lowAlert||5, 1)) * 100);
-      const low = (+i.qty) <= (+i.lowAlert||5);
-      return `<div class="card" style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
-          <div>
-            <div style="font-weight:800;font-size:15px;">${i.name}</div>
-            <div style="font-size:12px;color:var(--text3);margin-top:2px;">${i.category}</div>
-          </div>
-          <div style="text-align:right;">
-            <div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:${low?'var(--red)':'var(--green)'};">${i.qty}</div>
-            <div style="font-size:11px;color:var(--text3);">${i.unit}</div>
-          </div>
-        </div>
-        <div class="inv-bar"><div class="inv-fill" style="width:${pct}%;background:${low?'var(--red)':'linear-gradient(90deg,var(--green3),var(--lime))'};"></div></div>
-        ${low?`<div style="font-size:11px;color:var(--red);margin-top:6px;">⚠️ Low stock — reorder soon</div>`:''}
-        <div style="display:flex;gap:8px;margin-top:10px;">
-          <button onclick="adjustInv('${i.id}',-1)" style="flex:1;padding:8px;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);color:var(--red);border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;">−</button>
-          <button onclick="adjustInv('${i.id}',1)" style="flex:1;padding:8px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);color:var(--green);border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;">+</button>
-          <button onclick="deleteInv('${i.id}')" style="padding:8px 12px;background:var(--bg4);border:1px solid var(--border2);color:var(--text3);border-radius:8px;cursor:pointer;font-size:12px;">🗑</button>
-        </div>
-      </div>`;
-    }).join('')}
-  `).join('');
+  var filtered = sq ? inv.filter(function(i) {
+    return (i.name||'').toLowerCase().includes(sq.toLowerCase()) || (i.category||'').toLowerCase().includes(sq.toLowerCase());
+  }) : inv;
+  var grouped = {};
+  filtered.forEach(function(i) { var c=i.category||'Uncategorized'; if(!grouped[c])grouped[c]=[]; grouped[c].push(i); });
+  var rows = Object.entries(grouped).map(function(entry) {
+    var cat=entry[0], items=entry[1];
+    return '<div style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;margin-bottom:8px;margin-top:14px;">'+cat+'</div>'
+      + items.map(function(i) {
+          var pct=Math.min(100,(+i.qty/Math.max(+i.lowAlert||5,1))*100);
+          var low=(+i.qty)<=(+i.lowAlert||5);
+          var used=(i.usageHistory||[]).slice(-3).reverse();
+          return '<div class="card" style="margin-bottom:10px;">'
+            +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
+              +'<div style="flex:1;min-width:0;">'
+                +'<div style="font-weight:800;font-size:15px;">'+(i.name||'')+'</div>'
+                +'<div style="font-size:12px;color:var(--text3);margin-top:2px;">'+(i.category||'')+'</div>'
+                +(i.notes?'<div style="font-size:11px;color:var(--text4);margin-top:2px;">'+i.notes+'</div>':'')
+              +'</div>'
+              +'<div style="text-align:right;flex-shrink:0;margin-left:12px;">'
+                +'<div style="font-size:20px;font-weight:700;color:'+(low?'var(--red)':'var(--green)')+';">'+i.qty+'</div>'
+                +'<div style="font-size:11px;color:var(--text3);">'+(i.unit||'units')+'</div>'
+              +'</div>'
+            +'</div>'
+            +'<div class="inv-bar"><div class="inv-fill" style="width:'+pct+'%;background:'+(low?'var(--red)':'linear-gradient(90deg,var(--green3),var(--lime))')+'"></div></div>'
+            +(low?'<div style="font-size:11px;color:var(--red);margin-top:6px;">⚠️ Low stock — reorder soon</div>':'')
+            +(used.length?'<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">'
+              +'<div style="font-size:10px;font-weight:700;color:var(--text4);letter-spacing:1px;margin-bottom:4px;">RECENT USAGE</div>'
+              +used.map(function(u){
+                return '<div style="font-size:11px;color:var(--text3);margin-bottom:2px;">· <span style="color:var(--text2);">'+u.qty+' '+(i.unit||'units')+'</span> on WO #'+(u.woNumber||u.woId||'')+' by '+(u.crewName||'crew')+' · '+(u.date||'')+'</div>';
+              }).join('')+'</div>':'')
+            +'<div style="display:flex;gap:8px;margin-top:10px;">'
+              +'<button onclick="adjustInv(''+i.id+'',-1)" style="flex:1;padding:8px;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);color:var(--red);border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;">−</button>'
+              +'<button onclick="adjustInv(''+i.id+'',1)" style="flex:1;padding:8px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);color:var(--green);border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;">+</button>'
+              +'<button onclick="openEditInv(''+i.id+'')" style="padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);border-radius:8px;cursor:pointer;font-size:12px;">✏️</button>'
+              +'<button onclick="deleteInv(''+i.id+'')" style="padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);color:var(--text3);border-radius:8px;cursor:pointer;font-size:12px;">🗑</button>'
+            +'</div>'
+          +'</div>';
+        }).join('');
+  }).join('');
+  el.innerHTML = searchBar + (filtered.length ? rows : '<div style="text-align:center;color:var(--text4);font-size:13px;padding:20px;">No items match "'+sq+'"</div>');
+  wireInvSearch();
+}
+
+function wireInvSearch() {
+  var inp = document.getElementById('inv-search');
+  if (!inp) return;
+  inp.oninput = function() {
+    var val=this.value, pos=this.selectionStart;
+    window._invSearch=val; renderInventory();
+    var ni=document.getElementById('inv-search');
+    if(ni){ni.focus();try{ni.setSelectionRange(pos,pos);}catch(e){}}
+  };
+}
+
+function openEditInv(id) {
+  var item=(state.inventory||[]).find(function(i){return i.id===id;});
+  if(!item)return;
+  var ex=document.getElementById('edit-inv-sheet'); if(ex)ex.remove();
+  var sheet=document.createElement('div'); sheet.id='edit-inv-sheet'; sheet.className='overlay open';
+  sheet.innerHTML='<div class="sheet">'
+    +'<div class="sheet-hdr"><div class="sheet-title">Edit Item</div>'
+    +'<button onclick="document.getElementById('edit-inv-sheet').remove()" class="sheet-close">&#x2715;</button></div>'
+    +'<div style="display:flex;flex-direction:column;gap:10px;">'
+    +'<input class="inp" id="ei-name" value="'+(item.name||'').replace(/"/g,'&quot;')+'" placeholder="Item name"/>'
+    +'<input class="inp" id="ei-category" value="'+(item.category||'').replace(/"/g,'&quot;')+'" placeholder="Type (e.g. Mulch, Chemical, Parts...)"/>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'
+    +'<input class="inp" id="ei-qty" type="number" min="0" value="'+(item.qty||0)+'" placeholder="Quantity"/>'
+    +'<input class="inp" id="ei-unit" value="'+(item.unit||'units').replace(/"/g,'&quot;')+'" placeholder="Unit"/>'
+    +'</div>'
+    +'<input class="inp" id="ei-low" type="number" min="0" value="'+(item.lowAlert||5)+'" placeholder="Low stock alert at..."/>'
+    +'<textarea class="inp" id="ei-notes" rows="2" placeholder="Notes (optional)...">'+(item.notes||'')+'</textarea>'
+    +'<button class="btn btn-green" onclick="saveEditInv(''+id+'')">Save Changes</button>'
+    +'<button class="btn btn-outline" onclick="document.getElementById('edit-inv-sheet').remove()">Cancel</button>'
+    +'</div></div>';
+  document.body.appendChild(sheet);
+}
+
+function saveEditInv(id) {
+  var item=(state.inventory||[]).find(function(i){return i.id===id;});
+  if(!item)return;
+  item.name     =document.getElementById('ei-name').value.trim()||item.name;
+  item.category =document.getElementById('ei-category').value.trim()||item.category;
+  item.qty      =document.getElementById('ei-qty').value||'0';
+  item.unit     =document.getElementById('ei-unit').value.trim()||'units';
+  item.lowAlert =document.getElementById('ei-low').value||'5';
+  item.notes    =document.getElementById('ei-notes').value.trim();
+  saveAndSync('inventory',item);
+  document.getElementById('edit-inv-sheet').remove();
+  renderInventory(); renderDashboard(); toast('Item updated ✓');
 }
 
 function adjustInv(id, delta) {
-  const item = state.inventory.find(i => i.id === id);
-  if (item) { item.qty = Math.max(0, (+item.qty) + delta); saveAndSync('inventory', item); renderInventory(); renderDashboard(); }
+  var item=(state.inventory||[]).find(function(i){return i.id===id;});
+  if(item){item.qty=Math.max(0,(+item.qty)+delta);saveAndSync('inventory',item);renderInventory();renderDashboard();}
 }
 
 function deleteInv(id) {
-  state.inventory = state.inventory.filter(i => i.id !== id);
-  save();
-  gsDelete('inventory', id);
-  renderInventory();
+  if(!confirm('Delete this inventory item?'))return;
+  state.inventory=state.inventory.filter(function(i){return i.id!==id;});
+  save(); gsDelete('inventory',id); renderInventory();
 }
 
 function openAddInventory() { openOverlay('add-inv-overlay'); }
 
 function saveInventory() {
-  const name = document.getElementById('ni-name').value.trim();
-  if (!name) { toast('Enter item name'); return; }
-  const newInv = { id: uid(), name,
-    category: document.getElementById('ni-category').value,
-    qty: document.getElementById('ni-qty').value || '0',
-    unit: document.getElementById('ni-unit').value || 'units',
-    lowAlert: document.getElementById('ni-low').value || '5' };
+  var name=document.getElementById('ni-name').value.trim();
+  if(!name){toast('Enter item name');return;}
+  var newInv={id:uid(),name:name,
+    category:document.getElementById('ni-category').value.trim()||'General',
+    qty:document.getElementById('ni-qty').value||'0',
+    unit:document.getElementById('ni-unit').value||'units',
+    lowAlert:document.getElementById('ni-low').value||'5',
+    notes:document.getElementById('ni-notes').value.trim(),
+    usageHistory:[]};
   state.inventory.push(newInv);
-  saveAndSync('inventory', newInv); closeOverlay('add-inv-overlay');
-  ['ni-name','ni-qty','ni-unit','ni-low'].forEach(id => document.getElementById(id).value='');
+  saveAndSync('inventory',newInv); closeOverlay('add-inv-overlay');
+  ['ni-name','ni-category','ni-qty','ni-unit','ni-low','ni-notes'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
   renderInventory(); renderDashboard(); toast('Item added!');
 }
+
 
 // ─── FIELD VIEW (crew) ────────────────────────────────────────────────────
 function setFieldDay(day) {
@@ -7943,6 +8013,13 @@ function openWODetail(woId) {
               wo.completedNotes +
               (wo.completedNotesOriginal ? '<div style="font-size:10px;color:var(--text4);margin-top:6px;font-style:italic;">Original: ' + wo.completedNotesOriginal + '</div>' : '') +
             '</div>' : '') +
+          (wo.partsUsed && wo.partsUsed.length ?
+            '<div style="margin-top:8px;padding:10px;background:var(--bg2);border-radius:8px;border-left:3px solid var(--blue);">' +
+              '<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">🔧 PARTS USED</div>' +
+              wo.partsUsed.map(function(p) {
+                return '<div style="font-size:12px;color:var(--text2);margin-bottom:3px;">· ' + p.qty + ' ' + (p.unit||'units') + ' — ' + p.name + '</div>';
+              }).join('') +
+            '</div>' : '') +
         '</div>'
       : '') +
 
@@ -8745,10 +8822,80 @@ function openCrewWOComplete(woId) {
       '</label>' +
       '<img id="wo-photo-preview" style="display:none;width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;"/>' +
       '<textarea id="wo-complete-notes" class="inp" rows="2" placeholder="Completion notes (optional)..." style="margin-bottom:12px;"></textarea>' +
+      // Parts used section
+      '<div style="margin-bottom:14px;">' +
+        '<div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">🔧 PARTS USED <span style="font-weight:400;color:var(--text4);font-size:11px;">(optional)</span></div>' +
+        '<div style="margin-bottom:8px;">' +
+          '<input type="text" id="wo-parts-search" placeholder="🔍 Search inventory..." ' +
+          'style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:8px 12px;color:var(--text);font-size:13px;box-sizing:border-box;"/>' +
+        '</div>' +
+        '<div id="wo-parts-results" style="margin-bottom:10px;max-height:160px;overflow-y:auto;"></div>' +
+        '<div id="wo-parts-selected" style="display:flex;flex-direction:column;gap:6px;"></div>' +
+      '</div>' +
       '<button id="wo-complete-btn" class="btn btn-green" style="opacity:.4;cursor:not-allowed;" disabled>📷 Add photo to complete</button>' +
     '</div>';
 
   document.body.appendChild(sheet);
+
+  // Parts used state for this completion
+  var _selectedParts = [];
+
+  function renderPartsSelected() {
+    var el = document.getElementById('wo-parts-selected'); if (!el) return;
+    if (!_selectedParts.length) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">SELECTED PARTS</div>'
+      + _selectedParts.map(function(p,idx) {
+          return '<div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border-radius:8px;padding:8px 10px;">'
+            +'<div style="flex:1;font-size:13px;font-weight:700;">'+p.name+'</div>'
+            +'<div style="display:flex;align-items:center;gap:6px;">'
+            +'<button onclick="window._adjPart('+idx+',-1)" style="width:28px;height:28px;border-radius:6px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.3);color:var(--red);font-weight:700;cursor:pointer;">−</button>'
+            +'<span style="font-size:14px;font-weight:700;min-width:20px;text-align:center;">'+p.qty+'</span>'
+            +'<button onclick="window._adjPart('+idx+',1)" style="width:28px;height:28px;border-radius:6px;background:rgba(74,222,128,.15);border:1px solid rgba(74,222,128,.3);color:var(--green);font-weight:700;cursor:pointer;">+</button>'
+            +'</div>'
+            +'<span style="font-size:11px;color:var(--text3);">'+p.unit+'</span>'
+            +'<button onclick="window._removePart('+idx+')" style="padding:4px 8px;background:transparent;border:none;color:var(--text4);cursor:pointer;font-size:16px;">✕</button>'
+            +'</div>';
+        }).join('');
+  }
+
+  window._adjPart = function(idx, delta) {
+    var p=_selectedParts[idx]; if(!p)return;
+    var nq=Math.max(1,p.qty+delta);
+    if(nq>p.maxQty){toast('Only '+p.maxQty+' in stock');return;}
+    p.qty=nq; renderPartsSelected();
+  };
+  window._removePart = function(idx) { _selectedParts.splice(idx,1); renderPartsSelected(); };
+
+  function renderPartsResults(query) {
+    var el=document.getElementById('wo-parts-results'); if(!el)return;
+    if(!query){el.innerHTML='';return;}
+    var available=(state.inventory||[]).filter(function(i){
+      return (+i.qty)>0
+        &&(i.name||'').toLowerCase().includes(query.toLowerCase())
+        &&!_selectedParts.find(function(p){return p.itemId===i.id;});
+    });
+    if(!available.length){el.innerHTML='<div style="font-size:12px;color:var(--text4);padding:8px;">No items found in stock</div>';return;}
+    el.innerHTML=available.slice(0,8).map(function(i){
+      return '<div onclick="window._selectPart(\''+i.id+'\')" style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--bg3);border-radius:8px;margin-bottom:6px;cursor:pointer;border:1px solid var(--border);">'
+        +'<div><div style="font-size:13px;font-weight:700;">'+i.name+'</div><div style="font-size:11px;color:var(--text3);">'+(i.category||'')+'</div></div>'
+        +'<div style="text-align:right;"><div style="font-size:13px;font-weight:700;color:var(--green);">'+i.qty+'</div><div style="font-size:10px;color:var(--text4);">'+(i.unit||'units')+'</div></div>'
+        +'</div>';
+    }).join('');
+  }
+
+  window._selectPart = function(itemId) {
+    var item=(state.inventory||[]).find(function(i){return i.id===itemId;});
+    if(!item)return;
+    if(!_selectedParts.find(function(p){return p.itemId===itemId;})){
+      _selectedParts.push({itemId:item.id,name:item.name,unit:item.unit||'units',qty:1,maxQty:+item.qty});
+    }
+    var inp=document.getElementById('wo-parts-search'); if(inp)inp.value='';
+    document.getElementById('wo-parts-results').innerHTML='';
+    renderPartsSelected();
+  };
+
+  var partsInp=document.getElementById('wo-parts-search');
+  if(partsInp) partsInp.addEventListener('input',function(){renderPartsResults(this.value);});
 
   // Wire photo input
   document.getElementById('wo-photo-input').onchange = function() {
@@ -8768,7 +8915,7 @@ function openCrewWOComplete(woId) {
         btn.style.opacity = '1';
         btn.style.cursor = 'pointer';
         btn.textContent = '✓ Mark Complete';
-        btn.onclick = function() { submitCrewWOComplete(woId, compressed); };
+        btn.onclick = function() { submitCrewWOComplete(woId, compressed, _selectedParts); };
       });
     });
   };
@@ -9063,82 +9210,81 @@ function translateAllWONotes(community) {
   });
 }
 
-function submitCrewWOComplete(woId, photoData) {
+function submitCrewWOComplete(woId, photoData, selectedParts) {
+  selectedParts = selectedParts || [];
   var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
   if (!wo) return;
 
   var crew  = state.loggedInCrewId ? (state.crew||[]).find(function(c) { return c.id === state.loggedInCrewId; }) : null;
   var notes = document.getElementById('wo-complete-notes')?.value || '';
 
-  // Compress photo at high quality — Firebase Storage has no size limit so keep it crisp
-  compressPhoto(photoData, 1200, 0.90, function(compressed) {
+  // Validate parts stock
+  var stockError = null;
+  selectedParts.forEach(function(p) {
+    var item=(state.inventory||[]).find(function(i){return i.id===p.itemId;});
+    if(item && +p.qty > +item.qty) stockError='Not enough '+p.name+' in stock ('+item.qty+' available)';
+  });
+  if (stockError) { toast('⚠ ' + stockError); return; }
 
-    // 1. Cache locally for instant display while upload happens
+  compressPhoto(photoData, 1200, 0.90, function(compressed) {
+    // 1. Cache locally
     wo.completedPhoto = compressed;
     try {
-      var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-      photos[woId] = compressed;
-      localStorage.setItem('dlphotos', JSON.stringify(photos));
-    } catch(pe) {
-      try { localStorage.setItem('dlphoto_' + woId, compressed); } catch(e2) {}
-    }
+      var photos=JSON.parse(localStorage.getItem('dlphotos')||'{}');
+      photos[woId]=compressed; localStorage.setItem('dlphotos',JSON.stringify(photos));
+    } catch(pe) { try{localStorage.setItem('dlphoto_'+woId,compressed);}catch(e2){} }
 
-    // 2. Mark WO as completed
-    wo.status        = 'completed';
-    wo.completedOn   = new Date().toLocaleDateString('en-US');
-    wo.completedBy   = crew ? crew.name : 'Crew';
-    wo.completedNotes = notes;
-    wo.dateCompleted = new Date().toLocaleDateString('en-US');
+    // 2. Mark completed
+    wo.status='completed';
+    wo.completedOn=new Date().toLocaleDateString('en-US');
+    wo.completedBy=crew?crew.name:'Crew';
+    wo.completedNotes=notes;
+    wo.dateCompleted=new Date().toLocaleDateString('en-US');
+    wo.partsUsed=selectedParts.map(function(p){return{itemId:p.itemId,name:p.name,qty:p.qty,unit:p.unit};});
 
-    // 3. Save locally and close sheet immediately
+    // 3. Deduct inventory and log usage
+    selectedParts.forEach(function(p) {
+      var item=(state.inventory||[]).find(function(i){return i.id===p.itemId;});
+      if(!item)return;
+      item.qty=Math.max(0,(+item.qty)-p.qty);
+      if(!item.usageHistory)item.usageHistory=[];
+      item.usageHistory.push({woId:wo.id,woNumber:wo.woNumber||'',date:new Date().toLocaleDateString('en-US'),crewName:crew?crew.name:'Crew',qty:p.qty});
+      if(item.usageHistory.length>50)item.usageHistory=item.usageHistory.slice(-50);
+      saveAndSync('inventory',item);
+    });
+
+    // 4. Save and close
     save();
-    var completeSheet = document.getElementById('crew-wo-complete-sheet');
-    if (completeSheet) completeSheet.remove();
+    var cs=document.getElementById('crew-wo-complete-sheet'); if(cs)cs.remove();
     renderCrewWorkOrders();
-    toast('✓ Work order completed');
+    renderInventory();
+    if(selectedParts.length){toast('✓ Completed — '+selectedParts.length+' part'+(selectedParts.length>1?'s':'')+' deducted');}
+    else{toast('✓ Work order completed');}
 
-    // 4. Write WO to Firestore immediately (photo URL will be updated once upload finishes)
-    gsSave('workOrders', Object.assign({}, wo, { completedPhoto: '[uploading]' }));
+    // 5. Write to Firestore
+    gsSave('workOrders',Object.assign({},wo,{completedPhoto:'[uploading]'}));
 
-    // 5. Auto-translate notes if Spanish detected
-    if (notes && notes.trim()) {
-      translateNotes(notes, function(translated, original) {
-        if (original) {
-          wo.completedNotes         = translated;
-          wo.completedNotesOriginal = original;
-          save();
-          gsSave('workOrders', wo);
-          toast('Notes translated to English');
-        }
+    // 6. Translate notes
+    if(notes&&notes.trim()){
+      translateNotes(notes,function(translated,original){
+        if(original){wo.completedNotes=translated;wo.completedNotesOriginal=original;save();gsSave('workOrders',wo);toast('Notes translated');}
       });
     }
 
-    // 6. Upload to Firebase Storage — permanent URL, visible on all devices instantly
-    var woFilename = 'WO_' + (wo.woNumber || wo.id.slice(-4)) + '_' +
-      (wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now();
-    var storagePath = 'photos/workOrders/' + woFilename + '.jpg';
-
-    uploadPhotoToStorage(compressed, storagePath,
-      function(storageUrl) {
-        wo.completedPhoto = storageUrl;
-        try {
-          var ph = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-          ph[wo.id] = storageUrl;
-          localStorage.setItem('dlphotos', JSON.stringify(ph));
-        } catch(e) {}
-        save();
-        gsSave('workOrders', wo);
-        toast('✓ Photo uploaded — visible on all devices');
+    // 7. Upload photo to Firebase Storage
+    var woFilename='WO_'+(wo.woNumber||wo.id.slice(-4))+'_'+(wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_')+'_'+Date.now();
+    var storagePath='photos/workOrders/'+woFilename+'.jpg';
+    uploadPhotoToStorage(compressed,storagePath,
+      function(storageUrl){
+        wo.completedPhoto=storageUrl;
+        try{var ph=JSON.parse(localStorage.getItem('dlphotos')||'{}');ph[wo.id]=storageUrl;localStorage.setItem('dlphotos',JSON.stringify(ph));}catch(e){}
+        save(); gsSave('workOrders',wo); toast('✓ Photo uploaded — visible on all devices');
       },
-      function(err) {
-        console.warn('WO photo upload failed:', err);
-        // WO is already saved as completed — photo will stay local on this device
-        gsSave('workOrders', wo);
-        toast('Completed — photo saved locally');
-      }
+      function(err){ console.warn('WO photo upload failed:',err); gsSave('workOrders',wo); toast('Completed — photo saved locally'); }
     );
   });
 }
+
 
 
 
