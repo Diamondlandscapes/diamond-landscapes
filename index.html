@@ -1490,7 +1490,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-07-13-v5'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-07-13-v6'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -9113,11 +9113,20 @@ function openCrewWOComplete(woId) {
     if(!available.length){el.innerHTML='<div style="font-size:12px;color:var(--text4);padding:8px;">No items found in stock</div>';return;}
     el.innerHTML=available.slice(0,8).map(function(i){
       var displayName = (_spanishMode && _translationCache[i.id]) ? _translationCache[i.id] : (i.name||'');
-      return '<div onclick="window._selectPart(''+i.id+'')" style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--bg3);border-radius:8px;margin-bottom:6px;cursor:pointer;border:1px solid var(--border);">'
+      return '<div data-part-id="'+i.id+'" style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--bg3);border-radius:8px;margin-bottom:6px;cursor:pointer;border:1px solid var(--border);">'
         +'<div><div style="font-size:13px;font-weight:700;">'+displayName+'</div><div style="font-size:11px;color:var(--text3);">'+(i.category||'')+'</div></div>'
         +'<div style="text-align:right;"><div style="font-size:13px;font-weight:700;color:var(--green);">'+i.qty+'</div><div style="font-size:10px;color:var(--text4);">'+(i.unit||'units')+'</div></div>'
         +'</div>';
     }).join('');
+    // Wire clicks via event delegation — avoids inline onclick escaping issues
+    var resultsEl = document.getElementById('wo-parts-results');
+    if (resultsEl && !resultsEl._wired) {
+      resultsEl._wired = true;
+      resultsEl.addEventListener('click', function(e) {
+        var row = e.target.closest('[data-part-id]');
+        if (row) window._selectPart(row.dataset.partId);
+      });
+    }
   }
 
   window._selectPart = function(itemId) {
