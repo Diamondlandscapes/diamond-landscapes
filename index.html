@@ -1481,7 +1481,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-07-13-v1'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-07-13-v2'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -3285,11 +3285,11 @@ function renderInventory() {
               +used.map(function(u){
                 return '<div style="font-size:11px;color:var(--text3);margin-bottom:2px;">· <span style="color:var(--text2);">'+u.qty+' '+(i.unit||'units')+'</span> on WO #'+(u.woNumber||u.woId||'')+' by '+(u.crewName||'crew')+' · '+(u.date||'')+'</div>';
               }).join('')+'</div>':'')
-            +'<div style="display:flex;gap:8px;margin-top:10px;">'
-              +'<button onclick="adjustInv(''+i.id+'',-1)" style="flex:1;padding:8px;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);color:var(--red);border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;">−</button>'
-              +'<button onclick="adjustInv(''+i.id+'',1)" style="flex:1;padding:8px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);color:var(--green);border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;">+</button>'
-              +'<button onclick="openEditInv(''+i.id+'')" style="padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);border-radius:8px;cursor:pointer;font-size:12px;">✏️</button>'
-              +'<button onclick="deleteInv(''+i.id+'')" style="padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);color:var(--text3);border-radius:8px;cursor:pointer;font-size:12px;">🗑</button>'
+            +'<div style="display:flex;gap:8px;margin-top:10px;" data-inv-id="'+i.id+'">'
+              +'<button data-inv-action="dec" style="flex:1;padding:8px;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);color:var(--red);border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;">−</button>'
+              +'<button data-inv-action="inc" style="flex:1;padding:8px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);color:var(--green);border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;">+</button>'
+              +'<button data-inv-action="edit" style="padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);border-radius:8px;cursor:pointer;font-size:12px;">✏️</button>'
+              +'<button data-inv-action="del" style="padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);color:var(--text3);border-radius:8px;cursor:pointer;font-size:12px;">🗑</button>'
             +'</div>'
           +'</div>';
         }).join('');
@@ -3299,6 +3299,23 @@ function renderInventory() {
 }
 
 function wireInvSearch() {
+  var el = document.getElementById('inventory-list');
+  // Wire inventory action buttons via event delegation — avoids inline onclick escaping issues
+  if (el && !el._invWired) {
+    el._invWired = true;
+    el.addEventListener('click', function(e) {
+      var btn = e.target.closest('[data-inv-action]');
+      if (!btn) return;
+      var row = btn.closest('[data-inv-id]');
+      if (!row) return;
+      var id = row.dataset.invId;
+      var action = btn.dataset.invAction;
+      if (action === 'dec')  adjustInv(id, -1);
+      if (action === 'inc')  adjustInv(id,  1);
+      if (action === 'edit') openEditInv(id);
+      if (action === 'del')  deleteInv(id);
+    });
+  }
   var inp = document.getElementById('inv-search');
   if (!inp) return;
   inp.oninput = function() {
@@ -3326,10 +3343,12 @@ function openEditInv(id) {
     +'</div>'
     +'<input class="inp" id="ei-low" type="number" min="0" value="'+(item.lowAlert||5)+'" placeholder="Low stock alert at..."/>'
     +'<textarea class="inp" id="ei-notes" rows="2" placeholder="Notes (optional)...">'+(item.notes||'')+'</textarea>'
-    +'<button class="btn btn-green" onclick="saveEditInv(''+id+'')">Save Changes</button>'
-    +'<button class="btn btn-outline" onclick="document.getElementById('edit-inv-sheet').remove()">Cancel</button>'
+    +'<button class="btn btn-green" id="ei-save-btn">Save Changes</button>'
+    +'<button class="btn btn-outline" id="ei-cancel-btn">Cancel</button>'
     +'</div></div>';
   document.body.appendChild(sheet);
+  document.getElementById('ei-save-btn').addEventListener('click', function() { saveEditInv(id); });
+  document.getElementById('ei-cancel-btn').addEventListener('click', function() { sheet.remove(); });
 }
 
 function saveEditInv(id) {
