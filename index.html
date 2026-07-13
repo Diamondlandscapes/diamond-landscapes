@@ -1243,6 +1243,15 @@ select.inp{cursor:pointer;}
         </div>
         <input class="inp" id="ni-low" placeholder="Low stock alert at..." type="number" min="0"/>
         <textarea class="inp" id="ni-notes" rows="2" placeholder="Notes (optional)..."></textarea>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">ITEM PHOTO <span style="font-weight:400;color:var(--text4);">(optional)</span></div>
+          <label id="ni-photo-zone" style="display:flex;align-items:center;gap:10px;background:var(--bg3);border:1px dashed var(--border2);border-radius:10px;padding:10px 14px;cursor:pointer;">
+            <span id="ni-photo-icon" style="font-size:22px;">📷</span>
+            <span id="ni-photo-label" style="font-size:12px;color:var(--text3);">Tap to add a photo</span>
+            <input type="file" id="ni-photo-input" accept="image/*" capture="environment" style="display:none;"/>
+          </label>
+          <img id="ni-photo-preview" style="display:none;width:100%;max-height:120px;object-fit:cover;border-radius:8px;margin-top:8px;"/>
+        </div>
         <button class="btn btn-green" onclick="saveInventory()">Save Item</button>
         <button class="btn btn-outline" onclick="closeOverlay('add-inv-overlay')">Cancel</button>
       </div>
@@ -1481,7 +1490,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-07-13-v3'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-07-13-v5'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -3245,62 +3254,104 @@ function renderInventory() {
   if (!el) return;
   var sq = window._invSearch || '';
   var inv = state.inventory || [];
-  var searchBar = '<div style="margin-bottom:12px;">'
+
+  var searchBar = '<div style="margin-bottom:10px;">'
     + '<input type="text" id="inv-search" placeholder="🔍 Search inventory..." value="' + sq.replace(/"/g,'&quot;') + '" '
     + 'style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;'
-    + 'padding:9px 12px;color:var(--text);font-size:13px;box-sizing:border-box;"/>'
+    + 'padding:8px 12px;color:var(--text);font-size:13px;box-sizing:border-box;"/>'
     + '</div>';
+
   if (!inv.length) {
-    el.innerHTML = searchBar + '<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">No inventory tracked yet. Tap + Add Item.</div>';
+    el.innerHTML = searchBar + '<div style="text-align:center;color:var(--text4);font-size:13px;padding:20px;">No inventory tracked yet. Tap + Add Item.</div>';
     wireInvSearch(); return;
   }
+
   var filtered = sq ? inv.filter(function(i) {
-    return (i.name||'').toLowerCase().includes(sq.toLowerCase()) || (i.category||'').toLowerCase().includes(sq.toLowerCase());
+    return (i.name||'').toLowerCase().includes(sq.toLowerCase())
+        || (i.category||'').toLowerCase().includes(sq.toLowerCase());
   }) : inv;
+
+  // Group by category
   var grouped = {};
-  filtered.forEach(function(i) { var c=i.category||'Uncategorized'; if(!grouped[c])grouped[c]=[]; grouped[c].push(i); });
+  filtered.forEach(function(i) {
+    var c = i.category || 'Uncategorized';
+    if (!grouped[c]) grouped[c] = [];
+    grouped[c].push(i);
+  });
+
   var rows = Object.entries(grouped).map(function(entry) {
-    var cat=entry[0], items=entry[1];
-    return '<div style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;margin-bottom:8px;margin-top:14px;">'+cat+'</div>'
-      + items.map(function(i) {
-          var pct=Math.min(100,(+i.qty/Math.max(+i.lowAlert||5,1))*100);
-          var low=(+i.qty)<=(+i.lowAlert||5);
-          var used=(i.usageHistory||[]).slice(-3).reverse();
-          return '<div class="card" style="margin-bottom:10px;">'
-            +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
-              +'<div style="flex:1;min-width:0;">'
-                +'<div style="font-weight:800;font-size:15px;">'+(i.name||'')+'</div>'
-                +'<div style="font-size:12px;color:var(--text3);margin-top:2px;">'+(i.category||'')+'</div>'
-                +(i.notes?'<div style="font-size:11px;color:var(--text4);margin-top:2px;">'+i.notes+'</div>':'')
-              +'</div>'
-              +'<div style="text-align:right;flex-shrink:0;margin-left:12px;">'
-                +'<div style="font-size:20px;font-weight:700;color:'+(low?'var(--red)':'var(--green)')+';">'+i.qty+'</div>'
-                +'<div style="font-size:11px;color:var(--text3);">'+(i.unit||'units')+'</div>'
-              +'</div>'
-            +'</div>'
-            +'<div class="inv-bar"><div class="inv-fill" style="width:'+pct+'%;background:'+(low?'var(--red)':'linear-gradient(90deg,var(--green3),var(--lime))')+'"></div></div>'
-            +(low?'<div style="font-size:11px;color:var(--red);margin-top:6px;">⚠️ Low stock — reorder soon</div>':'')
-            +(used.length?'<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">'
-              +'<div style="font-size:10px;font-weight:700;color:var(--text4);letter-spacing:1px;margin-bottom:4px;">RECENT USAGE</div>'
-              +used.map(function(u){
-                return '<div style="font-size:11px;color:var(--text3);margin-bottom:2px;">· <span style="color:var(--text2);">'+u.qty+' '+(i.unit||'units')+'</span> on WO #'+(u.woNumber||u.woId||'')+' by '+(u.crewName||'crew')+' · '+(u.date||'')+'</div>';
-              }).join('')+'</div>':'')
-            +'<div style="display:flex;gap:8px;margin-top:10px;" data-inv-id="'+i.id+'">'
-              +'<button data-inv-action="dec" style="flex:1;padding:8px;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);color:var(--red);border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;">−</button>'
-              +'<button data-inv-action="inc" style="flex:1;padding:8px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);color:var(--green);border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;">+</button>'
-              +'<button data-inv-action="edit" style="padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);border-radius:8px;cursor:pointer;font-size:12px;">✏️</button>'
-              +'<button data-inv-action="del" style="padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);color:var(--text3);border-radius:8px;cursor:pointer;font-size:12px;">🗑</button>'
-            +'</div>'
-          +'</div>';
-        }).join('');
+    var cat = entry[0], items = entry[1];
+    var header = '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;margin-top:10px;border-bottom:1px solid var(--border);">'
+      + '<span style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;flex:1;">'+cat+'</span>'
+      + '<span style="font-size:10px;color:var(--text4);">'+items.length+' item'+(items.length!==1?'s':'')+'</span>'
+      + '</div>';
+
+    var itemRows = items.map(function(i) {
+      var low = (+i.qty) <= (+i.lowAlert||5);
+      var pct = Math.min(100, (+i.qty / Math.max(+i.lowAlert||5, 1)) * 100);
+      var used = (i.usageHistory||[]).slice(-2).reverse();
+
+      // Main row
+      var row = '<div data-inv-id="'+i.id+'" style="border-bottom:1px solid rgba(255,255,255,.04);">'
+        // Primary row — always visible
+        + '<div style="display:flex;align-items:center;gap:8px;padding:10px 0;">'
+          // Photo thumbnail (if exists)
+          + (i.photo
+            ? '<img src="'+i.photo+'" referrerpolicy="no-referrer" style="width:38px;height:38px;border-radius:7px;object-fit:cover;flex-shrink:0;" onclick="window._showInvPhoto(\''+i.id+'\')" />'
+            : '<div style="width:38px;height:38px;border-radius:7px;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">📦</div>')
+          // Name + notes
+          + '<div style="flex:1;min-width:0;">'
+            + '<div style="font-size:13px;font-weight:700;color:'+(low?'var(--red)':'var(--text)')+';">'+i.name+(low?' ⚠':'')+'</div>'
+            + (i.notes?'<div style="font-size:11px;color:var(--text4);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+i.notes+'</div>':'')
+          + '</div>'
+          // Stock bar + qty
+          + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0;min-width:60px;">'
+            + '<div style="font-size:16px;font-weight:800;color:'+(low?'var(--red)':'var(--green)')+';">'+i.qty+' <span style="font-size:11px;font-weight:400;color:var(--text4);">'+i.unit+'</span></div>'
+            + '<div style="width:60px;height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;">'
+              + '<div style="height:100%;width:'+pct+'%;background:'+(low?'var(--red)':'var(--green)')+';;border-radius:2px;"></div>'
+            + '</div>'
+          + '</div>'
+          // Action buttons
+          + '<div style="display:flex;gap:4px;flex-shrink:0;">'
+            + '<button data-inv-action="dec" style="width:30px;height:30px;border-radius:7px;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.25);color:var(--red);font-weight:700;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;">−</button>'
+            + '<button data-inv-action="inc" style="width:30px;height:30px;border-radius:7px;background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.25);color:var(--green);font-weight:700;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;">+</button>'
+            + '<button data-inv-action="edit" style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">✏️</button>'
+            + '<button data-inv-action="del" style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--border2);color:var(--text4);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">🗑</button>'
+          + '</div>'
+        + '</div>'
+        // Usage history — subtle, only if exists
+        + (used.length
+          ? '<div style="padding:0 0 8px;display:flex;gap:8px;flex-wrap:wrap;">'
+            + used.map(function(u) {
+                return '<span style="font-size:10px;color:var(--text4);background:var(--bg3);border-radius:5px;padding:2px 6px;">'
+                  + u.qty+' used · WO#'+(u.woNumber||'')+ ' · '+(u.date||'')
+                  + '</span>';
+              }).join('')
+            + '</div>'
+          : '')
+        + '</div>';
+
+      return row;
+    }).join('');
+
+    return header + itemRows;
   }).join('');
-  el.innerHTML = searchBar + (filtered.length ? rows : '<div style="text-align:center;color:var(--text4);font-size:13px;padding:20px;">No items match "'+sq+'"</div>');
+
+  var summary = '<div style="font-size:11px;color:var(--text4);margin-bottom:8px;">'
+    + filtered.length + ' of ' + inv.length + ' items'
+    + (sq ? ' matching "'+sq+'"' : '')
+    + '</div>';
+
+  el.innerHTML = searchBar
+    + (filtered.length
+       ? summary + '<div style="background:var(--bg2);border-radius:12px;padding:0 12px;">' + rows + '</div>'
+       : '<div style="text-align:center;color:var(--text4);font-size:13px;padding:20px;">No items match "'+sq+'"</div>');
   wireInvSearch();
 }
 
+
 function wireInvSearch() {
   var el = document.getElementById('inventory-list');
-  // Wire inventory action buttons via event delegation — avoids inline onclick escaping issues
   if (el && !el._invWired) {
     el._invWired = true;
     el.addEventListener('click', function(e) {
@@ -3326,11 +3377,28 @@ function wireInvSearch() {
   };
 }
 
+// Show inventory photo full-size
+window._showInvPhoto = function(id) {
+  var item = (state.inventory||[]).find(function(i){return i.id===id;});
+  if (!item || !item.photo) return;
+  var ex = document.getElementById('inv-photo-lightbox'); if(ex)ex.remove();
+  var lb = document.createElement('div');
+  lb.id = 'inv-photo-lightbox';
+  lb.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;';
+  lb.innerHTML = '<div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:12px;">'+item.name+'</div>'
+    + '<img src="'+item.photo+'" referrerpolicy="no-referrer" style="max-width:100%;max-height:70vh;border-radius:12px;object-fit:contain;"/>'
+    + '<button style="margin-top:16px;padding:10px 28px;border-radius:10px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:14px;font-weight:700;cursor:pointer;">Close</button>';
+  lb.querySelector('button').addEventListener('click', function(){lb.remove();});
+  lb.addEventListener('click', function(e){if(e.target===lb)lb.remove();});
+  document.body.appendChild(lb);
+};
+
 function openEditInv(id) {
   var item=(state.inventory||[]).find(function(i){return i.id===id;});
   if(!item)return;
   var ex=document.getElementById('edit-inv-sheet'); if(ex)ex.remove();
   var sheet=document.createElement('div'); sheet.id='edit-inv-sheet'; sheet.className='overlay open';
+  window._eiPhotoData = null;
   sheet.innerHTML='<div class="sheet">'
     +'<div class="sheet-hdr"><div class="sheet-title">Edit Item</div>'
     +'<button id="ei-close-btn" class="sheet-close">&#x2715;</button></div>'
@@ -3343,10 +3411,37 @@ function openEditInv(id) {
     +'</div>'
     +'<input class="inp" id="ei-low" type="number" min="0" value="'+(item.lowAlert||5)+'" placeholder="Low stock alert at..."/>'
     +'<textarea class="inp" id="ei-notes" rows="2" placeholder="Notes (optional)...">'+(item.notes||'')+'</textarea>'
+    +'<div>'
+      +'<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">ITEM PHOTO</div>'
+      +(item.photo ? '<img src="'+item.photo+'" style="width:100%;max-height:120px;object-fit:cover;border-radius:8px;margin-bottom:8px;" referrerpolicy="no-referrer"/>' : '')
+      +'<label id="ei-photo-zone" style="display:flex;align-items:center;gap:10px;background:var(--bg3);border:1px dashed var(--border2);border-radius:10px;padding:10px 14px;cursor:pointer;">'
+        +'<span id="ei-photo-icon" style="font-size:20px;">📷</span>'
+        +'<span id="ei-photo-label" style="font-size:12px;color:var(--text3);">'+(item.photo?'Replace photo':'Add a photo')+'</span>'
+        +'<input type="file" id="ei-photo-input" accept="image/*" capture="environment" style="display:none;"/>'
+      +'</label>'
+      +'<img id="ei-photo-preview" style="display:none;width:100%;max-height:120px;object-fit:cover;border-radius:8px;margin-top:8px;"/>'
+    +'</div>'
     +'<button class="btn btn-green" id="ei-save-btn">Save Changes</button>'
     +'<button class="btn btn-outline" id="ei-cancel-btn">Cancel</button>'
     +'</div></div>';
   document.body.appendChild(sheet);
+  // Wire photo input
+  var photoInp = document.getElementById('ei-photo-input');
+  if (photoInp) {
+    photoInp.addEventListener('change', function() {
+      var file=this.files[0]; if(!file) return;
+      readFileAsDataUrl(file, function(dataUrl) {
+        if(!dataUrl) return;
+        compressPhoto(dataUrl, 1000, 0.88, function(compressed) {
+          window._eiPhotoData = compressed;
+          var prev=document.getElementById('ei-photo-preview');
+          if(prev){prev.src=compressed;prev.style.display='block';}
+          document.getElementById('ei-photo-label').textContent='New photo ready ✓';
+          document.getElementById('ei-photo-icon').textContent='✅';
+        });
+      });
+    });
+  }
   document.getElementById('ei-save-btn').addEventListener('click', function() { saveEditInv(id); });
   document.getElementById('ei-cancel-btn').addEventListener('click', function() { sheet.remove(); });
   document.getElementById('ei-close-btn').addEventListener('click', function() { sheet.remove(); });
@@ -3361,9 +3456,24 @@ function saveEditInv(id) {
   item.unit     =document.getElementById('ei-unit').value.trim()||'units';
   item.lowAlert =document.getElementById('ei-low').value||'5';
   item.notes    =document.getElementById('ei-notes').value.trim();
-  saveAndSync('inventory',item);
   document.getElementById('edit-inv-sheet').remove();
-  renderInventory(); renderDashboard(); toast('Item updated ✓');
+
+  if (window._eiPhotoData) {
+    var photoData = window._eiPhotoData;
+    window._eiPhotoData = null;
+    var storagePath = 'photos/inventory/' + id + '.jpg';
+    // Delete old photo from storage if it exists
+    if (item.photo) deleteStoragePhoto(item.photo);
+    saveAndSync('inventory', item);
+    renderInventory(); renderDashboard(); toast('Item updated — uploading photo...');
+    uploadPhotoToStorage(photoData, storagePath,
+      function(url) { item.photo=url; saveAndSync('inventory',item); renderInventory(); toast('Photo saved ✓'); },
+      function()    { saveAndSync('inventory',item); }
+    );
+  } else {
+    saveAndSync('inventory',item);
+    renderInventory(); renderDashboard(); toast('Item updated ✓');
+  }
 }
 
 function adjustInv(id, delta) {
@@ -3377,7 +3487,39 @@ function deleteInv(id) {
   save(); gsDelete('inventory',id); renderInventory();
 }
 
-function openAddInventory() { openOverlay('add-inv-overlay'); }
+function openAddInventory() {
+  // Reset photo state
+  window._niPhotoData = null;
+  var preview = document.getElementById('ni-photo-preview');
+  var label = document.getElementById('ni-photo-label');
+  var icon = document.getElementById('ni-photo-icon');
+  if (preview) { preview.style.display='none'; preview.src=''; }
+  if (label) label.textContent = 'Tap to add a photo';
+  if (icon) icon.textContent = '📷';
+  openOverlay('add-inv-overlay');
+  // Wire photo input
+  setTimeout(function() {
+    var inp = document.getElementById('ni-photo-input');
+    if (inp && !inp._wired) {
+      inp._wired = true;
+      inp.addEventListener('change', function() {
+        var file = this.files[0]; if (!file) return;
+        readFileAsDataUrl(file, function(dataUrl) {
+          if (!dataUrl) return;
+          compressPhoto(dataUrl, 1000, 0.88, function(compressed) {
+            window._niPhotoData = compressed;
+            var prev = document.getElementById('ni-photo-preview');
+            var lbl  = document.getElementById('ni-photo-label');
+            var ico  = document.getElementById('ni-photo-icon');
+            if (prev) { prev.src=compressed; prev.style.display='block'; }
+            if (lbl) lbl.textContent = 'Photo ready ✓';
+            if (ico) ico.textContent = '✅';
+          });
+        });
+      });
+    }
+  }, 100);
+}
 
 function saveInventory() {
   var name=document.getElementById('ni-name').value.trim();
@@ -3388,11 +3530,27 @@ function saveInventory() {
     unit:document.getElementById('ni-unit').value||'units',
     lowAlert:document.getElementById('ni-low').value||'5',
     notes:document.getElementById('ni-notes').value.trim(),
+    photo:'',
     usageHistory:[]};
   state.inventory.push(newInv);
-  saveAndSync('inventory',newInv); closeOverlay('add-inv-overlay');
+  closeOverlay('add-inv-overlay');
   ['ni-name','ni-category','ni-qty','ni-unit','ni-low','ni-notes'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
-  renderInventory(); renderDashboard(); toast('Item added!');
+  window._niPhotoData = null;
+
+  // Upload photo if taken
+  if (window._niPhotoData) {
+    var photoData = window._niPhotoData;
+    var storagePath = 'photos/inventory/' + newInv.id + '.jpg';
+    saveAndSync('inventory', newInv);
+    renderInventory(); renderDashboard(); toast('Item added — uploading photo...');
+    uploadPhotoToStorage(photoData, storagePath,
+      function(url) { newInv.photo=url; saveAndSync('inventory',newInv); renderInventory(); toast('Item photo saved ✓'); },
+      function()    { saveAndSync('inventory',newInv); }
+    );
+  } else {
+    saveAndSync('inventory',newInv);
+    renderInventory(); renderDashboard(); toast('Item added!');
+  }
 }
 
 
@@ -3590,7 +3748,9 @@ function renderEquipment() {
     return `<div class="card" style="cursor:pointer;margin-bottom:10px;" onclick="openEqDetail('${e.id}')">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
         <div style="display:flex;gap:10px;align-items:center;flex:1;">
-          <div style="font-size:28px;">${EQ_ICONS[e.category]||'📦'}</div>
+          ${e.photo
+            ? `<img src="${e.photo}" referrerpolicy="no-referrer" style="width:48px;height:48px;border-radius:10px;object-fit:cover;flex-shrink:0;" onclick="event.stopPropagation();window._showEqPhoto('${e.id}')" />`
+            : `<div style="font-size:28px;">${EQ_ICONS[e.category]||'📦'}</div>`}
           <div style="flex:1;">
             <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;font-weight:800;">${e.name}</div>
             <div style="font-size:12px;color:var(--text3);margin-top:2px;">${[e.year,e.make,e.model].filter(Boolean).join(' ')}</div>
@@ -3688,12 +3848,22 @@ function openEqDetail(id) {
     : '';
 
   let html = `
-
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
       <span class="badge badge-${svc.color}">${svc.label}</span>
       ${reg?`<span class="badge badge-${reg.color}">${reg.label}</span>`:''}
       <span class="badge badge-blue">${e.category}</span>
     </div>
+
+    ${e.photo ? `<div style="margin-bottom:14px;">
+      <img src="${e.photo}" referrerpolicy="no-referrer" style="width:100%;max-height:200px;object-fit:cover;border-radius:12px;cursor:pointer;" onclick="window._showEqPhoto('${id}')" />
+    </div>` : `<div style="margin-bottom:14px;">
+      <label id="eq-add-photo-zone" style="display:flex;align-items:center;gap:10px;background:var(--bg3);border:1px dashed var(--border2);border-radius:10px;padding:12px 16px;cursor:pointer;">
+        <span style="font-size:20px;">📷</span>
+        <span id="eq-add-photo-label" style="font-size:13px;color:var(--text3);">Add equipment photo</span>
+        <input type="file" id="eq-add-photo-input" accept="image/*" capture="environment" style="display:none;"/>
+      </label>
+      <img id="eq-add-photo-preview" style="display:none;width:100%;max-height:160px;object-fit:cover;border-radius:10px;margin-top:8px;"/>
+    </div>`}
 
 
     <div class="card" style="margin-bottom:12px;">
@@ -3764,7 +3934,47 @@ function openEqDetail(id) {
 
   document.getElementById('ep-body').innerHTML = html;
   document.getElementById('eq-panel').classList.add('open');
+
+  // Wire add-photo input if no photo exists yet
+  var eqPhotoInp = document.getElementById('eq-add-photo-input');
+  if (eqPhotoInp) {
+    eqPhotoInp.addEventListener('change', function() {
+      var file=this.files[0]; if(!file) return;
+      readFileAsDataUrl(file, function(dataUrl) {
+        if(!dataUrl) return;
+        compressPhoto(dataUrl, 1200, 0.90, function(compressed) {
+          var prev=document.getElementById('eq-add-photo-preview');
+          if(prev){prev.src=compressed;prev.style.display='block';}
+          document.getElementById('eq-add-photo-label').textContent='Uploading...';
+          var storagePath='photos/equipment/'+id+'_'+Date.now()+'.jpg';
+          uploadPhotoToStorage(compressed, storagePath,
+            function(url) {
+              var eq=(state.equipment||[]).find(function(x){return x.id===id;});
+              if(eq){eq.photo=url;saveAndSync('equipment',eq);}
+              renderEquipment(); openEqDetail(id); toast('Photo saved ✓');
+            },
+            function() { toast('Photo upload failed'); }
+          );
+        });
+      });
+    });
+  }
 }
+
+// Equipment photo lightbox
+window._showEqPhoto = function(id) {
+  var e=(state.equipment||[]).find(function(x){return x.id===id;});
+  if(!e||!e.photo)return;
+  var ex=document.getElementById('eq-photo-lightbox'); if(ex)ex.remove();
+  var lb=document.createElement('div'); lb.id='eq-photo-lightbox';
+  lb.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;';
+  lb.innerHTML='<div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:12px;">'+e.name+'</div>'
+    +'<img src="'+e.photo+'" referrerpolicy="no-referrer" style="max-width:100%;max-height:70vh;border-radius:12px;object-fit:contain;"/>'
+    +'<button style="margin-top:16px;padding:10px 28px;border-radius:10px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:14px;font-weight:700;cursor:pointer;">Close</button>';
+  lb.querySelector('button').addEventListener('click',function(){lb.remove();});
+  lb.addEventListener('click',function(e){if(e.target===lb)lb.remove();});
+  document.body.appendChild(lb);
+};
 
 function openLogService(eqId) {
   const sheet = document.createElement('div');
@@ -3891,7 +4101,7 @@ function saveEquipment() {
   if (editId) {
     const idx = state.equipment.findIndex(e => e.id === editId);
     if (idx > -1) {
-      state.equipment[idx] = { ...state.equipment[idx], ...data };
+      state.equipment[idx] = { ...state.equipment[idx], ...data, photo: state.equipment[idx].photo || '' };
       saveAndSync('equipment', state.equipment[idx]);
     }
     document.getElementById('add-eq-overlay')._editId = null;
@@ -8834,17 +9044,19 @@ function openCrewWOComplete(woId) {
         '<div style="font-weight:700;font-size:14px;">#' + (wo.woNumber||'') + ' · ' + (wo.ownerName||'') + '</div>' +
         '<div style="font-size:12px;color:var(--text3);">' + (wo.requestType||'') + '</div>' +
       '</div>' +
-      '<div style="font-size:12px;color:var(--red);font-weight:700;letter-spacing:1px;margin-bottom:8px;">📷 PHOTO REQUIRED TO COMPLETE</div>' +
-      '<label class="photo-zone" for="wo-photo-input" id="wo-photo-zone" style="margin-bottom:12px;">' +
-        '<div style="font-size:28px;margin-bottom:6px;">📷</div>' +
-        '<div style="font-size:13px;color:var(--text3);">Tap to take or choose a photo</div>' +
+      '<div style="font-size:12px;color:var(--red);font-weight:700;letter-spacing:1px;margin-bottom:6px;">📷 PHOTO REQUIRED TO COMPLETE</div>' +
+      '<label class="photo-zone" for="wo-photo-input" id="wo-photo-zone" style="margin-bottom:8px;padding:12px;">' +
+        '<div style="font-size:22px;margin-bottom:4px;">📷</div>' +
+        '<div style="font-size:12px;color:var(--text3);">Tap to take or choose a photo</div>' +
         '<input type="file" id="wo-photo-input" accept="image/*" capture="environment" style="display:none;"/>' +
       '</label>' +
-      '<img id="wo-photo-preview" style="display:none;width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;"/>' +
-      '<textarea id="wo-complete-notes" class="inp" rows="2" placeholder="Completion notes (optional)..." style="margin-bottom:12px;"></textarea>' +
-      // Parts used section
-      '<div style="margin-bottom:14px;">' +
-        '<div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">🔧 PARTS USED <span style="font-weight:400;color:var(--text4);font-size:11px;">(optional)</span></div>' +
+      '<img id="wo-photo-preview" style="display:none;width:100%;border-radius:10px;margin-bottom:8px;max-height:140px;object-fit:cover;"/>' +
+      '<textarea id="wo-complete-notes" class="inp" rows="2" placeholder="Completion notes (optional)..." style="margin-bottom:10px;font-size:13px;"></textarea>' +
+      '<div style="margin-bottom:10px;">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
+          '<div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:1px;">🔧 PARTS USED <span style="font-weight:400;color:var(--text4);font-size:11px;">(optional)</span></div>' +
+          '<button id="wo-parts-lang-btn" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.3);color:var(--blue);cursor:pointer;font-weight:700;">🇪🇸 Español</button>' +
+        '</div>' +
         '<div style="margin-bottom:8px;">' +
           '<input type="text" id="wo-parts-search" placeholder="🔍 Search inventory..." ' +
           'style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:8px 12px;color:var(--text);font-size:13px;box-sizing:border-box;"/>' +
@@ -8859,14 +9071,17 @@ function openCrewWOComplete(woId) {
 
   // Parts used state for this completion
   var _selectedParts = [];
+  var _spanishMode = false;
+  var _translationCache = {};
 
   function renderPartsSelected() {
     var el = document.getElementById('wo-parts-selected'); if (!el) return;
     if (!_selectedParts.length) { el.innerHTML = ''; return; }
     el.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">SELECTED PARTS</div>'
       + _selectedParts.map(function(p,idx) {
+          var displayName = (_spanishMode && _translationCache[p.itemId]) ? _translationCache[p.itemId] : p.name;
           return '<div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border-radius:8px;padding:8px 10px;">'
-            +'<div style="flex:1;font-size:13px;font-weight:700;">'+p.name+'</div>'
+            +'<div style="flex:1;font-size:13px;font-weight:700;">'+displayName+'</div>'
             +'<div style="display:flex;align-items:center;gap:6px;">'
             +'<button onclick="window._adjPart('+idx+',-1)" style="width:28px;height:28px;border-radius:6px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.3);color:var(--red);font-weight:700;cursor:pointer;">−</button>'
             +'<span style="font-size:14px;font-weight:700;min-width:20px;text-align:center;">'+p.qty+'</span>'
@@ -8890,14 +9105,16 @@ function openCrewWOComplete(woId) {
     var el=document.getElementById('wo-parts-results'); if(!el)return;
     if(!query){el.innerHTML='';return;}
     var available=(state.inventory||[]).filter(function(i){
+      var searchName = (_spanishMode && _translationCache[i.id]) ? _translationCache[i.id] : (i.name||'');
       return (+i.qty)>0
-        &&(i.name||'').toLowerCase().includes(query.toLowerCase())
+        && searchName.toLowerCase().includes(query.toLowerCase())
         &&!_selectedParts.find(function(p){return p.itemId===i.id;});
     });
     if(!available.length){el.innerHTML='<div style="font-size:12px;color:var(--text4);padding:8px;">No items found in stock</div>';return;}
     el.innerHTML=available.slice(0,8).map(function(i){
-      return '<div onclick="window._selectPart(\''+i.id+'\')" style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--bg3);border-radius:8px;margin-bottom:6px;cursor:pointer;border:1px solid var(--border);">'
-        +'<div><div style="font-size:13px;font-weight:700;">'+i.name+'</div><div style="font-size:11px;color:var(--text3);">'+(i.category||'')+'</div></div>'
+      var displayName = (_spanishMode && _translationCache[i.id]) ? _translationCache[i.id] : (i.name||'');
+      return '<div onclick="window._selectPart(''+i.id+'')" style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--bg3);border-radius:8px;margin-bottom:6px;cursor:pointer;border:1px solid var(--border);">'
+        +'<div><div style="font-size:13px;font-weight:700;">'+displayName+'</div><div style="font-size:11px;color:var(--text3);">'+(i.category||'')+'</div></div>'
         +'<div style="text-align:right;"><div style="font-size:13px;font-weight:700;color:var(--green);">'+i.qty+'</div><div style="font-size:10px;color:var(--text4);">'+(i.unit||'units')+'</div></div>'
         +'</div>';
     }).join('');
@@ -8914,8 +9131,33 @@ function openCrewWOComplete(woId) {
     renderPartsSelected();
   };
 
+  // Spanish toggle
+  var langBtn = document.getElementById('wo-parts-lang-btn');
+  if (langBtn) {
+    langBtn.addEventListener('click', function() {
+      _spanishMode = !_spanishMode;
+      langBtn.textContent = _spanishMode ? '🇺🇸 English' : '🇪🇸 Español';
+      if (_spanishMode) {
+        toast('🔄 Translating to Spanish...');
+        var toTranslate = (state.inventory||[]).filter(function(i){ return (+i.qty)>0 && !_translationCache[i.id]; });
+        if (!toTranslate.length) { renderPartsResults(document.getElementById('wo-parts-search').value); renderPartsSelected(); return; }
+        var done=0;
+        toTranslate.forEach(function(item){
+          translateToSpanish(item.name, function(spanish){
+            _translationCache[item.id]=spanish; done++;
+            if(done===toTranslate.length){ toast('✓ Spanish ready'); renderPartsResults(document.getElementById('wo-parts-search').value); renderPartsSelected(); }
+          });
+        });
+      } else {
+        renderPartsResults(document.getElementById('wo-parts-search').value);
+        renderPartsSelected();
+      }
+    });
+  }
+
   var partsInp=document.getElementById('wo-parts-search');
   if(partsInp) partsInp.addEventListener('input',function(){renderPartsResults(this.value);});
+
 
   // Wire photo input
   document.getElementById('wo-photo-input').onchange = function() {
@@ -9204,6 +9446,19 @@ function translateNotes(text, onDone) {
       } else {
         onDone(text);
       }
+    })
+    .catch(function() { onDone(text); });
+}
+
+// Translate English text to Spanish — used for parts list display
+function translateToSpanish(text, onDone) {
+  if (!text || !text.trim()) { onDone(text); return; }
+  fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=en|es')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var t = d && d.responseData && d.responseData.translatedText;
+      if (t && d.responseStatus === 200) { onDone(t); }
+      else { onDone(text); }
     })
     .catch(function() { onDone(text); });
 }
