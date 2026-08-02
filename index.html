@@ -68,6 +68,12 @@ input[type="date"]{cursor:pointer;pointer-events:all;position:relative;z-index:5
 .nb.active .ni{filter:none;}
 .nb.active .nl{color:var(--green);}
 
+/* pulse animation for live indicators */
+@keyframes pulse {
+  0%,100%{opacity:1;transform:scale(1);}
+  50%{opacity:.4;transform:scale(1.3);}
+}
+
 /* cards */
 .card{background:var(--bg2);border-radius:12px;padding:14px 16px;border:1px solid var(--border);margin-bottom:10px;transition:border-color .15s;}
 .card-flat{background:var(--bg3);border-radius:10px;padding:11px 14px;border:1px solid var(--border);margin-bottom:7px;}
@@ -861,6 +867,17 @@ select.inp{cursor:pointer;}
       </div>
 
 
+      <div class="card" id="dash-crew-status-card" style="display:none;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div class="sec-title" style="margin-bottom:0;">
+            <span id="crew-status-pulse" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:6px;animation:pulse 2s infinite;"></span>
+            Live Crew Status
+          </div>
+          <button onclick="openDispatchBoard()" style="font-size:11px;padding:4px 10px;background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.25);border-radius:7px;color:var(--green);cursor:pointer;font-weight:600;">⛶ Full View</button>
+        </div>
+        <div id="dash-crew-status"></div>
+      </div>
+
       <div class="card">
         <div class="sec-title">Today's Routes</div>
         <div id="dash-routes"></div>
@@ -1537,7 +1554,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v21'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v22'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1612,6 +1629,15 @@ function toast(msg='✓ Saved') {
 // ─── TABS ─────────────────────────────────────────────────────────────────
 function switchTab(tab) {
   state.currentTab = tab;
+  // Clear any existing crew status refresh
+  if (window._crewStatusInterval) { clearInterval(window._crewStatusInterval); window._crewStatusInterval = null; }
+  // Start live refresh when on dashboard
+  if (tab === 'dashboard') {
+    window._crewStatusInterval = setInterval(function() {
+      if (state.currentTab === 'dashboard') renderCrewStatusCard();
+      else { clearInterval(window._crewStatusInterval); window._crewStatusInterval = null; }
+    }, 30000);
+  }
   // Close any open panels when switching tabs
   document.querySelectorAll('.panel.open').forEach(p => p.classList.remove('open'));
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -1806,6 +1832,9 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
   var pnlCard = document.getElementById('dash-pnl-card');
   if (pnlCard) pnlCard.style.display = state.role === 'manager' ? '' : 'none';
 
+  // Render live crew status card
+  renderCrewStatusCard();
+
   const todayRoutes = state.routes.filter(r => r.day === today);
   const completed = todayRoutes.filter(r => r.status === 'Done').length;
   const openFlags = state.flags.filter(f => !f.resolved);
@@ -1992,7 +2021,33 @@ function renderRoutes() {
   }).join('');
 }
 
-// ── One-time migration: extract date from route name and set date field ──
+// ── One-time reset: wipe all route stop completion data ──────────────────
+// Run from console: resetAllRoutes()
+function resetAllRoutes() {
+  if (!confirm('This will clear ALL completed stops on ALL routes. Are you sure?')) return;
+  var count = 0;
+  state.routes.forEach(function(r) {
+    (r.stops||[]).forEach(function(s) {
+      if (s.completed) {
+        s.completed          = false;
+        s.completedAt        = '';
+        s.completedAtISO     = '';
+        s.completedBy        = '';
+        s.completedServices  = [];
+        s.completedNotes     = '';
+        s.completedPhoto     = '';
+        count++;
+      }
+    });
+    saveAndSync('routes', r);
+  });
+  save();
+  toast('✓ Reset ' + count + ' completed stops across all routes');
+  renderRoutes(); renderDashboard();
+  return count + ' stops cleared';
+}
+
+
 // Run from console: migrateRouteDates()
 function migrateRouteDates() {
   var year = new Date().getFullYear();
@@ -3034,7 +3089,8 @@ window.sca_submit = async function() {
   var s = r ? (r.stops||[]).find(function(x){return x.propId===c.propId;}) : null;
   if (s) {
     s.completed         = true;
-    s.completedAt       = today;
+    s.completedAt       = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    s.completedAtISO    = new Date().toISOString();
     s.completedBy       = crewName;
     s.completedServices = c.services;
     s.completedNotes    = c.notes;
@@ -3118,6 +3174,7 @@ function markStopDone(routeId, propId) {
   if (!confirm('Reopen this stop? This will mark it as incomplete.')) return;
   s.completed   = false;
   s.completedAt = '';
+  s.completedAtISO = '';
   s.completedBy = '';
   s.completedServices = [];
   s.completedNotes    = '';
@@ -3223,6 +3280,162 @@ function getRoutePnL(route) {
 
 // These services are required once per month. On the last scheduled visit
 // of the month for a property, any not yet done this month are flagged.
+// ── Crew Status Board ─────────────────────────────────────────────────────
+
+function getCrewStatusData() {
+  var todayISO  = new Date().toISOString().slice(0,10);
+  var todayName = new Date().toLocaleDateString('en-US',{weekday:'long'});
+  var now       = new Date();
+
+  return (state.crew||[]).map(function(c) {
+    var route = (state.routes||[]).find(function(r) {
+      return r.crewId === c.id && (r.date === todayISO || r.day === todayName);
+    });
+    if (!route) return { crew: c, route: null };
+
+    var stops     = route.stops || [];
+    var completed = stops.filter(function(s){ return s.completed; });
+    var pending   = stops.filter(function(s){ return !s.completed; });
+    var total     = stops.length;
+    var doneCount = completed.length;
+    var pct       = total ? Math.round((doneCount/total)*100) : 0;
+
+    var lastStop = null, lastTime = null, minutesAgo = null;
+    completed.forEach(function(s) {
+      var t = s.completedAtISO ? new Date(s.completedAtISO) : (s.completedAt ? new Date(s.completedAt) : null);
+      if (t && !isNaN(t) && (!lastTime || t > lastTime)) { lastTime = t; lastStop = s; }
+    });
+    if (lastTime) minutesAgo = Math.floor((now - lastTime) / 60000);
+
+    var currentStop  = pending[0] || null;
+    var currentProp  = currentStop ? (state.properties||[]).find(function(p){return p.id===currentStop.propId;}) : null;
+    var lastProp     = lastStop    ? (state.properties||[]).find(function(p){return p.id===lastStop.propId;})    : null;
+    var currentFlags = currentProp ? (state.flags||[]).filter(function(f){return f.propId===currentProp.id&&!f.resolved;}) : [];
+
+    var status = 'gray';
+    if (pct === 100) status = 'green';
+    else if (doneCount > 0) {
+      if      (minutesAgo === null || minutesAgo < 30) status = 'green';
+      else if (minutesAgo < 90)                         status = 'yellow';
+      else                                              status = 'red';
+    }
+
+    return { crew:c, route:route, total:total, doneCount:doneCount, pct:pct,
+      lastStop:lastStop, lastProp:lastProp, lastTime:lastTime, minutesAgo:minutesAgo,
+      currentStop:currentStop, currentProp:currentProp, currentFlags:currentFlags,
+      status:status, truck:getTruckFromRoute(route.name) };
+  }).filter(function(d){ return d.route; });
+}
+
+function formatMinutesAgo(min) {
+  if (min === null || min === undefined || min < 1) return 'Just now';
+  if (min < 60) return min + 'm ago';
+  return Math.floor(min/60) + 'h ' + (min%60) + 'm ago';
+}
+
+function renderCrewStatusCard() {
+  var card = document.getElementById('dash-crew-status-card');
+  var el   = document.getElementById('dash-crew-status');
+  if (!card || !el) return;
+  var data = getCrewStatusData();
+  if (!data.length || state.role !== 'manager') { card.style.display = 'none'; return; }
+  card.style.display = '';
+  var sColors = { green:'var(--green)', yellow:'var(--yellow)', red:'var(--red)', gray:'var(--text3)' };
+  el.innerHTML = data.map(function(d) {
+    var col = sColors[d.status];
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">'
+      + '<div style="width:7px;height:7px;border-radius:50%;background:' + col + ';flex-shrink:0;' + (d.status==='green'?'animation:pulse 2s infinite;':'') + '"></div>'
+      + '<div style="width:30px;height:30px;border-radius:8px;background:rgba(63,185,80,.1);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--green);flex-shrink:0;">' + (d.crew.name||'?')[0].toUpperCase() + '</div>'
+      + '<div style="flex:1;min-width:0;">'
+        + '<div style="font-size:13px;font-weight:600;color:var(--text);">' + d.crew.name + (d.truck?' <span style="color:var(--text3);font-weight:400;">'+d.truck+'</span>':'') + '</div>'
+        + '<div style="font-size:11px;color:var(--text3);">' + (d.currentProp?'→ '+d.currentProp.name : d.pct===100?'✓ All done':'Not started') + (d.minutesAgo!==null?' · '+formatMinutesAgo(d.minutesAgo):'') + '</div>'
+      + '</div>'
+      + '<div style="text-align:right;flex-shrink:0;">'
+        + '<div style="font-size:12px;font-weight:700;color:' + col + ';">' + d.doneCount + '/' + d.total + '</div>'
+        + '<div style="width:48px;height:3px;background:var(--bg4);border-radius:3px;margin-top:4px;overflow:hidden;">'
+          + '<div style="height:100%;width:' + d.pct + '%;background:' + col + ';border-radius:3px;"></div>'
+        + '</div>'
+      + '</div>'
+    + '</div>';
+  }).join('');
+}
+
+function openDispatchBoard() {
+  var ex = document.getElementById('dispatch-board');
+  if (ex) { clearInterval(ex._interval); ex.remove(); return; }
+  var board = document.createElement('div');
+  board.id = 'dispatch-board';
+  board.style.cssText = 'position:fixed;inset:0;z-index:5000;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;';
+
+  function render() {
+    var data    = getCrewStatusData();
+    var sColors = { green:'var(--green)', yellow:'var(--yellow)', red:'var(--red)', gray:'var(--border2)' };
+    var sLabels = { green:'Active', yellow:'Idle', red:'Overdue', gray:'Not Started' };
+
+    var html = '<div style="max-width:1100px;margin:0 auto;padding:20px 16px 60px;">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">'
+        + '<div><div style="font-size:20px;font-weight:700;color:var(--text);">Dispatch Board</div>'
+          + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">'
+            + new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})
+            + ' <span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;vertical-align:middle;margin:0 4px;"></span> Live'
+          + '</div>'
+        + '</div>'
+        + '<button onclick="openDispatchBoard()" style="padding:8px 16px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);cursor:pointer;font-size:13px;font-weight:600;">✕ Close</button>'
+      + '</div>';
+
+    if (!data.length) {
+      html += '<div style="text-align:center;color:var(--text4);padding:60px 20px;font-size:14px;">No routes assigned today. Routes will appear here when crew members are assigned.</div>';
+    } else {
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">';
+      data.forEach(function(d) {
+        var col = sColors[d.status];
+        var lbl = sLabels[d.status];
+        var badgeBg  = col.replace('var(--','').replace(')','');
+        html += '<div style="background:var(--bg2);border-radius:12px;border:1px solid var(--border);border-top:3px solid ' + col + ';padding:16px;">'
+          + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'
+            + '<div style="width:40px;height:40px;border-radius:10px;background:rgba(63,185,80,.1);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;color:var(--green);">' + (d.crew.name||'?')[0].toUpperCase() + '</div>'
+            + '<div style="flex:1;">'
+              + '<div style="font-size:15px;font-weight:700;color:var(--text);">' + d.crew.name + '</div>'
+              + '<div style="font-size:11px;color:var(--text3);">' + (d.route.name||'') + '</div>'
+            + '</div>'
+            + '<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:.5px;background:' + col + '1a;color:' + col + ';border:1px solid ' + col + '40;">' + lbl + '</span>'
+          + '</div>'
+          + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:4px;">'
+            + '<span>' + d.doneCount + ' of ' + d.total + ' stops</span>'
+            + '<span style="color:' + col + ';font-weight:700;">' + d.pct + '%</span>'
+          + '</div>'
+          + '<div style="height:7px;background:var(--bg4);border-radius:7px;overflow:hidden;margin-bottom:14px;">'
+            + '<div style="height:100%;width:' + d.pct + '%;background:' + col + ';border-radius:7px;transition:width .5s;"></div>'
+          + '</div>'
+          + '<div style="background:var(--bg3);border-radius:8px;padding:10px;margin-bottom:8px;">'
+            + '<div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:5px;">CURRENT STOP</div>'
+            + (d.currentProp
+              ? '<div style="font-size:13px;font-weight:600;color:var(--text);">' + d.currentProp.name + '</div>'
+                + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + (d.currentProp.address||'') + '</div>'
+                + (d.currentFlags.length ? '<div style="margin-top:6px;font-size:11px;font-weight:700;color:var(--red);">⚑ ' + d.currentFlags.length + ' open flag' + (d.currentFlags.length>1?'s':'') + ' — ' + d.currentFlags.map(function(f){return f.service;}).join(', ') + '</div>' : '<div style="font-size:11px;color:var(--green);margin-top:4px;">✓ No open flags</div>')
+              : '<div style="font-size:12px;color:var(--text4);">' + (d.pct===100?'✓ Route complete':'—') + '</div>')
+          + '</div>'
+          + '<div style="display:flex;justify-content:space-between;align-items:center;">'
+            + '<div style="font-size:11px;color:var(--text3);">' + (d.lastProp ? '✓ Last: <strong style="color:var(--text2);">' + d.lastProp.name + '</strong>' : 'No stops completed yet') + '</div>'
+            + '<div style="font-size:12px;font-weight:700;color:' + col + ';">' + (d.minutesAgo!==null ? formatMinutesAgo(d.minutesAgo) : d.pct===100?'Done ✓':'—') + '</div>'
+          + '</div>'
+        + '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    board.innerHTML = html;
+  }
+
+  render();
+  document.body.appendChild(board);
+  board._interval = setInterval(function() {
+    if (!document.getElementById('dispatch-board')) { clearInterval(board._interval); return; }
+    render();
+  }, 30000);
+}
+
+// ── Periodic Service Enforcement ─────────────────────────────────────────
 const PERIODIC_SERVICES = ['Trim Shrubs', 'Weed Control', 'Fertilize', 'Irrigation Check'];
 
 // Check which periodic services have already been done this month for a property
@@ -11624,6 +11837,7 @@ function markWeekStopDone(routeId, propId, date) {
   if (!confirm('Reopen this stop? It will be marked incomplete.')) return;
   stop.completed          = false;
   stop.completedAt        = '';
+  stop.completedAtISO     = '';
   stop.completedBy        = '';
   stop.completedServices  = [];
   stop.completedNotes     = '';
