@@ -1493,7 +1493,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-07-13-v8'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-07-13-v9'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -5036,28 +5036,31 @@ function finishWizard() {
   document.getElementById('import-wizard')?.remove();
   if (!wizardProps.length) { toast('No properties to import'); return; }
 
-  // add all to state
+  // Add all to state
   state.properties = [...state.properties, ...wizardProps];
   save();
   renderProperties();
   renderDashboard();
 
-  // show saving indicator
+  // Show saving indicator
   const saving = document.createElement('div');
   saving.id = 'saving-indicator';
   saving.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);' +
     'background:var(--bg2);border:1px solid var(--border);border-radius:20px;' +
-    'padding:10px 20px;font-size:13px;font-weight:700;color:var(--blue);z-index:999;' +
-    'font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif,sans-serif;white-space:nowrap;';
-  saving.textContent = '⟳ Saving to Google Sheets...';
+    'padding:10px 20px;font-size:13px;font-weight:700;color:var(--blue);z-index:999;white-space:nowrap;';
+  saving.textContent = '⟳ Saving to Firebase...';
   document.getElementById('app').appendChild(saving);
 
-  // save new properties to sheets one by one
+  // Save all new properties to Firestore in batches
   (async () => {
-    for (let i = 0; i < wizardProps.length; i++) {
-      saving.textContent = '⟳ Saving ' + (i+1) + ' of ' + wizardProps.length + '...';
-      await gsJSONP({ action: 'set', table: 'properties', id: wizardProps[i].id, record: wizardProps[i] });
-      if (i % 5 === 0 && i > 0) await new Promise(r => setTimeout(r, 300));
+    const BATCH = 20;
+    for (let i = 0; i < wizardProps.length; i += BATCH) {
+      const chunk = wizardProps.slice(i, i + BATCH);
+      saving.textContent = '⟳ Saving ' + Math.min(i + BATCH, wizardProps.length) + ' of ' + wizardProps.length + '...';
+      // Write each in chunk using gsSave (handles auth queue automatically)
+      chunk.forEach(function(prop) { gsSave('properties', prop); });
+      // Small delay between batches to avoid rate limits
+      if (i + BATCH < wizardProps.length) await new Promise(r => setTimeout(r, 400));
     }
     saving.textContent = '✓ All ' + wizardProps.length + ' properties saved!';
     saving.style.color = 'var(--green)';
