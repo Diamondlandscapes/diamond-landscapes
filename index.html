@@ -914,12 +914,29 @@ select.inp{cursor:pointer;}
 
 
     <div id="screen-routes" class="screen">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">Routes</div>
-        <button class="btn-sm btn-green" id="new-route-btn" onclick="openAddRoute()">+ New Route</button>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div>
+          <div style="font-size:20px;font-weight:800;" id="routes-header-title">Routes</div>
+          <div id="routes-header-sub" style="font-size:11px;color:var(--text3);margin-top:2px;display:none;"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button id="routes-back-btn" onclick="routesShowCalendar()" style="display:none;padding:5px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);cursor:pointer;font-size:13px;font-weight:600;">← Calendar</button>
+          <button class="btn-sm btn-green" id="new-route-btn" onclick="openAddRoute()">+ New Route</button>
+        </div>
       </div>
-      <div class="pills" id="route-day-pills"></div>
-      <div id="routes-list"></div>
+      <!-- Calendar view -->
+      <div id="routes-calendar-view">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <button onclick="shiftRoutesCalMonth(-1)" style="width:32px;height:32px;border-radius:8px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);cursor:pointer;font-size:16px;">‹</button>
+          <div style="font-size:15px;font-weight:700;color:var(--text);" id="routes-cal-label"></div>
+          <button onclick="shiftRoutesCalMonth(1)" style="width:32px;height:32px;border-radius:8px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);cursor:pointer;font-size:16px;">›</button>
+        </div>
+        <div id="routes-cal-grid"></div>
+      </div>
+      <!-- Day view -->
+      <div id="routes-day-view" style="display:none;">
+        <div id="routes-list"></div>
+      </div>
     </div>
 
 
@@ -1554,7 +1571,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v25'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v26'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1953,78 +1970,166 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
 }
 
 // ─── ROUTES ───────────────────────────────────────────────────────────────
+
+// Track which month the routes calendar is showing
+if (!window._routesCalYear)  window._routesCalYear  = new Date().getFullYear();
+if (!window._routesCalMonth) window._routesCalMonth = new Date().getMonth();
+
 function renderRoutes() {
-  // Show/hide + New Route button based on role
   var newRouteBtn = document.getElementById('new-route-btn');
   if (newRouteBtn) newRouteBtn.style.display = state.role === 'manager' ? '' : 'none';
 
-  // Initialize selected date to today if not set
-  if (!state.routeDate) {
-    state.routeDate = new Date().toISOString().slice(0,10);
-  }
+  // Default to calendar view
+  routesShowCalendar();
+}
 
-  // Date navigation bar — replaces day-of-week pills
-  var pills = document.getElementById('route-day-pills');
-  if (pills) {
-    var selDate = new Date(state.routeDate + 'T12:00:00');
-    // Show Mon-Sat of the week containing the selected date
-    var dow = selDate.getDay(); // 0=Sun
-    var weekStart = new Date(selDate);
-    weekStart.setDate(selDate.getDate() - (dow === 0 ? 6 : dow - 1)); // Monday
+function routesShowCalendar() {
+  document.getElementById('routes-calendar-view').style.display = '';
+  document.getElementById('routes-day-view').style.display = 'none';
+  document.getElementById('routes-back-btn').style.display = 'none';
+  document.getElementById('routes-header-title').textContent = 'Routes';
+  document.getElementById('routes-header-sub').style.display = 'none';
+  renderRoutesCalendar();
+}
 
-    var btnHtml = '<button onclick="shiftRouteWeek(-1)" style="padding:5px 10px;border-radius:8px;background:transparent;border:1px solid var(--border2);color:var(--text3);cursor:pointer;font-size:14px;flex-shrink:0;">‹</button>';
-    for (var i = 0; i < 6; i++) {
-      var d = new Date(weekStart);
-      d.setDate(weekStart.getDate() + i);
-      var ds  = d.toISOString().slice(0,10);
-      var lbl = d.toLocaleDateString('en-US',{weekday:'short',month:'numeric',day:'numeric'});
-      var hasRoutes = state.routes.some(function(r){ return r.date === ds; });
-      var isActive  = ds === state.routeDate;
-      btnHtml += '<button class="pill' + (isActive?' active':'') + '" onclick="setRouteDate(\'' + ds + '\')" style="position:relative;">'
-        + lbl
-        + (hasRoutes && !isActive ? '<span style="position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--green);"></span>' : '')
-        + '</button>';
+function routesShowDay(dateISO) {
+  state.routeDate = dateISO;
+  document.getElementById('routes-calendar-view').style.display = 'none';
+  document.getElementById('routes-day-view').style.display = '';
+  document.getElementById('routes-back-btn').style.display = '';
+
+  var d = new Date(dateISO + 'T12:00:00');
+  var label = d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  document.getElementById('routes-header-title').textContent = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  var sub = document.getElementById('routes-header-sub');
+  sub.textContent = label;
+  sub.style.display = '';
+
+  renderRouteDayList(dateISO);
+}
+
+function renderRoutesCalendar() {
+  var year  = window._routesCalYear;
+  var month = window._routesCalMonth;
+  var today = new Date();
+  var todayISO = today.toISOString().slice(0,10);
+
+  var label = new Date(year, month, 1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  document.getElementById('routes-cal-label').textContent = label;
+
+  var firstDay   = new Date(year, month, 1).getDay();
+  var daysInMon  = new Date(year, month+1, 0).getDate();
+  var DAY_SHORT  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  // Build date→routes map
+  var routesByDate = {};
+  (state.routes||[]).forEach(function(r) {
+    var key = r.date || '';
+    if (!key) return;
+    if (!routesByDate[key]) routesByDate[key] = [];
+    routesByDate[key].push(r);
+  });
+
+  var html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">';
+  DAY_SHORT.forEach(function(d) {
+    html += '<div style="text-align:center;font-size:10px;font-weight:700;color:var(--text4);padding:4px 0;">' + d + '</div>';
+  });
+  html += '</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;">';
+
+  for (var i = 0; i < firstDay; i++) html += '<div></div>';
+
+  for (var day = 1; day <= daysInMon; day++) {
+    var dateISO   = year + '-' + String(month+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+    var dayRoutes = routesByDate[dateISO] || [];
+    var hasRoutes = dayRoutes.length > 0;
+    var isToday   = dateISO === todayISO;
+    var isPast    = dateISO < todayISO;
+    var totalDone = dayRoutes.reduce(function(s,r){ return s+(r.stops||[]).filter(function(st){return st.completed;}).length; }, 0);
+    var totalStop = dayRoutes.reduce(function(s,r){ return s+(r.stops||[]).length; }, 0);
+    var allDone   = hasRoutes && totalStop > 0 && totalDone === totalStop;
+
+    var bg, border, textColor;
+    if (isToday && hasRoutes)       { bg='rgba(63,185,80,.15)'; border='2px solid var(--green)'; textColor='var(--green)'; }
+    else if (isToday)               { bg='rgba(63,185,80,.08)'; border='1.5px solid rgba(63,185,80,.4)'; textColor='var(--green)'; }
+    else if (hasRoutes && allDone)  { bg='rgba(63,185,80,.08)'; border='1px solid rgba(63,185,80,.2)'; textColor='var(--text)'; }
+    else if (hasRoutes)             { bg='var(--bg2)'; border='1px solid var(--border2)'; textColor='var(--text)'; }
+    else                            { bg='transparent'; border='1px solid transparent'; textColor=isPast?'var(--text4)':'var(--text3)'; }
+
+    html += '<div onclick="' + (hasRoutes ? 'routesShowDay(\'' + dateISO + '\')' : '') + '" '
+      + 'style="border-radius:9px;padding:6px 4px;min-height:56px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;cursor:' + (hasRoutes?'pointer':'default') + ';background:' + bg + ';border:' + border + ';transition:all .15s;box-sizing:border-box;" '
+      + (hasRoutes ? 'onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'' + bg + '\'"' : '') + '>'
+      + '<div style="font-size:13px;font-weight:' + (isToday?'800':'600') + ';color:' + textColor + ';margin-bottom:4px;">' + day + '</div>';
+
+    if (hasRoutes) {
+      // Show truck dots
+      html += '<div style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center;margin-bottom:3px;">';
+      dayRoutes.slice(0,4).forEach(function(r) {
+        var done = (r.stops||[]).filter(function(s){return s.completed;}).length;
+        var tot  = (r.stops||[]).length;
+        var dotColor = (done===tot && tot>0) ? 'var(--green)' : isToday ? 'var(--teal)' : 'var(--text3)';
+        html += '<div style="width:5px;height:5px;border-radius:50%;background:' + dotColor + ';"></div>';
+      });
+      if (dayRoutes.length > 4) html += '<div style="font-size:8px;color:var(--text3);">+' + (dayRoutes.length-4) + '</div>';
+      html += '</div>';
+      html += '<div style="font-size:9px;color:var(--text3);">' + dayRoutes.length + ' route' + (dayRoutes.length>1?'s':'') + '</div>';
+      if (totalStop > 0) html += '<div style="font-size:9px;color:' + (allDone?'var(--green)':'var(--text4)') + ';">' + totalDone + '/' + totalStop + '</div>';
     }
-    btnHtml += '<button onclick="shiftRouteWeek(1)" style="padding:5px 10px;border-radius:8px;background:transparent;border:1px solid var(--border2);color:var(--text3);cursor:pointer;font-size:14px;flex-shrink:0;">›</button>';
-    pills.innerHTML = btnHtml;
-  }
 
-  var filtered = state.routes.filter(function(r) {
-    // Match by specific date field first, fall back to day-of-week for old routes
-    if (r.date) return r.date === state.routeDate;
-    // Legacy: match day name to selected date's day of week
-    var d = new Date(state.routeDate + 'T12:00:00');
-    var dayName = d.toLocaleDateString('en-US',{weekday:'long'});
-    return r.day === dayName;
+    html += '</div>';
+  }
+  html += '</div>';
+  document.getElementById('routes-cal-grid').innerHTML = html;
+}
+
+function shiftRoutesCalMonth(dir) {
+  window._routesCalMonth += dir;
+  if (window._routesCalMonth > 11) { window._routesCalMonth = 0;  window._routesCalYear++; }
+  if (window._routesCalMonth < 0)  { window._routesCalMonth = 11; window._routesCalYear--; }
+  renderRoutesCalendar();
+}
+
+function renderRouteDayList(dateISO) {
+  var filtered = (state.routes||[]).filter(function(r) {
+    if (r.date) return r.date === dateISO;
+    var d = new Date(dateISO + 'T12:00:00');
+    return r.day === d.toLocaleDateString('en-US',{weekday:'long'});
   });
 
   var el = document.getElementById('routes-list');
+  if (!el) return;
   if (!filtered.length) {
-    var dateLabel = new Date(state.routeDate + 'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
-    el.innerHTML = '<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">No routes for ' + dateLabel + '.</div>';
+    el.innerHTML = '<div class="card" style="text-align:center;color:var(--text4);font-size:13px;padding:24px;">No routes for this day.</div>';
     return;
   }
-  el.innerHTML = filtered.map(r => {
-    const crew = state.crew.find(c => c.id === r.crewId);
-    const stops = r.stops?.length || 0;
-    const done = r.stops?.filter(s=>s.completed).length || 0;
-    const pct = stops ? Math.round((done/stops)*100) : 0;
-    return `<div class="card" style="cursor:pointer;" onclick="openRouteDetail('${r.id}')">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-        <div>
-          <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;font-weight:800;">${r.name}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:3px;">👷 ${crew?.name||'Unassigned'} · ${stops} stops</div>
-        </div>
-        <span class="badge badge-${r.status==='Done'?'green':r.status==='In Progress'?'yellow':'blue'}">${r.status||'Scheduled'}</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:6px;">
-        <span>${done}/${stops} completed</span><span>${pct}%</span>
-      </div>
-      <div class="inv-bar"><div class="inv-fill" style="width:${pct}%;background:linear-gradient(90deg,var(--green3),var(--lime));"></div></div>
-      ${r.optimized?`<div style="font-size:11px;color:var(--teal);margin-top:8px;">✦ Route optimized</div>`:''}
-    </div>`;
+  el.innerHTML = filtered.map(function(r) {
+    var crew  = (state.crew||[]).find(function(c){ return c.id === r.crewId; });
+    var stops = (r.stops||[]).length;
+    var done  = (r.stops||[]).filter(function(s){ return s.completed; }).length;
+    var pct   = stops ? Math.round((done/stops)*100) : 0;
+    return '<div class="card" style="cursor:pointer;border-left:3px solid ' + (r.status==='Done'?'var(--green)':r.status==='In Progress'?'var(--yellow)':'var(--border2)') + ';" onclick="openRouteDetail(\'' + r.id + '\')">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">'
+        + '<div>'
+          + '<div style="font-size:16px;font-weight:800;">' + r.name + '</div>'
+          + '<div style="font-size:12px;color:var(--text3);margin-top:3px;"><i class="ti ti-user" style="font-size:12px;"></i> ' + (crew?.name||'Unassigned') + ' · ' + stops + ' stops</div>'
+        + '</div>'
+        + '<span class="badge badge-' + (r.status==='Done'?'green':r.status==='In Progress'?'yellow':'blue') + '">' + (r.status||'Scheduled') + '</span>'
+      + '</div>'
+      + '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:6px;">'
+        + '<span>' + done + '/' + stops + ' completed</span><span>' + pct + '%</span>'
+      + '</div>'
+      + '<div class="inv-bar"><div class="inv-fill" style="width:' + pct + '%;background:linear-gradient(90deg,var(--green3),var(--lime));"></div></div>'
+      + (r.optimized ? '<div style="font-size:11px;color:var(--teal);margin-top:8px;">✦ Route optimized</div>' : '')
+    + '</div>';
   }).join('');
 }
+
+// Keep setRouteDate for legacy compat (called from dispatch board etc)
+function setRouteDate(d) {
+  state.routeDate = d;
+  if (state.currentTab === 'routes') routesShowDay(d);
+}
+
+
 
 // ── One-time reset: wipe all route stop completion data ──────────────────
 // Run from console: resetAllRoutes()
@@ -3660,8 +3765,13 @@ function saveRoute() {
   closeOverlay('add-route-overlay');
   document.getElementById('nr-name').value = '';
   document.getElementById('nr-prop-search').value = '';
-  state.routeDate = dateVal; // jump to the new route's date
-  renderRoutes(); renderDashboard();
+  state.routeDate = dateVal;
+  // Update calendar month to show the new route's month
+  var d = new Date(dateVal + 'T12:00:00');
+  window._routesCalYear  = d.getFullYear();
+  window._routesCalMonth = d.getMonth();
+  if (state.currentTab === 'routes') routesShowDay(dateVal);
+  renderDashboard();
   toast('Route created with ' + selectedIds.length + ' stop' + (selectedIds.length !== 1 ? 's' : '') + ' ✓');
 }
 
