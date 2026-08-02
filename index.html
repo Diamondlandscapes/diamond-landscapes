@@ -1501,7 +1501,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v13'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v14'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -8145,11 +8145,11 @@ function renderCwDayContent() {
       html += '<div class="card" style="margin-bottom:10px;' + (s.completed?'opacity:.7;':'') + '">'
         + '<div style="display:flex;gap:10px;align-items:flex-start;">'
         + '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:' + (s.completed?'var(--green3)':'var(--bg4)') + ';border:2px solid ' + (s.completed?'var(--green)':'var(--border2)') + ';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:' + (s.completed?'#fff':'var(--text3)') + ';">' + (i+1) + '</div>'
-        + '<div style="flex:1;min-width:0;">'
-        + '<div style="font-weight:800;font-size:14px;">' + (prop?.name||'Property') + '</div>'
+        + '<div style="flex:1;min-width:0;cursor:pointer;" onclick="openCrewPropSnapshot(\'' + s.propId + '\')">'
+        + '<div style="font-weight:800;font-size:14px;color:var(--text);">' + (prop?.name||'Property') + ' <span style="font-size:11px;color:var(--text4);font-weight:400;">ⓘ</span></div>'
         + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">📍 ' + (prop?.address||'No address') + '</div>'
         + (prop?.frequency ? '<div style="font-size:11px;color:var(--text4);margin-top:2px;">🔄 ' + prop.frequency + '</div>' : '')
-        + (flags.length ? '<div data-propid="' + s.propId + '" onclick="openCrewPropFlags(this.dataset.propid)" style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);border-radius:8px;padding:6px 10px;margin-top:8px;font-size:12px;color:var(--red);font-weight:700;cursor:pointer;">⚑ ' + flags.length + ' open flag' + (flags.length>1?'s':'') + ' — tap to view</div>' : '')
+        + (flags.length ? '<div data-propid="' + s.propId + '" onclick="event.stopPropagation();openCrewPropFlags(this.dataset.propid)" style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);border-radius:8px;padding:6px 10px;margin-top:8px;font-size:12px;color:var(--red);font-weight:700;cursor:pointer;">⚑ ' + flags.length + ' open flag' + (flags.length>1?'s':'') + ' — tap to view</div>' : '')
         + '</div>'
         + '<div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">'
         + (s.completed ? '<span class="badge badge-green">✓ Done</span>' : '<span class="badge badge-blue">Pending</span>')
@@ -8164,6 +8164,82 @@ function renderCwDayContent() {
   el.innerHTML = html;
 }
 
+
+// ── Crew Property Snapshot ────────────────────────────────────────────────
+// Read-only property info card shown when crew taps a property in My Week
+function openCrewPropSnapshot(propId) {
+  var prop  = (state.properties||[]).find(function(p){return p.id===propId;});
+  if (!prop) return;
+  var flags = (state.flags||[]).filter(function(f){return f.propId===propId&&!f.resolved;});
+  var ex = document.getElementById('crew-prop-snapshot'); if(ex) ex.remove();
+
+  var sheet = document.createElement('div');
+  sheet.id  = 'crew-prop-snapshot';
+  sheet.style.cssText = 'position:fixed;inset:0;z-index:4500;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;';
+
+  var html = '<div style="width:100%;max-width:480px;background:var(--bg2);border-radius:20px 20px 0 0;padding:20px 16px calc(20px + var(--safe-bottom));max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">'
+
+    // Header
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">'
+      + '<div>'
+        + '<div style="font-size:18px;font-weight:800;">' + (prop.name||'') + '</div>'
+        + '<div style="font-size:12px;color:var(--text3);margin-top:3px;">📍 ' + (prop.address||'No address') + '</div>'
+        + (prop.phone ? '<div style="font-size:12px;color:var(--text3);margin-top:2px;">📞 ' + prop.phone + '</div>' : '')
+      + '</div>'
+      + '<button onclick="document.getElementById(\'crew-prop-snapshot\').remove()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 12px;color:var(--text);cursor:pointer;font-size:13px;flex-shrink:0;">✕</button>'
+    + '</div>'
+
+    // Frequency
+    + (prop.frequency ? '<div style="background:var(--bg3);border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">'
+      + '<div>'
+        + '<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;">FREQUENCY</div>'
+        + '<div style="font-size:14px;font-weight:700;color:var(--green);margin-top:2px;">' + prop.frequency + '</div>'
+      + '</div>'
+      + (prop.nextServiceDate ? '<div style="text-align:right;">'
+        + '<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;">NEXT SERVICE</div>'
+        + '<div style="font-size:13px;font-weight:700;color:var(--text2);margin-top:2px;">' + prop.nextServiceDate + '</div>'
+      + '</div>' : '')
+    + '</div>' : '')
+
+    // Services
+    + (prop.services && prop.services.length ? '<div style="margin-bottom:10px;">'
+      + '<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">SERVICES</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:6px;">'
+        + prop.services.map(function(sv) {
+            var isPeriodic = ['Trim Shrubs','Weed Control','Fertilize','Irrigation Check'].includes(sv);
+            return '<span style="font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px;background:' + (isPeriodic?'rgba(96,165,250,.12)':'rgba(74,222,128,.1)') + ';border:1px solid ' + (isPeriodic?'rgba(96,165,250,.3)':'rgba(74,222,128,.25)') + ';color:' + (isPeriodic?'var(--blue)':'var(--green)') + ';">'
+              + sv + (isPeriodic?' <span style="font-size:9px;opacity:.7;">monthly</span>':'')
+            + '</span>';
+          }).join('')
+      + '</div>'
+    + '</div>' : '')
+
+    // Property notes
+    + (prop.notes ? '<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.2);border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+      + '<div style="font-size:10px;font-weight:700;color:var(--yellow);letter-spacing:1px;margin-bottom:6px;">📝 PROPERTY NOTES</div>'
+      + '<div style="font-size:13px;color:var(--text2);line-height:1.5;">' + prop.notes + '</div>'
+    + '</div>' : '')
+
+    // Open flags
+    + (flags.length ? '<div style="margin-bottom:4px;">'
+      + '<div style="font-size:10px;font-weight:700;color:var(--red);letter-spacing:1px;margin-bottom:8px;">⚑ OPEN FLAGS (' + flags.length + ')</div>'
+      + flags.map(function(f) {
+          return '<div style="background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.2);border-radius:10px;padding:10px 14px;margin-bottom:8px;">'
+            + '<div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:3px;">' + (f.service||'Issue') + '</div>'
+            + '<div style="font-size:12px;color:var(--text2);">' + (f.note||'No description') + '</div>'
+            + '<div style="font-size:10px;color:var(--text4);margin-top:4px;">Reported by ' + (f.by||'') + ' · ' + (f.date||'') + '</div>'
+            + (f.photo && f.photo.startsWith('http') ? '<img src="' + f.photo + '" referrerpolicy="no-referrer" style="width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-top:8px;"/>' : '')
+          + '</div>';
+        }).join('')
+    + '</div>' : '<div style="font-size:12px;color:var(--text4);text-align:center;padding:4px;">✓ No open flags</div>')
+
+  + '</div>';
+
+  sheet.innerHTML = html;
+  // Tap backdrop to close
+  sheet.addEventListener('click', function(e) { if(e.target===sheet) sheet.remove(); });
+  document.body.appendChild(sheet);
+}
 
 // ─── SERVICE DATE HELPERS ─────────────────────────────────────────────────
 function formatDateForInput(dateStr) {
