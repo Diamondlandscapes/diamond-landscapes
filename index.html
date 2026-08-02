@@ -1501,7 +1501,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v9'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v10'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1996,7 +1996,15 @@ function openRouteDetail(id) {
                   style="width:18px;height:18px;accent-color:var(--green);cursor:pointer;"/>
               </div>`).join('')}
             ${prop?.notes?`<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.2);border-radius:8px;padding:10px;margin-top:8px;font-size:12px;color:var(--yellow);">📝 ${prop.notes}</div>`:''}
-            <button class="btn btn-outline" onclick="markStopDone('${r.id}','${s.propId}')" style="margin-top:10px;font-size:13px;${s.completed?'border-color:var(--green);color:var(--green)':''}">${s.completed?'✓ Completed':'Mark Complete'}</button>
+            ${s.completed
+              ? `<div style="margin-top:10px;background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25);border-radius:10px;padding:10px;">
+                  <div style="font-size:12px;font-weight:700;color:var(--green);">✓ Completed</div>
+                  ${s.completedAt?`<div style="font-size:11px;color:var(--text3);margin-top:2px;">${s.completedAt}</div>`:''}
+                  ${s.completedBy?`<div style="font-size:11px;color:var(--text3);">by ${s.completedBy}</div>`:''}
+                  ${(s.completedServices||[]).length?`<div style="font-size:11px;color:var(--text3);margin-top:4px;">✓ ${s.completedServices.join(', ')}</div>`:''}
+                  ${state.role!=='manager'?`<button class="btn btn-outline" onclick="markStopDone('${r.id}','${s.propId}')" style="margin-top:8px;font-size:12px;color:var(--red);border-color:var(--red);">↩ Reopen</button>`:''}
+                </div>`
+              : `<button class="btn btn-green" onclick="openStopCompletion('${r.id}','${s.propId}')" style="margin-top:10px;font-size:13px;">📷 Complete Job</button>`}
           </div>
           ${state.role==='manager' ? buildServiceDatesHTML(r.id, s.propId, prop) : ''}
         </div>
@@ -2264,35 +2272,577 @@ function updateRouteStatus(rid, status) {
   if (r) { r.status = status; saveAndSync('routes', r); renderDashboard(); }
 }
 
-function markStopDone(routeId, propId) {
-  const r = state.routes.find(x => x.id === routeId);
-  if (!r) return;
-  const s = r.stops?.find(x => x.propId === propId);
+// ── Stop Completion Flow ──────────────────────────────────────────────────
+// Multi-step: Flag review → Property photo → Services → Notes/Flag → Submit
+function openStopCompletion(routeId, propId) {
+  var r    = (state.routes||[]).find(x => x.id === routeId);
+  var prop = (state.properties||[]).find(x => x.id === propId);
+  if (!r || !prop) return;
+  var s = (r.stops||[]).find(x => x.propId === propId);
   if (!s) return;
 
-  // toggle completion freely — flags never block this
-  s.completed = !s.completed;
-  if (s.completed) {
-    s.completedAt = new Date().toLocaleString();
-    // auto-update last service date and calculate next service date
-    const prop = state.properties.find(p => p.id === propId);
-    if (prop) {
-      const today = new Date();
-      prop.lastServiceDate = today.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-      // auto-calculate next service based on frequency
-      const days = FREQ_DAYS[prop.frequency];
-      if (days) {
-        const next = new Date(today.getTime() + days*24*60*60*1000);
-        prop.nextServiceDate = next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-      }
-      saveAndSync('properties', prop);
-    }
+  var crew = (state.crew||[]).find(c => c.id === state.loggedInCrewId);
+
+  // Open flags on this property
+  var openFlags = (state.flags||[]).filter(function(f) {
+    return f.propId === propId && !f.resolved;
+  });
+
+  // Completion state object — builds up through the flow
+  var _comp = {
+    routeId:    routeId,
+    propId:     propId,
+    prop:       prop,
+    stop:       s,
+    crew:       crew,
+    flags:      openFlags,
+    flagIdx:    0,           // which flag we're currently reviewing
+    flagResolutions: [],     // [{flagId, resolved, resolveNote, resolvePhoto}]
+    photo:      null,        // property photo (required)
+    services:   [],          // services performed
+    notes:      '',          // completion notes
+    newFlags:   [],          // flags created during this completion
+    step:       openFlags.length > 0 ? 'flags' : 'photo'
+  };
+
+  renderStopCompletionSheet(_comp);
+}
+
+function renderStopCompletionSheet(c) {
+  var ex = document.getElementById('stop-completion-sheet');
+  if (ex) ex.remove();
+
+  var sheet = document.createElement('div');
+  sheet.id = 'stop-completion-sheet';
+  sheet.style.cssText = 'position:fixed;inset:0;z-index:4000;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;';
+
+  var stepLabels = {
+    flags:    'Review Flags',
+    photo:    'Property Photo',
+    services: 'Services Done',
+    notes:    'Notes & Issues',
+    submit:   'Review & Submit'
+  };
+  var steps = c.flags.length > 0
+    ? ['flags','photo','services','notes','submit']
+    : ['photo','services','notes','submit'];
+  var stepIdx  = steps.indexOf(c.step);
+  var stepPct  = Math.round(((stepIdx+1)/steps.length)*100);
+  var stepLabel = stepLabels[c.step] || '';
+
+  var html = '<div style="max-width:480px;margin:0 auto;padding:0 0 80px;">'
+    // Header
+    + '<div style="background:var(--bg2);border-bottom:1px solid var(--border);padding:16px 16px 12px;position:sticky;top:0;z-index:10;">'
+      + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">'
+        + '<button onclick="closeStopCompletion()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 12px;color:var(--text);cursor:pointer;font-size:13px;">✕</button>'
+        + '<div style="flex:1;">'
+          + '<div style="font-size:15px;font-weight:800;">' + (c.prop.name||'') + '</div>'
+          + '<div style="font-size:11px;color:var(--text3);">' + (c.prop.address||'') + '</div>'
+        + '</div>'
+        + '<div style="font-size:11px;color:var(--text3);text-align:right;">' + (stepIdx+1) + ' of ' + steps.length + '</div>'
+      + '</div>'
+      + '<div style="background:var(--bg4);border-radius:6px;height:4px;overflow:hidden;">'
+        + '<div style="height:100%;width:' + stepPct + '%;background:linear-gradient(90deg,var(--green3),var(--lime));transition:width .3s;"></div>'
+      + '</div>'
+      + '<div style="font-size:12px;font-weight:700;color:var(--green);margin-top:6px;letter-spacing:.5px;">' + stepLabel.toUpperCase() + '</div>'
+    + '</div>'
+    + '<div style="padding:16px;">';
+
+  // ── STEP: FLAG REVIEW ────────────────────────────────────────────────────
+  if (c.step === 'flags') {
+    var f = c.flags[c.flagIdx];
+    var res = c.flagResolutions.find(function(r){return r.flagId===f.id;}) || {};
+    html += '<div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3);border-radius:12px;padding:14px;margin-bottom:16px;">'
+      + '<div style="font-size:11px;font-weight:700;color:var(--red);letter-spacing:1px;margin-bottom:6px;">⚑ OPEN FLAG ' + (c.flagIdx+1) + ' OF ' + c.flags.length + '</div>'
+      + '<div style="font-size:15px;font-weight:700;margin-bottom:4px;">' + (f.service||'General') + '</div>'
+      + '<div style="font-size:13px;color:var(--text2);margin-bottom:8px;">' + (f.note||'No description') + '</div>'
+      + '<div style="font-size:11px;color:var(--text4);">Reported by ' + (f.by||'') + ' · ' + (f.date||'') + '</div>'
+      + (f.photo && f.photo.startsWith('http') ? '<img src="' + f.photo + '" style="width:100%;border-radius:8px;max-height:160px;object-fit:cover;margin-top:10px;" referrerpolicy="no-referrer"/>' : '')
+    + '</div>'
+
+    + '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px;">Was this issue addressed today?</div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:14px;">'
+      + '<button id="flag-yes-btn" onclick="sca_flagYes()" style="flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;border:2px solid ' + (res.resolved===true?'var(--green)':'var(--border2)') + ';background:' + (res.resolved===true?'rgba(74,222,128,.12)':'var(--bg3)') + ';color:' + (res.resolved===true?'var(--green)':'var(--text2)') + ';">✓ Yes, Fixed</button>'
+      + '<button id="flag-no-btn" onclick="sca_flagNo()" style="flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;border:2px solid ' + (res.resolved===false?'var(--yellow)':'var(--border2)') + ';background:' + (res.resolved===false?'rgba(250,204,21,.1)':'var(--bg3)') + ';color:' + (res.resolved===false?'var(--yellow)':'var(--text2)') + ';">⚠ Still Open</button>'
+    + '</div>'
+
+    + (res.resolved === true ? ''
+      + '<div id="flag-resolve-section">'
+        + '<div style="font-size:12px;color:var(--text3);margin-bottom:6px;">Resolution notes (optional)</div>'
+        + '<textarea id="flag-resolve-note" class="inp" rows="2" placeholder="What was done to fix it..." style="margin-bottom:10px;">' + (res.resolveNote||'') + '</textarea>'
+        + '<label id="flag-photo-zone" style="display:flex;align-items:center;gap:10px;background:var(--bg3);border:1px dashed var(--border2);border-radius:10px;padding:10px 14px;cursor:pointer;margin-bottom:4px;">'
+          + '<span id="flag-photo-icon" style="font-size:20px;">' + (res.resolvePhoto?'✅':'📷') + '</span>'
+          + '<span id="flag-photo-label" style="font-size:12px;color:var(--text3);">' + (res.resolvePhoto?'Photo taken ✓':'Add resolution photo (optional)') + '</span>'
+          + '<input type="file" id="flag-resolve-photo-input" accept="image/*" capture="environment" style="display:none;"/>'
+        + '</label>'
+        + (res.resolvePhoto ? '<img src="' + res.resolvePhoto + '" style="width:100%;border-radius:8px;max-height:140px;object-fit:cover;margin-top:8px;"/>' : '')
+      + '</div>' : '')
+
+    + '<button id="flag-next-btn" onclick="sca_flagNext()" ' + (res.resolved===undefined?'disabled style="opacity:.4;cursor:not-allowed;"':'') + ' class="btn btn-green" style="width:100%;margin-top:4px;">'
+      + (c.flagIdx < c.flags.length-1 ? 'Next Flag →' : 'Continue →')
+    + '</button>';
   }
-  const routeToSync = state.routes.find(x => x.id === routeId);
-  if (routeToSync) saveAndSync('routes', routeToSync);
-  if (document.getElementById('route-panel').classList.contains('open')) openRouteDetail(routeId);
+
+  // ── STEP: PROPERTY PHOTO ────────────────────────────────────────────────
+  else if (c.step === 'photo') {
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.6;">Take a photo of the property before starting work. This is required to complete the job.</div>'
+      + '<label id="sca-photo-zone" style="display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg3);border:2px dashed var(--border2);border-radius:14px;padding:32px 20px;cursor:pointer;margin-bottom:16px;text-align:center;">'
+        + '<div id="sca-photo-icon" style="font-size:48px;margin-bottom:10px;">' + (c.photo?'✅':'📷') + '</div>'
+        + '<div id="sca-photo-label" style="font-size:14px;font-weight:700;color:' + (c.photo?'var(--green)':'var(--text2)') + ';">' + (c.photo?'Photo taken! Tap to retake':'Tap to take property photo') + '</div>'
+        + '<input type="file" id="sca-photo-input" accept="image/*" capture="environment" style="display:none;"/>'
+      + '</label>'
+      + (c.photo ? '<img src="' + c.photo + '" style="width:100%;border-radius:10px;max-height:220px;object-fit:cover;margin-bottom:16px;"/>' : '')
+      + '<button onclick="sca_nextStep()" ' + (!c.photo?'disabled style="opacity:.4;cursor:not-allowed;"':'') + ' class="btn btn-green" style="width:100%;">Continue →</button>';
+  }
+
+  // ── STEP: SERVICES ──────────────────────────────────────────────────────
+  else if (c.step === 'services') {
+    var propServices = c.prop.services || [];
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;">Select all services performed today. At least one is required.</div>';
+
+    if (propServices.length) {
+      html += '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">ASSIGNED SERVICES</div>';
+      propServices.forEach(function(svc) {
+        var checked = c.services.includes(svc);
+        html += '<div onclick="sca_toggleService(\'' + svc.replace(/'/g,"\\'") + '\')" style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:' + (checked?'rgba(74,222,128,.08)':'var(--bg3)') + ';border:1px solid ' + (checked?'var(--green)':'var(--border2)') + ';border-radius:10px;margin-bottom:8px;cursor:pointer;">'
+          + '<div style="width:22px;height:22px;border-radius:6px;border:2px solid ' + (checked?'var(--green)':'var(--border2)') + ';background:' + (checked?'var(--green3)':'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;color:#fff;font-weight:800;">' + (checked?'✓':'') + '</div>'
+          + '<div style="font-size:14px;font-weight:600;">' + svc + '</div>'
+        + '</div>';
+      });
+    }
+
+    // "Other" free text
+    html += '<div style="margin-top:12px;">'
+      + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">OTHER / ADDITIONAL</div>'
+      + '<div style="display:flex;gap:8px;">'
+        + '<input type="text" id="sca-other-svc" placeholder="e.g. Fixed irrigation head..." class="inp" style="flex:1;"/>'
+        + '<button onclick="sca_addOtherService()" style="padding:10px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);cursor:pointer;font-weight:700;">+ Add</button>'
+      + '</div>'
+      + (c.services.filter(function(sv){return !(c.prop.services||[]).includes(sv);}).length
+        ? '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">' +
+          c.services.filter(function(sv){return !(c.prop.services||[]).includes(sv);}).map(function(sv){
+            return '<div style="display:flex;align-items:center;gap:6px;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.3);border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;color:var(--blue);">'
+              + sv + '<span onclick="sca_removeService(\'' + sv.replace(/'/g,"\\'") + '\')" style="cursor:pointer;opacity:.7;">✕</span>'
+            + '</div>';
+          }).join('') + '</div>'
+        : '')
+    + '</div>'
+    + '<button onclick="sca_nextStep()" ' + (!c.services.length?'disabled style="opacity:.4;cursor:not-allowed;"':'') + ' class="btn btn-green" style="width:100%;margin-top:16px;">Continue →</button>';
+  }
+
+  // ── STEP: NOTES & NEW FLAGS ──────────────────────────────────────────────
+  else if (c.step === 'notes') {
+    html += '<div style="margin-bottom:16px;">'
+      + '<div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">COMPLETION NOTES</div>'
+      + '<textarea id="sca-notes" class="inp" rows="3" placeholder="Any observations about the property today...">' + (c.notes||'') + '</textarea>'
+    + '</div>';
+
+    // Existing new flags added this session
+    if (c.newFlags.length) {
+      html += '<div style="margin-bottom:14px;">'
+        + '<div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">FLAGS CREATED</div>';
+      c.newFlags.forEach(function(nf, i) {
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);border-radius:10px;padding:10px 14px;margin-bottom:8px;">'
+          + '<div><div style="font-size:13px;font-weight:700;">⚑ ' + nf.service + '</div>'
+          + '<div style="font-size:11px;color:var(--text3);">' + nf.note + '</div></div>'
+          + '<button onclick="sca_removeNewFlag(' + i + ')" style="background:transparent;border:none;color:var(--text4);cursor:pointer;font-size:16px;">✕</button>'
+        + '</div>';
+      });
+      html += '</div>';
+    }
+
+    // Add new flag section
+    html += '<div id="sca-flag-section" style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:16px;border:1px solid var(--border);">'
+      + '<div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:10px;">🚩 REPORT AN ISSUE</div>'
+      + '<input type="text" id="sca-flag-svc" placeholder="Issue type (e.g. Dead plant, Irrigation leak...)" class="inp" style="margin-bottom:8px;"/>'
+      + '<textarea id="sca-flag-note" class="inp" rows="2" placeholder="Describe the issue..." style="margin-bottom:8px;"></textarea>'
+      + '<label id="sca-flag-photo-zone" style="display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px dashed var(--border2);border-radius:8px;padding:8px 12px;cursor:pointer;margin-bottom:8px;">'
+        + '<span id="sca-flag-photo-icon" style="font-size:18px;">📷</span>'
+        + '<span id="sca-flag-photo-label" style="font-size:12px;color:var(--text3);">Add photo (optional)</span>'
+        + '<input type="file" id="sca-flag-photo-input" accept="image/*" capture="environment" style="display:none;"/>'
+      + '</label>'
+      + '<img id="sca-flag-preview" style="display:none;width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-bottom:8px;"/>'
+      + '<button onclick="sca_addFlag()" class="btn" style="width:100%;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.3);color:var(--red);">+ Add Flag</button>'
+    + '</div>'
+    + '<button onclick="sca_nextStep()" class="btn btn-green" style="width:100%;">Continue →</button>';
+  }
+
+  // ── STEP: SUBMIT ────────────────────────────────────────────────────────
+  else if (c.step === 'submit') {
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:16px;">Review and confirm everything looks correct before submitting.</div>';
+
+    // Photo preview
+    if (c.photo) {
+      html += '<img src="' + c.photo + '" style="width:100%;border-radius:12px;max-height:180px;object-fit:cover;margin-bottom:14px;"/>';
+    }
+
+    // Services summary
+    html += '<div style="background:var(--bg3);border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+      + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">SERVICES PERFORMED</div>'
+      + c.services.map(function(sv) { return '<div style="font-size:13px;color:var(--green);margin-bottom:3px;">✓ ' + sv + '</div>'; }).join('')
+    + '</div>';
+
+    // Notes
+    if (c.notes) {
+      html += '<div style="background:var(--bg3);border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+        + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">NOTES</div>'
+        + '<div style="font-size:13px;color:var(--text2);">' + c.notes + '</div>'
+      + '</div>';
+    }
+
+    // Flags resolved
+    var resolved = c.flagResolutions.filter(function(fr){return fr.resolved;});
+    var stillOpen = c.flagResolutions.filter(function(fr){return !fr.resolved;});
+    if (resolved.length || stillOpen.length) {
+      html += '<div style="background:var(--bg3);border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+        + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">FLAGS REVIEWED</div>'
+        + resolved.map(function(fr){
+            var f=c.flags.find(function(x){return x.id===fr.flagId;});
+            return '<div style="font-size:12px;color:var(--green);margin-bottom:3px;">✓ Resolved: '+(f?f.service:'flag')+'</div>';
+          }).join('')
+        + stillOpen.map(function(fr){
+            var f=c.flags.find(function(x){return x.id===fr.flagId;});
+            return '<div style="font-size:12px;color:var(--yellow);margin-bottom:3px;">⚠ Still open: '+(f?f.service:'flag')+'</div>';
+          }).join('')
+      + '</div>';
+    }
+
+    // New flags
+    if (c.newFlags.length) {
+      html += '<div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+        + '<div style="font-size:11px;font-weight:700;color:var(--red);letter-spacing:1px;margin-bottom:6px;">NEW FLAGS TO CREATE</div>'
+        + c.newFlags.map(function(nf){return '<div style="font-size:12px;color:var(--text2);margin-bottom:3px;">⚑ '+nf.service+'</div>';}).join('')
+      + '</div>';
+    }
+
+    html += '<button onclick="sca_submit()" class="btn btn-green" style="width:100%;font-size:15px;padding:16px;margin-top:4px;">✓ Complete Job</button>'
+      + '<button onclick="sca_goBack()" style="width:100%;margin-top:8px;padding:12px;background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:13px;">← Back</button>';
+  }
+
+  html += '</div></div>';
+  sheet.innerHTML = html;
+  document.body.appendChild(sheet);
+
+  // Store completion state on the sheet element for access by handlers
+  sheet._comp = c;
+
+  // Wire photo inputs after render
+  if (c.step === 'photo') {
+    var inp = document.getElementById('sca-photo-input');
+    if (inp) inp.addEventListener('change', function() {
+      var file = this.files[0]; if (!file) return;
+      readFileAsDataUrl(file, function(dataUrl) {
+        if (!dataUrl) return;
+        compressPhoto(dataUrl, 1200, 0.90, function(compressed) {
+          c.photo = compressed;
+          renderStopCompletionSheet(c);
+        });
+      });
+    });
+  }
+
+  if (c.step === 'flags') {
+    var flagPhotoInp = document.getElementById('flag-resolve-photo-input');
+    if (flagPhotoInp) flagPhotoInp.addEventListener('change', function() {
+      var file = this.files[0]; if (!file) return;
+      readFileAsDataUrl(file, function(dataUrl) {
+        if (!dataUrl) return;
+        compressPhoto(dataUrl, 1000, 0.88, function(compressed) {
+          var f = c.flags[c.flagIdx];
+          var res = c.flagResolutions.find(function(r){return r.flagId===f.id;});
+          if (res) { res.resolvePhoto = compressed; renderStopCompletionSheet(c); }
+        });
+      });
+    });
+  }
+
+  if (c.step === 'notes') {
+    var flagPhotoInp2 = document.getElementById('sca-flag-photo-input');
+    if (flagPhotoInp2) flagPhotoInp2.addEventListener('change', function() {
+      var file = this.files[0]; if (!file) return;
+      readFileAsDataUrl(file, function(dataUrl) {
+        if (!dataUrl) return;
+        compressPhoto(dataUrl, 1000, 0.88, function(compressed) {
+          window._scaFlagPhoto = compressed;
+          var icon  = document.getElementById('sca-flag-photo-icon');
+          var label = document.getElementById('sca-flag-photo-label');
+          var prev  = document.getElementById('sca-flag-preview');
+          if (icon)  icon.textContent  = '✅';
+          if (label) label.textContent = 'Photo taken ✓';
+          if (prev)  { prev.src = compressed; prev.style.display = 'block'; }
+        });
+      });
+    });
+  }
+}
+
+function closeStopCompletion() {
+  var sheet = document.getElementById('stop-completion-sheet');
+  if (sheet) sheet.remove();
+  window._scaFlagPhoto = null;
+}
+
+function _getComp() {
+  var sheet = document.getElementById('stop-completion-sheet');
+  return sheet ? sheet._comp : null;
+}
+
+// Flag review handlers
+window.sca_flagYes = function() {
+  var c = _getComp(); if (!c) return;
+  var f = c.flags[c.flagIdx];
+  var existing = c.flagResolutions.find(function(r){return r.flagId===f.id;});
+  if (existing) { existing.resolved = true; }
+  else { c.flagResolutions.push({flagId:f.id, resolved:true, resolveNote:'', resolvePhoto:null}); }
+  renderStopCompletionSheet(c);
+};
+
+window.sca_flagNo = function() {
+  var c = _getComp(); if (!c) return;
+  var f = c.flags[c.flagIdx];
+  var existing = c.flagResolutions.find(function(r){return r.flagId===f.id;});
+  if (existing) { existing.resolved = false; }
+  else { c.flagResolutions.push({flagId:f.id, resolved:false, resolveNote:'', resolvePhoto:null}); }
+  renderStopCompletionSheet(c);
+};
+
+window.sca_flagNext = function() {
+  var c = _getComp(); if (!c) return;
+  // Save resolve note if resolving
+  var f = c.flags[c.flagIdx];
+  var res = c.flagResolutions.find(function(r){return r.flagId===f.id;});
+  if (res && res.resolved) {
+    var noteEl = document.getElementById('flag-resolve-note');
+    if (noteEl) res.resolveNote = noteEl.value.trim();
+  }
+  if (c.flagIdx < c.flags.length - 1) {
+    c.flagIdx++;
+    renderStopCompletionSheet(c);
+  } else {
+    c.step = 'photo';
+    renderStopCompletionSheet(c);
+  }
+};
+
+// Photo step
+window.sca_nextStep = function() {
+  var c = _getComp(); if (!c) return;
+  if (c.step === 'notes') {
+    var notesEl = document.getElementById('sca-notes');
+    if (notesEl) c.notes = notesEl.value.trim();
+  }
+  var steps = c.flags.length > 0
+    ? ['flags','photo','services','notes','submit']
+    : ['photo','services','notes','submit'];
+  var idx = steps.indexOf(c.step);
+  if (idx < steps.length - 1) {
+    c.step = steps[idx + 1];
+    renderStopCompletionSheet(c);
+  }
+};
+
+window.sca_goBack = function() {
+  var c = _getComp(); if (!c) return;
+  var steps = c.flags.length > 0
+    ? ['flags','photo','services','notes','submit']
+    : ['photo','services','notes','submit'];
+  var idx = steps.indexOf(c.step);
+  if (idx > 0) { c.step = steps[idx-1]; renderStopCompletionSheet(c); }
+};
+
+// Services step
+window.sca_toggleService = function(svc) {
+  var c = _getComp(); if (!c) return;
+  var idx = c.services.indexOf(svc);
+  if (idx > -1) { c.services.splice(idx, 1); }
+  else { c.services.push(svc); }
+  renderStopCompletionSheet(c);
+};
+
+window.sca_addOtherService = function() {
+  var c = _getComp(); if (!c) return;
+  var inp = document.getElementById('sca-other-svc');
+  if (!inp || !inp.value.trim()) { toast('Enter a service name'); return; }
+  var val = inp.value.trim();
+  if (!c.services.includes(val)) c.services.push(val);
+  inp.value = '';
+  renderStopCompletionSheet(c);
+};
+
+window.sca_removeService = function(svc) {
+  var c = _getComp(); if (!c) return;
+  c.services = c.services.filter(function(s){return s!==svc;});
+  renderStopCompletionSheet(c);
+};
+
+// New flag handlers
+window.sca_addFlag = function() {
+  var c = _getComp(); if (!c) return;
+  var svcEl  = document.getElementById('sca-flag-svc');
+  var noteEl = document.getElementById('sca-flag-note');
+  if (!svcEl || !svcEl.value.trim()) { toast('Enter an issue type'); return; }
+  c.newFlags.push({
+    service: svcEl.value.trim(),
+    note:    noteEl ? noteEl.value.trim() : '',
+    photo:   window._scaFlagPhoto || null
+  });
+  window._scaFlagPhoto = null;
+  renderStopCompletionSheet(c);
+};
+
+window.sca_removeNewFlag = function(idx) {
+  var c = _getComp(); if (!c) return;
+  c.newFlags.splice(idx, 1);
+  renderStopCompletionSheet(c);
+};
+
+// ── Final Submit ─────────────────────────────────────────────────────────
+window.sca_submit = async function() {
+  var c = _getComp(); if (!c) return;
+  var btn = document.querySelector('#stop-completion-sheet .btn-green:last-of-type');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+  var crew = c.crew;
+  var crewName = crew ? crew.name : 'Crew';
+  var today = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  var now   = new Date().toLocaleString('en-US');
+
+  // 1. Upload property photo to Firebase Storage
+  var photoUrl = '';
+  if (c.photo) {
+    try {
+      photoUrl = await new Promise(function(resolve) {
+        var path = 'photos/stops/' + c.propId + '_' + Date.now() + '.jpg';
+        uploadPhotoToStorage(c.photo, path, resolve, function(){ resolve(''); });
+      });
+    } catch(e) { photoUrl = ''; }
+  }
+
+  // 2. Build service log entry for the property
+  var logEntry = {
+    id:        uid(),
+    date:      today,
+    timestamp: now,
+    crewId:    crew ? crew.id : '',
+    crewName:  crewName,
+    routeId:   c.routeId,
+    services:  c.services,
+    notes:     c.notes,
+    photo:     photoUrl || c.photo || '',
+    flags:     c.newFlags.map(function(nf){return nf.service;})
+  };
+
+  // 3. Update property record
+  var prop = c.prop;
+  if (!prop.serviceLog) prop.serviceLog = [];
+  prop.serviceLog.push(logEntry);
+  prop.lastServiceDate  = today;
+  prop.lastServiceBy    = crewName;
+  // Update next service date
+  var freqDays = window.FREQ_DAYS && FREQ_DAYS[prop.frequency];
+  if (freqDays) {
+    var next = new Date(Date.now() + freqDays*24*60*60*1000);
+    prop.nextServiceDate = next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  }
+  saveAndSync('properties', prop);
+
+  // 4. Mark route stop complete
+  var r = (state.routes||[]).find(function(x){return x.id===c.routeId;});
+  var s = r ? (r.stops||[]).find(function(x){return x.propId===c.propId;}) : null;
+  if (s) {
+    s.completed         = true;
+    s.completedAt       = today;
+    s.completedBy       = crewName;
+    s.completedServices = c.services;
+    s.completedNotes    = c.notes;
+    s.completedPhoto    = photoUrl || c.photo || '';
+    saveAndSync('routes', r);
+  }
+
+  // 5. Process flag resolutions
+  c.flagResolutions.forEach(function(res) {
+    var flag = (state.flags||[]).find(function(f){return f.id===res.flagId;});
+    if (!flag) return;
+    if (res.resolved) {
+      flag.resolved      = true;
+      flag.resolveNote   = res.resolveNote || '';
+      flag.resolveDate   = today;
+      flag.resolvedBy    = crewName;
+      // Upload resolve photo if taken
+      if (res.resolvePhoto) {
+        var rpath = 'photos/resolves/' + flag.id + '_' + Date.now() + '.jpg';
+        uploadPhotoToStorage(res.resolvePhoto, rpath,
+          function(url) { flag.resolvePhoto=url; saveAndSync('flags',flag); },
+          function()    { flag.resolvePhoto=''; saveAndSync('flags',flag); }
+        );
+      } else {
+        saveAndSync('flags', flag);
+      }
+    }
+    // If still open — flag stays, no changes needed
+  });
+
+  // 6. Create new flags
+  c.newFlags.forEach(function(nf) {
+    var newFlag = {
+      id:       uid(),
+      propId:   c.propId,
+      service:  nf.service,
+      note:     nf.note,
+      by:       crewName,
+      date:     today,
+      priority: 'Medium',
+      resolved: false,
+      photo:    '',
+      resolvePhoto: '',
+      resolveNote: '',
+      resolveDate: ''
+    };
+    state.flags.push(newFlag);
+    // Upload flag photo if taken
+    if (nf.photo) {
+      var fpath = 'photos/flags/' + newFlag.id + '_' + Date.now() + '.jpg';
+      uploadPhotoToStorage(nf.photo, fpath,
+        function(url) { newFlag.photo=url; saveAndSync('flags',newFlag); },
+        function()    { saveAndSync('flags',newFlag); }
+      );
+    } else {
+      saveAndSync('flags', newFlag);
+    }
+  });
+
+  save();
+  closeStopCompletion();
+
+  // Refresh the route panel
+  if (document.getElementById('route-panel')?.classList.contains('open')) {
+    openRouteDetail(c.routeId);
+  } else {
+    loadFieldView();
+  }
+
+  var summary = c.services.length + ' service' + (c.services.length!==1?'s':'') + ' logged';
+  if (c.newFlags.length) summary += ', ' + c.newFlags.length + ' flag' + (c.newFlags.length!==1?'s':'') + ' created';
+  toast('✓ Job complete — ' + summary);
+};
+
+function markStopDone(routeId, propId) {
+  // Simple reopen toggle — used when crew taps Reopen on a completed stop
+  var r = (state.routes||[]).find(x => x.id === routeId);
+  if (!r) return;
+  var s = r.stops?.find(x => x.propId === propId);
+  if (!s || s.completed === false) return;
+  if (!confirm('Reopen this stop? This will mark it as incomplete.')) return;
+  s.completed   = false;
+  s.completedAt = '';
+  s.completedBy = '';
+  s.completedServices = [];
+  s.completedNotes    = '';
+  s.completedPhoto    = '';
+  saveAndSync('routes', r);
+  if (document.getElementById('route-panel')?.classList.contains('open')) openRouteDetail(routeId);
   else loadFieldView();
-  toast(s.completed ? '✓ Job complete' : 'Reopened');
+  toast('Stop reopened');
 }
 
 function toggleService(routeId, propId, svc, checked) {
@@ -2744,15 +3294,68 @@ function savePropServices(id) {
 
 
 function getPropertyHistory(propId) {
-  const history = state.routes.filter(r => r.stops?.some(s => s.propId===propId&&s.completed));
-  if (!history.length) return '<div style="font-size:13px;color:var(--text4);">No completed visits yet</div>';
-  return history.slice(-5).reverse().map(r => {
-    const s = r.stops.find(x=>x.propId===propId);
-    return `<div class="card-flat" style="margin-bottom:6px;">
-      <div style="display:flex;justify-content:space-between;"><div style="font-size:13px;font-weight:700;">${r.name} – ${r.day}</div><span class="badge badge-green">Done</span></div>
-      ${s.completedServices?.length?`<div style="font-size:12px;color:var(--text3);margin-top:4px;">${s.completedServices.join(', ')}</div>`:''}
-    </div>`;
+  var prop = (state.properties||[]).find(function(p){return p.id===propId;});
+  var log  = prop && prop.serviceLog ? prop.serviceLog.slice().reverse() : [];
+
+  // Also pull from completed route stops as fallback for older data
+  var stopVisits = [];
+  (state.routes||[]).forEach(function(r) {
+    var s = (r.stops||[]).find(function(x){return x.propId===propId&&x.completed;});
+    if (s && s.completedAt) {
+      // Only include if not already in serviceLog
+      var alreadyLogged = log.some(function(l){return l.routeId===r.id&&l.date===s.completedAt;});
+      if (!alreadyLogged) stopVisits.push({
+        id: r.id+'_stop', date: s.completedAt, crewName: s.completedBy||'Crew',
+        services: s.completedServices||[], notes: s.completedNotes||'',
+        photo: s.completedPhoto||'', routeId: r.id, _fromStop: true
+      });
+    }
+  });
+
+  var allVisits = log.concat(stopVisits).sort(function(a,b){
+    return new Date(b.date||0) - new Date(a.date||0);
+  });
+
+  if (!allVisits.length) return '<div style="font-size:13px;color:var(--text4);">No completed visits yet</div>';
+
+  var showAll = window._propHistoryShowAll && window._propHistoryShowAll[propId];
+  var visible = showAll ? allVisits : allVisits.slice(0,4);
+  var hasMore = allVisits.length > 4;
+
+  var html = visible.map(function(v) {
+    return '<div style="background:var(--bg3);border-radius:10px;padding:12px;margin-bottom:8px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">'
+        + '<div>'
+          + '<div style="font-size:13px;font-weight:700;">' + (v.date||'') + '</div>'
+          + '<div style="font-size:11px;color:var(--text3);">by ' + (v.crewName||'Crew') + '</div>'
+        + '</div>'
+        + '<span class="badge badge-green">✓ Done</span>'
+      + '</div>'
+      + (v.services&&v.services.length
+        ? '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">'
+          + v.services.map(function(sv){
+              return '<span style="font-size:10px;background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.25);border-radius:12px;padding:2px 8px;color:var(--green);font-weight:700;">' + sv + '</span>';
+            }).join('')
+          + '</div>'
+        : '')
+      + (v.notes ? '<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">' + v.notes + '</div>' : '')
+      + (v.photo && v.photo.startsWith('http')
+        ? '<img src="' + v.photo + '" referrerpolicy="no-referrer" style="width:100%;border-radius:8px;max-height:140px;object-fit:cover;" />'
+        : '')
+      + (v.flags&&v.flags.length
+        ? '<div style="font-size:11px;color:var(--red);margin-top:6px;">⚑ ' + v.flags.join(', ') + '</div>'
+        : '')
+    + '</div>';
   }).join('');
+
+  if (hasMore) {
+    html += '<button onclick="window._propHistoryShowAll=window._propHistoryShowAll||{};window._propHistoryShowAll[\'' + propId + '\']=' + (!showAll) + ';openPropDetail(\'' + propId + '\')" '
+      + 'style="width:100%;padding:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text3);cursor:pointer;font-size:12px;">'
+      + (showAll ? '▲ Show less' : '▼ Show all ' + allVisits.length + ' visits')
+    + '</button>';
+  }
+
+  return html;
 }
 
 // flag sheet
