@@ -286,8 +286,8 @@ select.inp{cursor:pointer;}
   }
   .nb:hover { background: var(--bg3) !important; }
   .nb.active { background: rgba(63,185,80,.1) !important; }
-  .nb .ni { font-size: 16px !important; opacity: .65; width: 18px; text-align: center; flex-shrink: 0; }
-  .nb.active .ni { opacity: 1; color: var(--green); }
+  .nb .ni { font-size: 16px !important; color: var(--text2) !important; opacity: .55; width: 18px; text-align: center; flex-shrink: 0; }
+  .nb.active .ni { opacity: 1; color: var(--green) !important; }
   .nb .nl {
     font-size: 13px !important;
     font-weight: 500 !important;
@@ -295,9 +295,11 @@ select.inp{cursor:pointer;}
     text-transform: none !important;
     letter-spacing: 0 !important;
     flex: 1;
-    opacity: .7;
+    opacity: .6;
   }
   .nb.active .nl { color: var(--green) !important; font-weight: 600 !important; opacity: 1; }
+  .nb:hover .ni { opacity: .85; }
+  .nb:hover .nl { opacity: .85; }
   .nb .n-badge {
     font-size: 10px; font-weight: 700; padding: 1px 6px;
     border-radius: 10px; background: rgba(248,81,73,.15);
@@ -1527,7 +1529,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v19'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v20'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
