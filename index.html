@@ -16,15 +16,20 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
 <style>
 button,a{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
 :root{
-  --bg:#0a0f0a; --bg2:#111811; --bg3:#182018; --bg4:#1f281f;
-  --border:#243024; --border2:#2e3d2e;
-  --green:#4ade80; --green2:#22c55e; --green3:#16a34a;
-  --lime:#a3e635; --yellow:#facc15; --orange:#fb923c;
-  --red:#f87171; --blue:#60a5fa; --teal:#2dd4bf;
-  --text:#f0fdf0; --text2:#bbf7d0; --text3:#6b8f6b; --text4:#3d5c3d;
+  /* Premium warm dark palette */
+  --bg:#0d1117; --bg2:#161b22; --bg3:#1c2128; --bg4:#22272e;
+  --border:#2d333b; --border2:#373e47;
+  --green:#3fb950; --green2:#238636; --green3:#196127;
+  --lime:#a3e635; --yellow:#e3b341; --orange:#f0883e;
+  --red:#f85149; --blue:#58a6ff; --teal:#39d353;
+  --text:#e6edf3; --text2:#adbac7; --text3:#545d68; --text4:#2d333b;
+  /* Premium accent */
+  --accent:#3fb950; --accent2:#238636;
+  --surface-card:#161b22; --surface-elevated:#1c2128;
   --safe-top:env(safe-area-inset-top,0px); --safe-bottom:env(safe-area-inset-bottom,0px);
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
@@ -39,7 +44,8 @@ input[type="date"]{cursor:pointer;pointer-events:all;position:relative;z-index:5
 /* header */
 #topbar{background:var(--bg2);border-bottom:1px solid var(--border);
   padding:calc(10px + var(--safe-top)) 16px 10px;
-  display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
+  display:flex;justify-content:space-between;align-items:center;flex-shrink:0;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);}
 .topbar-title{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;
   background:linear-gradient(135deg,var(--green),var(--lime));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
 .topbar-role{font-size:11px;font-weight:700;letter-spacing:1px;padding:3px 10px;border-radius:20px;
@@ -63,44 +69,48 @@ input[type="date"]{cursor:pointer;pointer-events:all;position:relative;z-index:5
 .nb.active .nl{color:var(--green);}
 
 /* cards */
-.card{background:var(--bg2);border-radius:16px;padding:16px;border:1px solid var(--border);margin-bottom:12px;}
-.card-flat{background:var(--bg3);border-radius:12px;padding:12px 14px;border:1px solid var(--border);margin-bottom:8px;}
-.sec-title{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:1.5px;
-  color:var(--text3);text-transform:uppercase;margin-bottom:10px;}
+.card{background:var(--bg2);border-radius:12px;padding:14px 16px;border:1px solid var(--border);margin-bottom:10px;transition:border-color .15s;}
+.card-flat{background:var(--bg3);border-radius:10px;padding:11px 14px;border:1px solid var(--border);margin-bottom:7px;}
+.sec-title{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--text3);text-transform:uppercase;margin-bottom:10px;opacity:.7;}
+/* Status strip cards */
+.card-strip-green{border-left:3px solid var(--green);border-radius:0 12px 12px 0;}
+.card-strip-red{border-left:3px solid var(--red);border-radius:0 12px 12px 0;}
+.card-strip-yellow{border-left:3px solid var(--yellow);border-radius:0 12px 12px 0;}
+.card-strip-blue{border-left:3px solid var(--blue);border-radius:0 12px 12px 0;}
 
 /* inputs */
-.inp{background:var(--bg4);border:1px solid var(--border2);border-radius:10px;
-  padding:11px 14px;color:var(--text);font-size:14px;width:100%;transition:border .2s;}
-.inp:focus{border-color:var(--green);}
-.inp::placeholder{color:var(--text4);}
+.inp{background:var(--bg3);border:1px solid var(--border);border-radius:9px;
+  padding:10px 13px;color:var(--text);font-size:14px;width:100%;transition:border .2s;}
+.inp:focus{border-color:var(--green);outline:none;}
+.inp::placeholder{color:var(--text3);opacity:.6;}
 textarea.inp{resize:vertical;}
 select.inp{cursor:pointer;}
 
 /* buttons */
-.btn{border:none;border-radius:11px;padding:13px;font-size:14px;font-weight:800;
-  cursor:pointer;width:100%;transition:opacity .15s;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:.5px;}
-.btn:active{opacity:.75;}
-.btn-green{background:linear-gradient(135deg,var(--green3),var(--green2));color:#fff;}
+.btn{border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;
+  cursor:pointer;width:100%;transition:all .15s;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:.3px;}
+.btn:active{opacity:.8;transform:scale(.98);}
+.btn-green{background:var(--green2);color:#fff;box-shadow:0 1px 3px rgba(35,134,54,.3);}
 .btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text2);}
-.btn-red{background:linear-gradient(135deg,#dc2626,var(--red));color:#fff;}
-.btn-sm{padding:6px 14px;font-size:12px;border-radius:8px;border:none;cursor:pointer;
-  font-weight:700;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:.3px;}
+.btn-red{background:#b91c1c;color:#fff;}
+.btn-sm{padding:5px 12px;font-size:12px;border-radius:7px;border:none;cursor:pointer;
+  font-weight:600;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:.2px;}
 
 /* status badges */
-.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;
-  font-size:11px;font-weight:700;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:.5px;}
-.badge-green{background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);}
-.badge-yellow{background:rgba(250,204,21,.12);color:var(--yellow);border:1px solid rgba(250,204,21,.25);}
-.badge-red{background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.25);}
-.badge-blue{background:rgba(96,165,250,.12);color:var(--blue);border:1px solid rgba(96,165,250,.25);}
-.badge-orange{background:rgba(251,146,60,.12);color:var(--orange);border:1px solid rgba(251,146,60,.25);}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;
+  font-size:10px;font-weight:700;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:.8px;text-transform:uppercase;}
+.badge-green{background:rgba(63,185,80,.12);color:var(--green);border:1px solid rgba(63,185,80,.25);}
+.badge-yellow{background:rgba(227,179,65,.1);color:var(--yellow);border:1px solid rgba(227,179,65,.2);}
+.badge-red{background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.2);}
+.badge-blue{background:rgba(88,166,255,.1);color:var(--blue);border:1px solid rgba(88,166,255,.2);}
+.badge-orange{background:rgba(240,136,62,.1);color:var(--orange);border:1px solid rgba(240,136,62,.2);}
 
 /* pills */
-.pills{display:flex;gap:7px;overflow-x:auto;padding-bottom:2px;margin-bottom:12px;}
-.pill{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:none;
-  cursor:pointer;white-space:nowrap;background:var(--bg4);color:var(--text3);transition:all .2s;
-  font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:.3px;}
-.pill.active{background:linear-gradient(135deg,var(--green3),var(--green2));color:#fff;}
+.pills{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;margin-bottom:12px;}
+.pill{padding:5px 13px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid var(--border2);
+  cursor:pointer;white-space:nowrap;background:transparent;color:var(--text3);transition:all .2s;
+  font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:.2px;}
+.pill.active{background:var(--green2);color:#fff;border-color:var(--green2);}
 
 /* panels */
 .panel{position:fixed;inset:0;z-index:200;display:none;flex-direction:column;
@@ -264,28 +274,42 @@ select.inp{cursor:pointer;}
   .nb {
     flex-direction: row !important;
     justify-content: flex-start !important;
-    gap: 12px !important;
-    padding: 11px 14px !important;
-    border-radius: 10px !important;
+    gap: 10px !important;
+    padding: 8px 12px !important;
+    border-radius: 8px !important;
     width: 100% !important;
     min-width: unset !important;
     text-align: left !important;
-    transition: background .15s;
+    transition: all .15s;
+    border: none !important;
+    background: transparent !important;
   }
-  .nb:hover { background: var(--bg3); }
-  .nb.active { background: var(--bg3) !important; }
-  .nb .ni { font-size: 18px !important; opacity: .8; }
-  .nb.active .ni { opacity: 1; }
+  .nb:hover { background: var(--bg3) !important; }
+  .nb.active { background: rgba(63,185,80,.1) !important; }
+  .nb .ni { font-size: 16px !important; opacity: .5; width: 18px; text-align: center; flex-shrink: 0; }
+  .nb.active .ni { opacity: 1; color: var(--green); }
   .nb .nl {
     font-size: 13px !important;
-    font-weight: 700 !important;
-    color: var(--text3) !important;
+    font-weight: 500 !important;
+    color: var(--text2) !important;
     text-transform: none !important;
-    letter-spacing: .2px !important;
+    letter-spacing: 0 !important;
+    flex: 1;
   }
-  .nb.active .nl { color: var(--green) !important; }
-
-  /* nb styles only used for sidebar which is removed */
+  .nb.active .nl { color: var(--green) !important; font-weight: 600 !important; }
+  .nb .n-badge {
+    font-size: 10px; font-weight: 700; padding: 1px 6px;
+    border-radius: 10px; background: rgba(248,81,73,.15);
+    color: var(--red); margin-left: auto;
+  }
+  .nb .n-count {
+    font-size: 10px; color: var(--text3); margin-left: auto; font-weight: 500;
+  }
+  .nav-group-label {
+    font-size: 9px; font-weight: 700; letter-spacing: 1.8px;
+    color: var(--text3); text-transform: uppercase;
+    padding: 4px 12px 2px; opacity: .45; margin-top: 6px;
+  }
 
 
   .screen { padding: 28px 32px 0 !important; max-width: 1100px; }
@@ -299,15 +323,16 @@ select.inp{cursor:pointer;}
     grid-template-columns: 1fr 1fr 1fr 1fr !important;
   }
 
-  /* properties and crew — 2 col grid */
-  #properties-list, #crew-list, #equipment-list, #inventory-list {
+  /* properties — premium list view, single column */
+  #properties-list {
+    display: block !important;
+  }
+  /* crew and equipment keep 2-col grid */
+  #crew-list, #equipment-list, #inventory-list {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 14px;
+    gap: 12px;
   }
-  #properties-list .card,
-  #crew-list .crew-card,
-  #equipment-list .card,
   #inventory-list .card { margin-bottom: 0 !important; }
 
   /* routes — 2 col */
@@ -1502,7 +1527,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v17'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v18'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1716,22 +1741,36 @@ function applyRole(r) {
       }
     }, 100);
   } else {
-    document.getElementById('nav').innerHTML = `<div id="nav-tabs-wrap">
-    <button class="nb active" onclick="switchTab('dashboard')" data-tab="dashboard"><span class="ni">⚡</span><span class="nl">Dashboard</span></button>
-    <button class="nb" onclick="switchTab('routes')" data-tab="routes"><span class="ni">🗺️</span><span class="nl">Routes</span></button>
-    <button class="nb" onclick="switchTab('schedule')" data-tab="schedule"><span class="ni">📅</span><span class="nl">Schedule</span></button>
-    <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni">🏡</span><span class="nl">Properties</span></button>
-    <button class="nb" onclick="switchTab('crew')" data-tab="crew"><span class="ni">👷</span><span class="nl">Crew</span></button>
-    <button class="nb" onclick="switchTab('inventory')" data-tab="inventory"><span class="ni">📦</span><span class="nl">Inventory</span></button>
-    <button class="nb" onclick="switchTab('equipment')" data-tab="equipment"><span class="ni">🔧</span><span class="nl">Equipment</span></button>
-    <button class="nb" onclick="switchTab('reports')" data-tab="reports"><span class="ni">📊</span><span class="nl">Reports</span></button>
-    <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
-    <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni">📅</span><span class="nl">Attendance</span></button>
+    document.getElementById('nav').innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 14px;border-bottom:1px solid var(--border);margin-bottom:6px;">
+      <div style="width:28px;height:28px;background:rgba(63,185,80,.15);border-radius:7px;display:flex;align-items:center;justify-content:center;">
+        <i class="ti ti-leaf" style="font-size:15px;color:var(--green);"></i>
+      </div>
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.2px;">Diamond</div>
+        <div style="font-size:9px;font-weight:600;color:var(--text3);letter-spacing:.8px;text-transform:uppercase;">Landscapes</div>
+      </div>
+    </div>
+    <div id="nav-tabs-wrap">
+    <div class="nav-group-label">Overview</div>
+    <button class="nb active" onclick="switchTab('dashboard')" data-tab="dashboard"><span class="ni"><i class="ti ti-layout-dashboard"></i></span><span class="nl">Dashboard</span></button>
+    <div class="nav-group-label" style="margin-top:10px;">Operations</div>
+    <button class="nb" onclick="switchTab('routes')" data-tab="routes"><span class="ni"><i class="ti ti-route"></i></span><span class="nl">Routes</span></button>
+    <button class="nb" onclick="switchTab('schedule')" data-tab="schedule"><span class="ni"><i class="ti ti-calendar-week"></i></span><span class="nl">Schedule</span></button>
+    <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni"><i class="ti ti-clipboard-list"></i></span><span class="nl">Work Orders</span></button>
+    <div class="nav-group-label" style="margin-top:10px;">Data</div>
+    <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni"><i class="ti ti-home"></i></span><span class="nl">Properties</span><span class="n-count" id="nav-prop-count"></span></button>
+    <button class="nb" onclick="switchTab('crew')" data-tab="crew"><span class="ni"><i class="ti ti-users"></i></span><span class="nl">Crew</span><span class="n-count" id="nav-crew-count"></span></button>
+    <button class="nb" onclick="switchTab('inventory')" data-tab="inventory"><span class="ni"><i class="ti ti-package"></i></span><span class="nl">Inventory</span></button>
+    <button class="nb" onclick="switchTab('equipment')" data-tab="equipment"><span class="ni"><i class="ti ti-tool"></i></span><span class="nl">Equipment</span></button>
+    <div class="nav-group-label" style="margin-top:10px;">Reporting</div>
+    <button class="nb" onclick="switchTab('reports')" data-tab="reports"><span class="ni"><i class="ti ti-chart-bar"></i></span><span class="nl">Reports</span></button>
+    <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni"><i class="ti ti-calendar-check"></i></span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
-      <button class="nb" onclick="gsLoad()"><span class="ni">↺</span><span class="nl">Refresh Data</span></button>
-      <button class="nb" onclick="clearCacheAndReload()"><span class="ni">🔄</span><span class="nl">Clear Cache</span></button>
-      <button class="nb" onclick="openLoginSheet()"><span class="ni">🔒</span><span class="nl">Switch / Sign Out</span></button>
+      <button class="nb" onclick="gsLoad()"><span class="ni"><i class="ti ti-refresh"></i></span><span class="nl">Refresh Data</span></button>
+      <button class="nb" onclick="clearCacheAndReload()"><span class="ni"><i class="ti ti-trash"></i></span><span class="nl">Clear Cache</span></button>
+      <button class="nb" onclick="openLoginSheet()"><span class="ni"><i class="ti ti-logout"></i></span><span class="nl">Switch / Sign Out</span></button>
     </div>`;
     switchTab('dashboard');
     // Ensure Firebase is initialized - safe to call multiple times
@@ -3265,28 +3304,27 @@ function renderProperties() {
     const lastVisit = state.routes.filter(r => r.stops?.some(s=>s.propId===p.id&&s.completed))
       .sort((a,b)=>b.id.localeCompare(a.id))[0];
     const isSelected = selectedPropIds.has(p.id);
-    return `<div class="card" style="cursor:pointer;transition:border .15s;${isSelected?'border-color:var(--green);background:rgba(74,222,128,.05);':''}"
+    const isOverdue = p.nextServiceDate && new Date(p.nextServiceDate) < new Date();
+    const isDueSoon = !isOverdue && p.nextServiceDate && (new Date(p.nextServiceDate) - new Date()) < 3*24*60*60*1000;
+    const stripColor = flags.length ? 'var(--red)' : isOverdue ? 'var(--red)' : isDueSoon ? 'var(--yellow)' : 'var(--border)';
+    return `<div style="display:flex;align-items:center;border-radius:10px;background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${stripColor};margin-bottom:6px;cursor:pointer;transition:all .15s;overflow:hidden;"
       onclick="${propSelectMode ? `togglePropCheckbox('${p.id}',${!isSelected});renderProperties()` : `openPropDetail('${p.id}')`}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
-        ${propSelectMode ? `<div style="flex-shrink:0;margin-top:2px;">
-          <div style="width:22px;height:22px;border-radius:6px;border:2px solid ${isSelected?'var(--green)':'var(--border2)'};
-            background:${isSelected?'var(--green)':'transparent'};display:flex;align-items:center;justify-content:center;">
-            ${isSelected?'<span style="color:#fff;font-size:14px;font-weight:800;">✓</span>':''}
-          </div>
-        </div>` : ''}
-        <div style="flex:1;min-width:0;">
-          <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px;">📍 ${p.address||'No address'}</div>
-          ${p.frequency?`<div style="font-size:11px;color:var(--teal);margin-top:3px;">🔄 ${p.frequency}</div>`:''}
-          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;">
-            ${(p.services||[]).slice(0,3).map(s=>`<span style="font-size:10px;background:var(--bg4);color:var(--text2);padding:2px 8px;border-radius:10px;border:1px solid var(--border2);">${s}</span>`).join('')}
-            ${(p.services||[]).length>3?`<span style="font-size:10px;color:var(--text3);">+${p.services.length-3} more</span>`:''}
-          </div>
+      ${propSelectMode ? `<div style="padding:0 10px;flex-shrink:0;">
+        <div style="width:18px;height:18px;border-radius:5px;border:1.5px solid ${isSelected?'var(--green)':'var(--border2)'};
+          background:${isSelected?'var(--green)':'transparent'};display:flex;align-items:center;justify-content:center;">
+          ${isSelected?'<i class="ti ti-check" style="font-size:11px;color:#fff;"></i>':''}
         </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
-          ${flags.length?`<span class="badge badge-red">⚑ ${flags.length}</span>`:`<span class="badge badge-green">✓ Clear</span>`}
-          ${lastVisit?`<span style="font-size:10px;color:var(--text4);">Last: ${lastVisit.day}</span>`:''}
+      </div>` : ''}
+      <div style="width:36px;height:36px;border-radius:8px;background:rgba(63,185,80,.1);display:flex;align-items:center;justify-content:center;margin:10px 0 10px 12px;flex-shrink:0;font-size:13px;font-weight:700;color:var(--green);">${(p.name||'?')[0].toUpperCase()}</div>
+      <div style="flex:1;min-width:0;padding:10px 10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</div>
+          ${flags.length?`<span class="badge badge-red" style="flex-shrink:0;font-size:9px;">⚑ ${flags.length}</span>`:''}
         </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.address||'No address'}${p.frequency?` · <span style="color:var(--teal);">${p.frequency}</span>`:''}</div>
+      </div>
+      <div style="padding-right:12px;flex-shrink:0;color:var(--text3);">
+        <i class="ti ti-chevron-right" style="font-size:14px;"></i>
       </div>
     </div>`;
   }).join('');
@@ -6305,6 +6343,16 @@ function _docToObj(docSnap) {
 
 // ── Re-render whichever tab is currently visible ─────────────────────────
 function _renderActiveTab() {
+  // Update nav count badges
+  var propCount = document.getElementById('nav-prop-count');
+  if (propCount) propCount.textContent = (state.properties||[]).length || '';
+  var crewCount = document.getElementById('nav-crew-count');
+  if (crewCount) crewCount.textContent = (state.crew||[]).length || '';
+  // Update open WO badge
+  var woCount = (state.workOrders||[]).filter(function(w){return w.status==='open';}).length;
+  document.querySelectorAll('[data-tab="workorders"] .n-badge, [data-tab="wo-crew"] .n-badge').forEach(function(el){
+    el.textContent = woCount || ''; el.style.display = woCount ? '' : 'none';
+  });
   var activeScreen = document.querySelector('.screen.active');
   if (!activeScreen) return;
   var tab = activeScreen.id.replace('screen-', '');
@@ -7001,18 +7049,30 @@ function buildDrawerItems(menuItems, activeTab) {
   if (!el) return;
   const isManager = state.role === 'manager';
 
-  let html = menuItems.map(m =>
-    '<button class="drawer-item ' + (m.tab === activeTab ? 'active' : '') + '" onclick="drawerNav(\'' + m.tab + '\')">' +
-    '<span class="d-icon">' + m.icon + '</span>' +
-    '<span class="d-label">' + m.label + '</span></button>'
-  ).join('');
+  // Tabler icon map for mobile drawer
+  const iconMap = {
+    'dashboard':  'ti-layout-dashboard', 'routes':     'ti-route',
+    'schedule':   'ti-calendar-week',    'workorders': 'ti-clipboard-list',
+    'properties': 'ti-home',             'crew':       'ti-users',
+    'inventory':  'ti-package',          'equipment':  'ti-tool',
+    'reports':    'ti-chart-bar',        'attendance': 'ti-calendar-check',
+    'field':      'ti-clipboard-list',   'crew-week':  'ti-calendar-week',
+    'wo-crew':    'ti-clipboard-check'
+  };
+
+  let html = menuItems.map(m => {
+    var icon = iconMap[m.tab] || 'ti-circle';
+    return '<button class="drawer-item ' + (m.tab === activeTab ? 'active' : '') + '" onclick="drawerNav(\'' + m.tab + '\')">' +
+      '<span class="d-icon"><i class="ti ' + icon + '" style="font-size:17px;"></i></span>' +
+      '<span class="d-label">' + m.label + '</span></button>';
+  }).join('');
 
   html += '<div style="height:1px;background:var(--border);margin:8px 4px;"></div>';
-  html += '<button class="drawer-item" onclick="gsLoad();closeDrawer();"><span class="d-icon">↺</span><span class="d-label">Refresh Data</span></button>';
-  html += '<button class="drawer-item" onclick="clearCacheAndReload();closeDrawer();"><span class="d-icon">🔄</span><span class="d-label">Clear Cache</span></button>';
-  html += '<button class="drawer-item" onclick="openInstallInstructions();closeDrawer();"><span class="d-icon">📲</span><span class="d-label">Install App</span></button>';
-  if (isManager) html += '<button class="drawer-item" onclick="openSheetDebug();closeDrawer();"><span class="d-icon">🔍</span><span class="d-label">Fix Crew Data</span></button>';
-  html += '<button class="drawer-item" onclick="' + (isManager ? 'openLoginSheet()' : 'signOut()') + ';closeDrawer();"><span class="d-icon">🔒</span><span class="d-label">' + (isManager ? 'Switch / Sign Out' : 'Sign Out') + '</span></button>';
+  html += '<button class="drawer-item" onclick="gsLoad();closeDrawer();"><span class="d-icon"><i class="ti ti-refresh" style="font-size:17px;"></i></span><span class="d-label">Refresh Data</span></button>';
+  html += '<button class="drawer-item" onclick="clearCacheAndReload();closeDrawer();"><span class="d-icon"><i class="ti ti-trash" style="font-size:17px;"></i></span><span class="d-label">Clear Cache</span></button>';
+  html += '<button class="drawer-item" onclick="openInstallInstructions();closeDrawer();"><span class="d-icon"><i class="ti ti-device-mobile" style="font-size:17px;"></i></span><span class="d-label">Install App</span></button>';
+  if (isManager) html += '<button class="drawer-item" onclick="openSheetDebug();closeDrawer();"><span class="d-icon"><i class="ti ti-settings" style="font-size:17px;"></i></span><span class="d-label">Fix Crew Data</span></button>';
+  html += '<button class="drawer-item" onclick="' + (isManager ? 'openLoginSheet()' : 'signOut()') + ';closeDrawer();"><span class="d-icon"><i class="ti ti-logout" style="font-size:17px;"></i></span><span class="d-label">' + (isManager ? 'Switch / Sign Out' : 'Sign Out') + '</span></button>';
 
   el.innerHTML = html;
 }
@@ -7027,17 +7087,33 @@ function rebuildCrewNav(activeTab) {
   var menu = getCrewMenu();
   activeTab = activeTab || state.currentTab || 'field';
 
+  // Icon map for Tabler icons
+  var iconMap = {
+    'field':      'ti-clipboard-list',
+    'crew-week':  'ti-calendar-week',
+    'routes':     'ti-route',
+    'properties': 'ti-home',
+    'wo-crew':    'ti-clipboard-check',
+    'attendance': 'ti-calendar-check'
+  };
+
   // Desktop sidebar
   var navEl = document.getElementById('nav');
   if (navEl) {
-    var navHtml = '<div id="nav-tabs-wrap">';
+    var navHtml = '<div style="display:flex;align-items:center;gap:8px;padding:12px 12px 14px;border-bottom:1px solid var(--border);margin-bottom:6px;">'
+      + '<div style="width:28px;height:28px;background:rgba(63,185,80,.15);border-radius:7px;display:flex;align-items:center;justify-content:center;">'
+      + '<i class="ti ti-leaf" style="font-size:15px;color:var(--green);"></i></div>'
+      + '<div><div style="font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.2px;">Diamond</div>'
+      + '<div style="font-size:9px;font-weight:600;color:var(--text3);letter-spacing:.8px;text-transform:uppercase;">Landscapes</div></div></div>'
+      + '<div id="nav-tabs-wrap">';
     menu.forEach(function(m) {
+      var icon = iconMap[m.tab] || 'ti-circle';
       navHtml += '<button class="nb' + (m.tab === activeTab ? ' active' : '') + '" onclick="switchTab(\'' + m.tab + '\')" data-tab="' + m.tab + '">'
-        + '<span class="ni">' + m.icon + '</span>'
+        + '<span class="ni"><i class="ti ' + icon + '"></i></span>'
         + '<span class="nl">' + m.label + '</span></button>';
     });
     navHtml += '</div><div id="nav-utils-inner">'
-      + '<button class="nb" onclick="signOut()"><span class="ni">🔒</span><span class="nl">Sign Out</span></button>'
+      + '<button class="nb" onclick="signOut()"><span class="ni"><i class="ti ti-logout"></i></span><span class="nl">Sign Out</span></button>'
       + '</div>';
     navEl.innerHTML = navHtml;
   }
