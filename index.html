@@ -1495,7 +1495,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v4'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v6'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1568,6 +1568,7 @@ function toast(msg='✓ Saved') {
 
 // ─── TABS ─────────────────────────────────────────────────────────────────
 function switchTab(tab) {
+  state.currentTab = tab;
   // Close any open panels when switching tabs
   document.querySelectorAll('.panel.open').forEach(p => p.classList.remove('open'));
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -5207,12 +5208,16 @@ function ls_showWho() {
 }
 
 function ls_showManager() {
+  var b = document.getElementById('install-banner'); if (b) b.style.display = 'none';
   document.getElementById('ls-who').style.display     = 'none';
   document.getElementById('ls-manager').style.display = 'flex';
   ls_mgrBuffer = ''; ls_updateDots('lpd', 0);
 }
 
-function ls_showCrew() { ls_showCrewNames(); }
+function ls_showCrew() {
+  var b = document.getElementById('install-banner'); if (b) b.style.display = 'none';
+  ls_showCrewNames();
+}
 
 function ls_updateDots(prefix, count) {
   for (let i = 1; i <= 4; i++) {
@@ -5481,6 +5486,12 @@ function _listenCollection(name) {
           if (!Array.isArray(p.services))    p.services    = [];
           if (!Array.isArray(p.serviceDays)) p.serviceDays = [];
         });
+      }
+      if (name === 'crew') {
+        // If logged in as crew, rebuild menu in case permissions changed (e.g. canViewRoutes toggled by manager)
+        if (state.role === 'field' && state.loggedInCrewId) {
+          buildDrawerItems(getCrewMenu(), state.currentTab || 'field');
+        }
       }
       if (name === 'workOrders') {
         state.workOrders.forEach(function(w) {
