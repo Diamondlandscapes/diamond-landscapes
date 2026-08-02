@@ -857,7 +857,7 @@ select.inp{cursor:pointer;}
     <div id="screen-routes" class="screen">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
         <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">Routes</div>
-        <button class="btn-sm btn-green" onclick="openAddRoute()">+ New Route</button>
+        <button class="btn-sm btn-green" id="new-route-btn" onclick="openAddRoute()">+ New Route</button>
       </div>
       <div class="pills" id="route-day-pills"></div>
       <div id="routes-list"></div>
@@ -1495,7 +1495,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v1'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v2'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1692,7 +1692,7 @@ function applyRole(r) {
   const drawerLogin = document.getElementById('drawer-login-label');
   if (drawerRole) drawerRole.textContent = r === 'manager' ? 'MANAGER' : 'CREW';
   if (drawerLogin) drawerLogin.textContent = r === 'field' ? 'Sign Out' : 'Switch / Sign Out';
-  buildDrawerItems(r === 'field' ? CREW_MENU : MANAGER_MENU, r === 'field' ? 'field' : 'dashboard');
+  buildDrawerItems(r === 'field' ? getCrewMenu() : MANAGER_MENU, r === 'field' ? 'field' : 'dashboard');
   if (r === 'field') { showCrewBottomNav(); } else { hideCrewBottomNav(); }
 
   if (r === 'field') {
@@ -1831,6 +1831,10 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
 
 // ─── ROUTES ───────────────────────────────────────────────────────────────
 function renderRoutes() {
+  // Show/hide + New Route button based on role
+  var newRouteBtn = document.getElementById('new-route-btn');
+  if (newRouteBtn) newRouteBtn.style.display = state.role === 'manager' ? '' : 'none';
+
   // day pills
   const pills = document.getElementById('route-day-pills');
   pills.innerHTML = DAYS_OF_WEEK.map(d =>
@@ -1840,7 +1844,7 @@ function renderRoutes() {
   const filtered = state.routes.filter(r => r.day === state.routeDay);
   const el = document.getElementById('routes-list');
   if (!filtered.length) {
-    el.innerHTML = `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">No routes for ${state.routeDay}.<br/>Tap + New Route to create one.</div>`;
+    el.innerHTML = `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">No routes for ${state.routeDay}.</div>`;
     return;
   }
   el.innerHTML = filtered.map(r => {
@@ -1951,7 +1955,6 @@ function openRouteDetail(id) {
               <button onclick="event.stopPropagation();moveStop('${r.id}','${s.propId}',1)" ${i===stops.length-1?'disabled':''} style="background:none;border:1px solid var(--border2);border-radius:6px;color:var(--text3);font-size:11px;width:24px;height:24px;cursor:pointer;padding:0;">↓</button>
               <button onclick="event.stopPropagation();removeStop('${r.id}','${s.propId}')" style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);border-radius:6px;color:var(--red);font-size:11px;width:24px;height:24px;cursor:pointer;padding:0;">✕</button>
             `:''}
-            <span style="color:var(--text3);font-size:16px;">›</span>
           </div>
         </div>
         <div class="stop-body" id="stop-${id}-${i}">
@@ -1973,10 +1976,11 @@ function openRouteDetail(id) {
     });
   }
 
-  html += `<div style="margin-top:12px;"><button class="btn btn-red" onclick="deleteRoute('${r.id}')" style="font-size:13px;">Delete Route</button></div>`;
+  var canEdit = state.role === 'manager';
+  html += canEdit ? `<div style="margin-top:12px;"><button class="btn btn-red" onclick="deleteRoute('${r.id}')" style="font-size:13px;">Delete Route</button></div>` : '';
   document.getElementById('rp-body').innerHTML = html;
   document.getElementById('route-panel').classList.add('open');
-  if (state.role === 'manager') initRouteDragDrop(r.id);
+  if (canEdit) initRouteDragDrop(r.id);
 }
 
 function toggleStop(id) {
@@ -2054,6 +2058,18 @@ function openCrewDetail(id) {
           <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">LOGIN PIN ${c.pin?'<span style="color:var(--green);">● Set</span>':'<span style="color:var(--red);">● Not set</span>'}</div>
           <input class="inp" id="ce-pin-${id}" placeholder="New 4-digit PIN" type="tel" maxlength="4" inputmode="numeric" style="letter-spacing:6px;font-weight:800;font-size:18px;"/>
           <div style="font-size:11px;color:var(--text3);margin-top:4px;">${c.pin?'Leave blank to keep current PIN.':'Leave blank for no PIN.'}</div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg3);border-radius:10px;padding:12px 14px;">
+          <div>
+            <div style="font-size:13px;font-weight:700;">🗺️ View All Routes</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px;">Allow this crew member to view all routes (read-only)</div>
+          </div>
+          <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;">
+            <input type="checkbox" id="ce-viewroutes-${id}" ${c.canViewRoutes?'checked':''} style="opacity:0;width:0;height:0;"/>
+            <span onclick="this.previousElementSibling.click()" style="position:absolute;cursor:pointer;inset:0;background:${c.canViewRoutes?'var(--green3)':'var(--bg4)'};border-radius:24px;border:1px solid var(--border2);transition:.2s;">
+              <span style="position:absolute;height:18px;width:18px;left:${c.canViewRoutes?'22px':'3px'};bottom:2px;background:#fff;border-radius:50%;transition:.2s;"></span>
+            </span>
+          </label>
         </div>
         <button class="btn btn-green" onclick="saveCrewEdit('${id}')" style="font-size:13px;">Save Changes</button>
         <button class="btn btn-outline" onclick="toggleCrewEdit('${id}')" style="font-size:13px;">Cancel</button>
@@ -2157,6 +2173,7 @@ function saveCrewEdit(id) {
   c.name  = document.getElementById('ce-name-'+id)?.value.trim()  || c.name;
   c.phone = document.getElementById('ce-phone-'+id)?.value.trim() || '';
   c.role  = document.getElementById('ce-role-'+id)?.value         || c.role;
+  c.canViewRoutes = document.getElementById('ce-viewroutes-'+id)?.checked || false;
   const pinVal = (document.getElementById('ce-pin-'+id)?.value||'').trim();
   if (pinVal) {
     if (pinVal.length!==4||!/^\d{4}$/.test(pinVal)) { toast('PIN must be 4 digits'); return; }
@@ -2164,7 +2181,12 @@ function saveCrewEdit(id) {
     if (dup) { toast('PIN already used by '+dup.name); return; }
     c.pin = pinVal;
   }
-  saveAndSync('crew',c); openCrewDetail(id); renderCrew(); toast('Saved ✓');
+  saveAndSync('crew',c);
+  // If this is the currently logged-in crew member, rebuild their menu live
+  if (state.loggedInCrewId === id && state.role === 'field') {
+    buildDrawerItems(getCrewMenu(), state.currentTab || 'field');
+  }
+  openCrewDetail(id); renderCrew(); toast('Saved ✓');
 }
 
 function assignCrewToRoute(crewId) {
@@ -6062,6 +6084,25 @@ const CREW_MENU = [
   { tab:'attendance',  icon:'📅', label:'Attendance' },
 ];
 
+// Returns the menu for the currently logged-in crew member
+// Adds Routes (view-only) if the crew member has canViewRoutes permission
+function getCrewMenu() {
+  if (state.role !== 'field') return CREW_MENU;
+  var crew = (state.crew||[]).find(function(c){ return c.id === state.loggedInCrewId; });
+  if (crew && crew.canViewRoutes) {
+    // Insert Routes after My Week
+    return [
+      { tab:'field',      icon:'📋', label:'My Jobs' },
+      { tab:'crew-week',  icon:'📅', label:'My Week' },
+      { tab:'routes',     icon:'🗺️', label:'Routes' },
+      { tab:'properties', icon:'🏡', label:'Properties' },
+      { tab:'wo-crew',    icon:'📋', label:'Work Orders' },
+      { tab:'attendance', icon:'📅', label:'Attendance' },
+    ];
+  }
+  return CREW_MENU;
+}
+
 function buildDrawerItems(menuItems, activeTab) {
   const el = document.getElementById('drawer-items');
   if (!el) return;
@@ -6097,7 +6138,7 @@ function toggleDrawer() {
     closeDrawer();
   } else {
     const activeTab = document.querySelector('.drawer-item.active')?.getAttribute('onclick')?.match(/'(\w+)'/)?.[1] || 'dashboard';
-    const menu = state.role === 'field' ? CREW_MENU : MANAGER_MENU;
+    const menu = state.role === 'field' ? getCrewMenu() : MANAGER_MENU;
     buildDrawerItems(menu, activeTab);
     drawer.classList.add('open');
     if (overlay) overlay.classList.add('open');
