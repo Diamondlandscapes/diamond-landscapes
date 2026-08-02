@@ -1501,7 +1501,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v10'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v11'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2814,12 +2814,12 @@ window.sca_submit = async function() {
   save();
   closeStopCompletion();
 
-  // Refresh the route panel
+  // Refresh whichever route view is open
   if (document.getElementById('route-panel')?.classList.contains('open')) {
     openRouteDetail(c.routeId);
-  } else {
-    loadFieldView();
   }
+  if (document.getElementById('cw-route-content')) renderCwDayContent();
+  if (document.getElementById('field-stops')) loadFieldView();
 
   var summary = c.services.length + ' service' + (c.services.length!==1?'s':'') + ' logged';
   if (c.newFlags.length) summary += ', ' + c.newFlags.length + ' flag' + (c.newFlags.length!==1?'s':'') + ' created';
@@ -7994,8 +7994,9 @@ function renderCwDayContent() {
         + '</div>'
         + '<div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">'
         + (s.completed ? '<span class="badge badge-green">✓ Done</span>' : '<span class="badge badge-blue">Pending</span>')
-        + '<button onclick="markWeekStopDone(\'' + route.id + '\',\'' + s.propId + '\',new Date(\'' + dateStr + 'T12:00:00\'))" style="font-size:11px;background:' + (s.completed?'rgba(248,113,113,.15)':'rgba(74,222,128,.15)') + ';color:' + (s.completed?'var(--red)':'var(--green)') + ';border:1px solid ' + (s.completed?'rgba(248,113,113,.3)':'rgba(74,222,128,.3)') + ';border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap;">'
-        + (s.completed ? '↩ Undo' : '✓ Done') + '</button>'
+        + (s.completed
+          ? '<button onclick="markWeekStopDone(\'' + route.id + '\',\'' + s.propId + '\',new Date(\'' + dateStr + 'T12:00:00\'))" style="font-size:11px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap;">↩ Undo</button>'
+          : '<button onclick="openStopCompletion(\'' + route.id + '\',\'' + s.propId + '\')" style="font-size:11px;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap;">📷 Complete</button>')
         + '</div>'
         + '</div></div>';
     });
@@ -10956,37 +10957,25 @@ function getOrCreateWeekInstance(route, date) {
 }
 
 function markWeekStopDone(routeId, propId, date) {
+  // This function now only handles UNDO (reopening a completed stop)
+  // New completions go through openStopCompletion()
   const route = (state.routes || []).find(function(r) { return r.id === routeId; });
   if (!route) return;
-
   const instance = getOrCreateWeekInstance(route, date);
   const stop = instance.stops.find(function(s) { return s.propId === propId; });
-  if (!stop) return;
-
-  stop.completed = !stop.completed;
-  if (stop.completed) {
-    stop.completedAt = new Date().toLocaleString();
-    // Update property last/next service dates
-    const prop = (state.properties || []).find(function(p) { return p.id === propId; });
-    if (prop) {
-      const today = new Date();
-      prop.lastServiceDate = today.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-      const days = FREQ_DAYS[prop.frequency];
-      if (days) {
-        const next = new Date(today.getTime() + days*24*60*60*1000);
-        prop.nextServiceDate = next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-      }
-      saveAndSync('properties', prop);
-    }
-  } else {
-    stop.completedAt = '';
-  }
-
+  if (!stop || !stop.completed) return;
+  if (!confirm('Reopen this stop? It will be marked incomplete.')) return;
+  stop.completed          = false;
+  stop.completedAt        = '';
+  stop.completedBy        = '';
+  stop.completedServices  = [];
+  stop.completedNotes     = '';
+  stop.completedPhoto     = '';
   save();
-  // Refresh current view
+  saveAndSync('routes', route);
   if (document.getElementById('cw-route-content')) renderCwDayContent();
   if (document.getElementById('field-stops')) loadFieldView();
-  toast(stop.completed ? '✓ Job complete' : 'Reopened');
+  toast('Stop reopened');
 }
 
 function getWeekInstanceSummary(route, date) {
