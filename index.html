@@ -1554,7 +1554,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v24'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v25'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2284,8 +2284,9 @@ function openCrewDetail(id) {
   document.getElementById('cp-title').textContent = c.name;
 
   const today      = new Date().toLocaleDateString('en-US',{weekday:'long'});
+  const todayISO2  = new Date().toISOString().slice(0,10);
   const allRoutes  = (state.routes||[]).filter(r => r.crewId === id);
-  const todayRoute = allRoutes.find(r => r.day === today);
+  const todayRoute = allRoutes.find(r => r.date === todayISO2) || allRoutes.find(r => r.day === today);
   const todayStops = todayRoute?.stops?.length || 0;
   const todayDone  = todayRoute?.stops?.filter(s=>s.completed).length || 0;
   const totalDone  = allRoutes.reduce((a,r)=>a+(r.stops?.filter(s=>s.completed).length||0),0);
@@ -8696,7 +8697,7 @@ function buildCwCalendar() {
     const dayName  = ROUTE_DAYS[date.getDay()];
     const isToday  = date.toDateString() === todayStr;
     const dateStr  = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
-    const route    = myRoutes.find(r => r.day === dayName);
+    const route    = myRoutes.find(r => r.date === dateStr) || (myRoutes.some(r => r.date) ? null : myRoutes.find(r => r.day === dayName));
     const hasRoute = !!route;
     const isSelected = state.crewWeekDay === dateStr;
     const weekSummary = hasRoute ? getWeekInstanceSummary(route, date) : {done:0, total:0};
