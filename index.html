@@ -1170,11 +1170,11 @@ select.inp{cursor:pointer;}
     <div class="sheet">
       <div class="sheet-title">New Route</div>
       <div style="display:flex;flex-direction:column;gap:10px;">
-        <input class="inp" id="nr-name" placeholder="Route name (e.g. North Zone A)"/>
-        <select class="inp" id="nr-day">
-          <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
-          <option>Thursday</option><option>Friday</option><option>Saturday</option>
-        </select>
+        <input class="inp" id="nr-name" placeholder="Route name (e.g. 8/11 T1)"/>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">DATE</div>
+          <input type="date" class="inp" id="nr-date" style="width:100%;"/>
+        </div>
         <select class="inp" id="nr-crew">
           <option value="">Assign crew member...</option>
         </select>
@@ -1502,7 +1502,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v15'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v16'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1518,6 +1518,7 @@ let state = {
   routeWeeks: {},
   eqCategory: 'All',
   routeDay: 'Monday',
+  routeDate: new Date().toISOString().slice(0,10),
   selectedProps: [],
 };
 
@@ -1834,16 +1835,46 @@ function renderRoutes() {
   var newRouteBtn = document.getElementById('new-route-btn');
   if (newRouteBtn) newRouteBtn.style.display = state.role === 'manager' ? '' : 'none';
 
-  // day pills
-  const pills = document.getElementById('route-day-pills');
-  pills.innerHTML = DAYS_OF_WEEK.map(d =>
-    `<button class="pill ${d===state.routeDay?'active':''}" onclick="setRouteDay('${d}')">${d.slice(0,3)}</button>`
-  ).join('');
+  // Initialize selected date to today if not set
+  if (!state.routeDate) {
+    state.routeDate = new Date().toISOString().slice(0,10);
+  }
 
-  const filtered = state.routes.filter(r => r.day === state.routeDay);
-  const el = document.getElementById('routes-list');
+  // Date navigation bar — replaces day-of-week pills
+  var pills = document.getElementById('route-day-pills');
+  if (pills) {
+    // Show ± 3 days around selected date as quick nav
+    var selDate  = new Date(state.routeDate + 'T12:00:00');
+    var btnHtml  = '';
+    for (var offset = -1; offset <= 5; offset++) {
+      var d    = new Date(selDate);
+      d.setDate(d.getDate() - (selDate.getDay() === 0 ? 1 : 0) + offset); // rough week view
+      d = new Date(state.routeDate + 'T12:00:00');
+      d.setDate(d.getDate() + offset - 1);
+      var ds   = d.toISOString().slice(0,10);
+      var lbl  = d.toLocaleDateString('en-US',{weekday:'short',month:'numeric',day:'numeric'});
+      var isActive = ds === state.routeDate;
+      btnHtml += '<button class="pill' + (isActive?' active':'') + '" onclick="setRouteDate(\'' + ds + '\')">' + lbl + '</button>';
+    }
+    // Also show a date input for jumping to any date
+    btnHtml += '<input type="date" value="' + state.routeDate + '" onchange="setRouteDate(this.value)" '
+      + 'style="background:var(--bg3);border:1px solid var(--border2);border-radius:20px;padding:4px 10px;color:var(--text);font-size:12px;cursor:pointer;"/>';
+    pills.innerHTML = btnHtml;
+  }
+
+  var filtered = state.routes.filter(function(r) {
+    // Match by specific date field first, fall back to day-of-week for old routes
+    if (r.date) return r.date === state.routeDate;
+    // Legacy: match day name to selected date's day of week
+    var d = new Date(state.routeDate + 'T12:00:00');
+    var dayName = d.toLocaleDateString('en-US',{weekday:'long'});
+    return r.day === dayName;
+  });
+
+  var el = document.getElementById('routes-list');
   if (!filtered.length) {
-    el.innerHTML = `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">No routes for ${state.routeDay}.</div>`;
+    var dateLabel = new Date(state.routeDate + 'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
+    el.innerHTML = '<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">No routes for ' + dateLabel + '.</div>';
     return;
   }
   el.innerHTML = filtered.map(r => {
@@ -1868,7 +1899,45 @@ function renderRoutes() {
   }).join('');
 }
 
-function setRouteDay(d) { state.routeDay = d; renderRoutes(); }
+// ── One-time migration: extract date from route name and set date field ──
+// Run from console: migrateRouteDates()
+function migrateRouteDates() {
+  var year = new Date().getFullYear();
+  var migrated = 0;
+  state.routes.forEach(function(r) {
+    if (r.date) return; // already has date
+    // Parse "8/3 T1", "8/4 T2" etc
+    var m = (r.name||'').match(/^(\d{1,2})\/(\d{1,2})/);
+    if (m) {
+      var month = m[1].padStart(2,'0');
+      var day   = m[2].padStart(2,'0');
+      r.date = year + '-' + month + '-' + day;
+      // Keep day field for backward compat
+      var d = new Date(r.date + 'T12:00:00');
+      r.day = d.toLocaleDateString('en-US',{weekday:'long'});
+      gsSave('routes', r);
+      migrated++;
+    }
+  });
+  save();
+  toast('Migrated ' + migrated + ' routes with specific dates');
+  renderRoutes();
+  return migrated + ' routes migrated';
+}
+
+function setRouteDate(d) { state.routeDate = d; renderRoutes(); }
+function setRouteDay(d) { // legacy compat
+  var today = new Date();
+  var days  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var target = days.indexOf(d);
+  if (target === -1) return;
+  var curr = today.getDay();
+  var diff = target - curr;
+  var date = new Date(today);
+  date.setDate(today.getDate() + diff);
+  state.routeDate = date.toISOString().slice(0,10);
+  renderRoutes();
+}
 
 function openRouteDetail(id) {
   const r = state.routes.find(x => x.id === id);
@@ -3130,6 +3199,10 @@ function openAddRoute() {
   // Store selected IDs reference so saveRoute can access it
   document.getElementById('add-route-overlay')._selectedIds = _selectedIds;
 
+  // Pre-fill date with currently selected date or today
+  var dateInp = document.getElementById('nr-date');
+  if (dateInp) dateInp.value = state.routeDate || new Date().toISOString().slice(0,10);
+
   openOverlay('add-route-overlay');
 }
 
@@ -3137,12 +3210,16 @@ function saveRoute() {
   const name = document.getElementById('nr-name').value.trim();
   if (!name) { toast('Enter a route name'); return; }
 
+  const dateVal = document.getElementById('nr-date').value;
+  if (!dateVal) { toast('Select a date for this route'); return; }
+  const dayName = new Date(dateVal + 'T12:00:00').toLocaleDateString('en-US',{weekday:'long'});
+
   // Get selected IDs from the overlay's stored reference
   const overlay = document.getElementById('add-route-overlay');
   const selectedIds = overlay._selectedIds ? [...overlay._selectedIds] : [];
 
   const newRoute = {
-    id: uid(), name, day: document.getElementById('nr-day').value,
+    id: uid(), name, date: dateVal, day: dayName,
     crewId: document.getElementById('nr-crew').value,
     status: 'Scheduled', optimized: false,
     stops: selectedIds.map(pid => ({ propId: pid, completed: false, completedServices: [], photos: [], notes:'' }))
@@ -3153,6 +3230,7 @@ function saveRoute() {
   closeOverlay('add-route-overlay');
   document.getElementById('nr-name').value = '';
   document.getElementById('nr-prop-search').value = '';
+  state.routeDate = dateVal; // jump to the new route's date
   renderRoutes(); renderDashboard();
   toast('Route created with ' + selectedIds.length + ' stop' + (selectedIds.length !== 1 ? 's' : '') + ' ✓');
 }
@@ -4713,14 +4791,15 @@ function loadFieldView() {
 
   // build day pills — show days that have routes for this crew
   const today    = new Date().toLocaleDateString('en-US',{weekday:'long'});
+  const todayISO = new Date().toISOString().slice(0,10);
   const myRoutes = state.routes.filter(r => r.crewId === crewId);
 
   // hide day pills — field view always shows today only
   const pillsEl = document.getElementById('field-day-pills');
   if (pillsEl) pillsEl.style.display = 'none';
 
-  // only show today's assigned route
-  const route = myRoutes.find(r => r.day === today);
+  // Match by specific date first (new model), fall back to day name (legacy)
+  const route = myRoutes.find(r => r.date === todayISO) || myRoutes.find(r => r.day === today);
   if (!route) {
     const dueWOsHtml = buildDueWOsHTML(crewId);
     el.innerHTML = dueWOsHtml +
@@ -8103,7 +8182,8 @@ function renderCwDayContent() {
   const dayName   = state.crewWeekDayName || todayName;
   const dateStr   = state.crewWeekDay;
   const myRoutes  = (state.routes||[]).filter(r => r.crewId === crewId);
-  const route     = myRoutes.find(r => r.day === dayName);
+  // Match by specific date first (new model), fall back to day name (legacy)
+  const route = myRoutes.find(r => r.date === dateStr) || myRoutes.find(r => r.day === dayName);
   const el        = document.getElementById('cw-route-content');
   if (!el) return;
 
