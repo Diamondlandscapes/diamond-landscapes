@@ -884,7 +884,8 @@ select.inp{cursor:pointer;}
           </div>
         </div>
       </div>
-      <input class="inp" id="prop-search" placeholder="🔍  Search properties..." oninput="renderProperties()" style="margin-bottom:12px;"/>
+      <input class="inp" id="prop-search" placeholder="🔍  Search properties..." oninput="renderProperties()" style="margin-bottom:6px;"/>
+      <div id="prop-count" style="font-size:11px;color:var(--text4);margin-bottom:10px;"></div>
       <div id="properties-list"></div>
     </div>
 
@@ -902,6 +903,7 @@ select.inp{cursor:pointer;}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
         <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">Inventory</div>
         <div style="display:flex;gap:8px;">
+          <button class="btn-sm" onclick="openInvSpendReport()" style="background:rgba(250,204,21,.12);color:var(--yellow);border:1px solid rgba(250,204,21,.3);">📊 Report</button>
           <button class="btn-sm" onclick="openImport('inventory')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">⬆ Import</button>
           <button class="btn-sm btn-green" onclick="openAddInventory()">+ Add Item</button>
         </div>
@@ -1242,6 +1244,7 @@ select.inp{cursor:pointer;}
           <input class="inp" id="ni-unit" placeholder="Unit (bags, units...)"/>
         </div>
         <input class="inp" id="ni-low" placeholder="Low stock alert at..." type="number" min="0"/>
+        <input class="inp" id="ni-price" placeholder="Unit price (e.g. 2.50)" type="number" min="0" step="0.01"/>
         <textarea class="inp" id="ni-notes" rows="2" placeholder="Notes (optional)..."></textarea>
         <div>
           <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">ITEM PHOTO <span style="font-weight:400;color:var(--text4);">(optional)</span></div>
@@ -1490,7 +1493,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-07-13-v6'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-07-13-v8'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2328,14 +2331,17 @@ function renderProperties() {
   const bulkBar = document.getElementById('prop-bulk-bar');
   if (bulkBar && state.role !== 'manager') bulkBar.style.display = 'none';
   const q = document.getElementById('prop-search')?.value?.toLowerCase() || '';
-  const filtered = state.properties.filter(p =>
-    p.name.toLowerCase().includes(q) || (p.address||'').toLowerCase().includes(q)
-  );
+  const filtered = state.properties
+    .filter(p => p.name.toLowerCase().includes(q) || (p.address||'').toLowerCase().includes(q))
+    .sort((a,b) => (a.name||'').localeCompare(b.name||''));
   const el = document.getElementById('properties-list');
   if (!filtered.length) {
     el.innerHTML = `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">${q?'No results found':'No properties yet. Tap + Add to start.'}</div>`;
     return;
   }
+  // Count display
+  const countEl = document.getElementById('prop-count');
+  if (countEl) countEl.textContent = filtered.length + ' of ' + state.properties.length + ' properties';
   el.innerHTML = filtered.map(p => {
     const flags = state.flags.filter(f => f.propId === p.id && !f.resolved);
     const lastVisit = state.routes.filter(r => r.stops?.some(s=>s.propId===p.id&&s.completed))
@@ -3302,6 +3308,10 @@ function renderInventory() {
           // Name + notes
           + '<div style="flex:1;min-width:0;">'
             + '<div style="font-size:13px;font-weight:700;color:'+(low?'var(--red)':'var(--text)')+';">'+i.name+(low?' ⚠':'')+'</div>'
+            + '<div style="display:flex;gap:8px;align-items:center;margin-top:2px;">'
+              + (i.category?'<span style="font-size:10px;color:var(--text4);">'+i.category+'</span>':'')
+              + (i.unitPrice && +i.unitPrice > 0 ? '<span style="font-size:10px;color:var(--teal);font-weight:700;">$'+(+i.unitPrice).toFixed(2)+'/'+((i.unit||'unit'))+'</span>' : '')
+            + '</div>'
             + (i.notes?'<div style="font-size:11px;color:var(--text4);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+i.notes+'</div>':'')
           + '</div>'
           // Stock bar + qty
@@ -3377,7 +3387,189 @@ function wireInvSearch() {
   };
 }
 
-// Show inventory photo full-size
+// ── Inventory Spend Report ────────────────────────────────────────────────
+function openInvSpendReport() {
+  var ex = document.getElementById('inv-spend-report'); if(ex)ex.remove();
+
+  // Default to current month
+  var now = new Date();
+  var defaultFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
+  var lastDay = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+  var defaultTo = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + lastDay;
+
+  var sheet = document.createElement('div');
+  sheet.id = 'inv-spend-report';
+  sheet.style.cssText = 'position:fixed;inset:0;z-index:3000;background:var(--bg);overflow-y:auto;';
+  sheet.innerHTML = '<div style="max-width:680px;margin:0 auto;padding:20px 16px 80px;">'
+    + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">'
+      + '<button onclick="document.getElementById(\'inv-spend-report\').remove()" style="padding:8px 14px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);color:var(--text);cursor:pointer;font-size:13px;">← Back</button>'
+      + '<div style="font-size:18px;font-weight:800;">📊 Inventory Spend Report</div>'
+    + '</div>'
+    + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;background:var(--bg2);border-radius:12px;padding:12px;">'
+      + '<div style="font-size:12px;font-weight:700;color:var(--text3);">DATE RANGE</div>'
+      + '<input type="date" id="isr-from" value="'+defaultFrom+'" style="flex:1;min-width:120px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:7px 10px;color:var(--text);font-size:13px;"/>'
+      + '<span style="color:var(--text4);font-size:12px;">to</span>'
+      + '<input type="date" id="isr-to" value="'+defaultTo+'" style="flex:1;min-width:120px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:7px 10px;color:var(--text);font-size:13px;"/>'
+      + '<button id="isr-run" style="padding:8px 16px;background:linear-gradient(135deg,var(--green3),var(--green2));border:none;border-radius:8px;color:#fff;font-weight:700;font-size:13px;cursor:pointer;">Run</button>'
+    + '</div>'
+    + '<div id="isr-results"></div>'
+  + '</div>';
+
+  document.body.appendChild(sheet);
+
+  function runReport() {
+    var fromStr = document.getElementById('isr-from').value;
+    var toStr   = document.getElementById('isr-to').value;
+    if (!fromStr || !toStr) { toast('Select a date range'); return; }
+
+    var fromDate = new Date(fromStr + 'T00:00:00');
+    var toDate   = new Date(toStr   + 'T23:59:59');
+
+    // Scan all completed WOs in range that have partsUsed
+    var wos = (state.workOrders||[]).filter(function(w) {
+      if (w.status !== 'completed') return false;
+      if (!w.partsUsed || !w.partsUsed.length) return false;
+      var d = parseSafeDate(w.completedOn || w.dateCompleted || '');
+      return d && d >= fromDate && d <= toDate;
+    });
+
+    var resultsEl = document.getElementById('isr-results');
+    if (!wos.length) {
+      resultsEl.innerHTML = '<div style="text-align:center;color:var(--text4);padding:40px;font-size:14px;">No parts used in this date range.</div>';
+      return;
+    }
+
+    // Aggregate by item
+    var itemMap = {}; // itemId -> {name, unit, unitPrice, totalQty, totalCost, wos:[]}
+    wos.forEach(function(wo) {
+      (wo.partsUsed||[]).forEach(function(p) {
+        if (!itemMap[p.itemId]) {
+          itemMap[p.itemId] = {
+            name:      p.name,
+            unit:      p.unit || 'units',
+            unitPrice: p.unitPrice || 0,
+            totalQty:  0,
+            totalCost: 0,
+            wos:       []
+          };
+        }
+        var entry = itemMap[p.itemId];
+        entry.totalQty  += p.qty;
+        entry.totalCost += p.totalCost || ((+(p.unitPrice)||0) * p.qty);
+        // Keep most recent price for display
+        if (p.unitPrice) entry.unitPrice = p.unitPrice;
+        entry.wos.push({
+          woNumber: wo.woNumber || wo.id.slice(-4),
+          ownerName: wo.ownerName || '',
+          date: wo.completedOn || wo.dateCompleted || '',
+          qty: p.qty,
+          cost: p.totalCost || ((+(p.unitPrice)||0)*p.qty)
+        });
+      });
+    });
+
+    var items = Object.values(itemMap).sort(function(a,b){ return b.totalCost - a.totalCost; });
+    var grandTotal = items.reduce(function(s,i){ return s + i.totalCost; }, 0);
+    var totalWOs = wos.length;
+
+    // Summary cards
+    var fromLabel = fromDate.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    var toLabel   = toDate.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+
+    var html = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px;">'
+      + '<div style="background:var(--bg2);border-radius:12px;padding:14px;text-align:center;border:1px solid var(--border);">'
+        + '<div style="font-size:26px;font-weight:800;color:var(--green);">$'+grandTotal.toFixed(2)+'</div>'
+        + '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:.5px;margin-top:4px;">TOTAL SPEND</div>'
+      + '</div>'
+      + '<div style="background:var(--bg2);border-radius:12px;padding:14px;text-align:center;border:1px solid var(--border);">'
+        + '<div style="font-size:26px;font-weight:800;color:var(--blue);">'+items.length+'</div>'
+        + '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:.5px;margin-top:4px;">ITEMS USED</div>'
+      + '</div>'
+      + '<div style="background:var(--bg2);border-radius:12px;padding:14px;text-align:center;border:1px solid var(--border);">'
+        + '<div style="font-size:26px;font-weight:800;color:var(--yellow);">'+totalWOs+'</div>'
+        + '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:.5px;margin-top:4px;">WORK ORDERS</div>'
+      + '</div>'
+    + '</div>';
+
+    html += '<div style="font-size:12px;color:var(--text4);margin-bottom:12px;">'+fromLabel+' – '+toLabel+' · Sorted by spend</div>';
+
+    // Item breakdown
+    items.forEach(function(item) {
+      html += '<div style="background:var(--bg2);border-radius:12px;padding:14px;margin-bottom:10px;border:1px solid var(--border);">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
+          + '<div>'
+            + '<div style="font-size:14px;font-weight:800;">'+item.name+'</div>'
+            + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">'+item.totalQty+' '+item.unit+' used · $'+item.unitPrice.toFixed(2)+'/'+item.unit+'</div>'
+          + '</div>'
+          + '<div style="text-align:right;">'
+            + '<div style="font-size:18px;font-weight:800;color:var(--green);">$'+item.totalCost.toFixed(2)+'</div>'
+          + '</div>'
+        + '</div>'
+        // WO breakdown
+        + '<div style="border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:4px;">'
+        + item.wos.map(function(w) {
+            return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;">'
+              + '<span style="color:var(--text3);">#'+w.woNumber+(w.ownerName?' · '+w.ownerName:'')+' · '+w.date+'</span>'
+              + '<span style="color:var(--text2);">'+w.qty+' used'+(w.cost>0?' · $'+w.cost.toFixed(2):'')+'</span>'
+            + '</div>';
+          }).join('')
+        + '</div>'
+      + '</div>';
+    });
+
+    // Export button
+    html += '<button onclick="exportInvSpendPDF()" class="btn btn-green" style="width:100%;margin-top:8px;">📄 Export PDF</button>';
+
+    resultsEl.innerHTML = html;
+    // Store for PDF export
+    window._isrData = { items:items, grandTotal:grandTotal, totalWOs:totalWOs, fromLabel:fromLabel, toLabel:toLabel };
+  }
+
+  document.getElementById('isr-run').addEventListener('click', runReport);
+  // Auto-run for current month
+  runReport();
+}
+
+function exportInvSpendPDF() {
+  var d = window._isrData;
+  if (!d) return;
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#f9fafb;overflow-y:auto;padding:24px;';
+  overlay.innerHTML = '<div style="max-width:680px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;">'
+    + '<div style="text-align:right;font-size:11px;color:#6b7280;margin-bottom:16px;">📱 iPhone: tap Share → Print to save as PDF &nbsp;|&nbsp; 💻 Desktop: Ctrl+P</div>'
+    + '<div style="font-size:11px;font-weight:700;letter-spacing:2px;color:#6b7280;text-transform:uppercase;margin-bottom:4px;">INVENTORY SPEND REPORT</div>'
+    + '<div style="font-size:24px;font-weight:800;color:#111;margin-bottom:4px;">Diamond Landscapes</div>'
+    + '<div style="font-size:12px;color:#6b7280;margin-bottom:20px;">'+d.fromLabel+' – '+d.toLabel+' · Internal Use Only</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px;">'
+      + '<div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#16a34a;">$'+d.grandTotal.toFixed(2)+'</div><div style="font-size:10px;color:#6b7280;font-weight:700;letter-spacing:1px;margin-top:4px;">TOTAL SPEND</div></div>'
+      + '<div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#2563eb;">'+d.items.length+'</div><div style="font-size:10px;color:#6b7280;font-weight:700;letter-spacing:1px;margin-top:4px;">ITEMS USED</div></div>'
+      + '<div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#d97706;">'+d.totalWOs+'</div><div style="font-size:10px;color:#6b7280;font-weight:700;letter-spacing:1px;margin-top:4px;">WORK ORDERS</div></div>'
+    + '</div>'
+    + d.items.map(function(item) {
+        return '<div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px;margin-bottom:10px;">'
+          + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
+            + '<div><div style="font-size:14px;font-weight:800;color:#111;">'+item.name+'</div>'
+            + '<div style="font-size:11px;color:#6b7280;margin-top:2px;">'+item.totalQty+' '+item.unit+' · $'+item.unitPrice.toFixed(2)+'/'+item.unit+'</div></div>'
+            + '<div style="font-size:18px;font-weight:800;color:#16a34a;">$'+item.totalCost.toFixed(2)+'</div>'
+          + '</div>'
+          + '<div style="border-top:1px solid #f3f4f6;padding-top:8px;">'
+          + item.wos.map(function(w) {
+              return '<div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:3px;">'
+                + '<span>#'+w.woNumber+(w.ownerName?' · '+w.ownerName:'')+' · '+w.date+'</span>'
+                + '<span>'+w.qty+' used'+(w.cost>0?' · $'+w.cost.toFixed(2):'')+'</span>'
+              + '</div>';
+            }).join('')
+          + '</div></div>';
+      }).join('')
+    + '<div style="text-align:center;color:#9ca3af;font-size:11px;margin-top:20px;">Diamond Landscapes · Confidential Internal Report</div>'
+  + '</div>';
+  var closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕ Close';
+  closeBtn.style.cssText = 'position:fixed;top:16px;right:16px;z-index:10000;padding:8px 16px;background:#111;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;';
+  closeBtn.onclick = function(){overlay.remove();closeBtn.remove();};
+  document.body.appendChild(overlay);
+  document.body.appendChild(closeBtn);
+}
 window._showInvPhoto = function(id) {
   var item = (state.inventory||[]).find(function(i){return i.id===id;});
   if (!item || !item.photo) return;
@@ -3410,6 +3602,7 @@ function openEditInv(id) {
     +'<input class="inp" id="ei-unit" value="'+(item.unit||'units').replace(/"/g,'&quot;')+'" placeholder="Unit"/>'
     +'</div>'
     +'<input class="inp" id="ei-low" type="number" min="0" value="'+(item.lowAlert||5)+'" placeholder="Low stock alert at..."/>'
+    +'<input class="inp" id="ei-price" type="number" min="0" step="0.01" value="'+(item.unitPrice||'')+'" placeholder="Unit price (e.g. 2.50)"/>'
     +'<textarea class="inp" id="ei-notes" rows="2" placeholder="Notes (optional)...">'+(item.notes||'')+'</textarea>'
     +'<div>'
       +'<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">ITEM PHOTO</div>'
@@ -3455,6 +3648,7 @@ function saveEditInv(id) {
   item.qty      =document.getElementById('ei-qty').value||'0';
   item.unit     =document.getElementById('ei-unit').value.trim()||'units';
   item.lowAlert =document.getElementById('ei-low').value||'5';
+  item.unitPrice=document.getElementById('ei-price').value||'0';
   item.notes    =document.getElementById('ei-notes').value.trim();
   document.getElementById('edit-inv-sheet').remove();
 
@@ -3529,12 +3723,13 @@ function saveInventory() {
     qty:document.getElementById('ni-qty').value||'0',
     unit:document.getElementById('ni-unit').value||'units',
     lowAlert:document.getElementById('ni-low').value||'5',
+    unitPrice:document.getElementById('ni-price').value||'0',
     notes:document.getElementById('ni-notes').value.trim(),
     photo:'',
     usageHistory:[]};
   state.inventory.push(newInv);
   closeOverlay('add-inv-overlay');
-  ['ni-name','ni-category','ni-qty','ni-unit','ni-low','ni-notes'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
+  ['ni-name','ni-category','ni-qty','ni-unit','ni-low','ni-price','ni-notes'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
   window._niPhotoData = null;
 
   // Upload photo if taken
@@ -8247,7 +8442,11 @@ function openWODetail(woId) {
             '<div style="margin-top:8px;padding:10px;background:var(--bg2);border-radius:8px;border-left:3px solid var(--blue);">' +
               '<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">🔧 PARTS USED</div>' +
               wo.partsUsed.map(function(p) {
-                return '<div style="font-size:12px;color:var(--text2);margin-bottom:3px;">· ' + p.qty + ' ' + (p.unit||'units') + ' — ' + p.name + '</div>';
+                var cost = p.totalCost || ((+(p.unitPrice)||0) * p.qty);
+                return '<div style="font-size:12px;color:var(--text2);margin-bottom:3px;">'
+                  + '· ' + p.qty + ' ' + (p.unit||'units') + ' — ' + p.name
+                  + (cost > 0 ? ' <span style="color:var(--teal);font-size:11px;">($'+cost.toFixed(2)+')</span>' : '')
+                  + '</div>';
               }).join('') +
             '</div>' : '') +
         '</div>'
@@ -9524,7 +9723,17 @@ function submitCrewWOComplete(woId, photoData, selectedParts) {
     wo.completedBy=crew?crew.name:'Crew';
     wo.completedNotes=notes;
     wo.dateCompleted=new Date().toLocaleDateString('en-US');
-    wo.partsUsed=selectedParts.map(function(p){return{itemId:p.itemId,name:p.name,qty:p.qty,unit:p.unit};});
+    wo.partsUsed=selectedParts.map(function(p){
+      var item=(state.inventory||[]).find(function(i){return i.id===p.itemId;});
+      return {
+        itemId:   p.itemId,
+        name:     p.name,
+        qty:      p.qty,
+        unit:     p.unit,
+        unitPrice: item ? (+(item.unitPrice)||0) : 0,
+        totalCost: item ? ((+(item.unitPrice)||0) * p.qty) : 0
+      };
+    });
 
     // 3. Deduct inventory and log usage
     selectedParts.forEach(function(p) {
@@ -9532,7 +9741,15 @@ function submitCrewWOComplete(woId, photoData, selectedParts) {
       if(!item)return;
       item.qty=Math.max(0,(+item.qty)-p.qty);
       if(!item.usageHistory)item.usageHistory=[];
-      item.usageHistory.push({woId:wo.id,woNumber:wo.woNumber||'',date:new Date().toLocaleDateString('en-US'),crewName:crew?crew.name:'Crew',qty:p.qty});
+      item.usageHistory.push({
+        woId:      wo.id,
+        woNumber:  wo.woNumber||'',
+        date:      new Date().toLocaleDateString('en-US'),
+        crewName:  crew?crew.name:'Crew',
+        qty:       p.qty,
+        unitPrice: +(item.unitPrice)||0,
+        totalCost: ((+(item.unitPrice)||0) * p.qty)
+      });
       if(item.usageHistory.length>50)item.usageHistory=item.usageHistory.slice(-50);
       saveAndSync('inventory',item);
     });
