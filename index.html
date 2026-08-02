@@ -1501,7 +1501,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v8'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v9'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1893,42 +1893,72 @@ function openRouteDetail(id) {
   const stops = r.stops || [];
 
   let html = `
-    <div class="card" style="margin-bottom:12px;">
+    <div class="card" style="margin-bottom:12px;">`;
+
+  if (state.role === 'manager') {
+    // Manager: editable grid
+    html += `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-        <div><div style="font-size:11px;color:var(--text3);">DAY</div>
-          <select onchange="updateRouteDay('${r.id}',this.value)" style="background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:13px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;margin-top:3px;">
+        <div>
+          <div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">DAY</div>
+          <select onchange="updateRouteDay('${r.id}',this.value)" style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 8px;color:var(--text);font-size:13px;">
             ${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(d=>`<option ${r.day===d?'selected':''}>${d}</option>`).join('')}
           </select>
         </div>
-        <div><div style="font-size:11px;color:var(--text3);">CREW</div>
-          <select onchange="updateRouteCrew('${r.id}',this.value)" style="background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:5px 8px;color:var(--text);font-size:13px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;margin-top:3px;">
+        <div>
+          <div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CREW</div>
+          <select onchange="updateRouteCrew('${r.id}',this.value)" style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 8px;color:var(--text);font-size:13px;">
             <option value="">Unassigned</option>
             ${(state.crew||[]).map(c=>`<option value="${c.id}" ${r.crewId===c.id?'selected':''}>${c.name}</option>`).join('')}
           </select>
         </div>
-        <div><div style="font-size:11px;color:var(--text3);">STATUS</div>
-          <select onchange="updateRouteStatus('${r.id}',this.value)" style="background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:4px 8px;color:var(--text);font-size:13px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;">
+        <div>
+          <div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">STATUS</div>
+          <select onchange="updateRouteStatus('${r.id}',this.value)" style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 8px;color:var(--text);font-size:13px;">
             ${['Scheduled','In Progress','Done'].map(s=>`<option ${r.status===s?'selected':''}>${s}</option>`).join('')}
           </select>
         </div>
-        <div><div style="font-size:11px;color:var(--text3);">STOPS</div><div style="font-weight:700;">${stops.length}</div></div>
+        <div>
+          <div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">STOPS</div>
+          <div style="font-size:16px;font-weight:800;color:var(--text);padding:4px 0;">${stops.length}</div>
+        </div>
+      </div>`;
+  } else {
+    // Crew viewer: clean read-only summary
+    const done = stops.filter(s=>s.completed).length;
+    const pct  = stops.length ? Math.round((done/stops.length)*100) : 0;
+    html += `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div>
+          <div style="font-size:16px;font-weight:800;">${r.name}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">📅 ${r.day}${crew?' · 👷 '+crew.name:''}</div>
+        </div>
+        <span class="badge badge-${r.status==='Done'?'green':r.status==='In Progress'?'yellow':'blue'}">${r.status||'Scheduled'}</span>
       </div>
-    </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:6px;">
+        <span>${done}/${stops.length} complete</span><span>${pct}%</span>
+      </div>
+      <div class="inv-bar"><div class="inv-fill" style="width:${pct}%;background:linear-gradient(90deg,var(--green3),var(--lime));"></div></div>`;
+  }
+
+  html += `</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
       <div style="font-size:14px;font-weight:700;">STOPS (${stops.length})</div>
-      <button class="btn-sm" onclick="optimizeRoute('${r.id}')" style="background:rgba(45,212,191,.15);color:var(--teal);border:1px solid rgba(45,212,191,.3);">✦ Optimize</button>
+      ${state.role==='manager'?`<button class="btn-sm" onclick="optimizeRoute('${r.id}')" style="background:rgba(45,212,191,.15);color:var(--teal);border:1px solid rgba(45,212,191,.3);">✦ Optimize</button>`:''}
     </div>`;
-    // Add Stop card - built outside template to avoid nested backtick issues
-    html += '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:12px;border:1px solid var(--border);">';
-    html += '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">ADD STOP</div>';
-    html += '<div style="display:flex;gap:8px;">';
-    const existingIds = new Set((r.stops||[]).map(s=>s.propId));
-    const addableProps = (state.properties||[]).filter(p=>!existingIds.has(p.id));
-    let optHtml = '<option value="">— Select property —</option>';
-    addableProps.forEach(p => { optHtml += '<option value="' + p.id + '">' + p.name + (p.address?' · '+p.address:'')+'</option>'; });
-    html += '<select id="add-stop-select-' + r.id + '" style="flex:1;background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:8px;color:var(--text);font-size:13px;">' + optHtml + '</select>';
-    html += '<button class="btn btn-green" onclick="addStopToRoute(\''+ r.id +'\')" style="flex-shrink:0;font-size:13px;padding:8px 14px;">+ Add</button>';
-    html += '</div></div>';
+    // Add Stop card — manager only
+    if (state.role === 'manager') {
+      html += '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:12px;border:1px solid var(--border);">';
+      html += '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">ADD STOP</div>';
+      html += '<div style="display:flex;gap:8px;">';
+      const existingIds = new Set((r.stops||[]).map(s=>s.propId));
+      const addableProps = (state.properties||[]).filter(p=>!existingIds.has(p.id));
+      let optHtml = '<option value="">— Select property —</option>';
+      addableProps.forEach(p => { optHtml += '<option value="' + p.id + '">' + p.name + (p.address?' · '+p.address:'')+'</option>'; });
+      html += '<select id="add-stop-select-' + r.id + '" style="flex:1;background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:8px;color:var(--text);font-size:13px;">' + optHtml + '</select>';
+      html += '<button class="btn btn-green" onclick="addStopToRoute(\''+ r.id +'\')" style="flex-shrink:0;font-size:13px;padding:8px 14px;">+ Add</button>';
+      html += '</div></div>';
+    }
   if (!stops.length) {
     html += `<div style="font-size:13px;color:var(--text4);text-align:center;padding:16px;">No stops added yet</div>`;
   } else {
