@@ -322,11 +322,12 @@ select.inp{cursor:pointer;}
   .panel {
     left: auto !important;
     right: 0 !important;
-    width: 480px !important;
-    max-width: 480px !important;
+    width: 440px !important;
+    max-width: 440px !important;
     margin: 0 !important;
     box-shadow: -4px 0 40px rgba(0,0,0,.5);
     border-left: 1px solid var(--border);
+    overflow-x: hidden !important;
   }
 
   /* overlays center on screen */
@@ -1144,7 +1145,7 @@ select.inp{cursor:pointer;}
       <div class="panel-title" id="rp-title">Route Detail</div>
       <button class="close-btn" onclick="closePanel('route-panel')">✕</button>
     </div>
-    <div style="flex:1;overflow-y:auto;padding:14px;-webkit-overflow-scrolling:touch;" id="rp-body"></div>
+    <div style="flex:1;overflow-y:auto;overflow-x:hidden;padding:14px;-webkit-overflow-scrolling:touch;box-sizing:border-box;" id="rp-body"></div>
   </div>
 
   <div id="prop-panel" class="panel">
@@ -1501,7 +1502,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v14'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v15'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1898,29 +1899,29 @@ function openRouteDetail(id) {
   if (state.role === 'manager') {
     // Manager: editable grid
     html += `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;box-sizing:border-box;">
         <div>
           <div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">DAY</div>
-          <select onchange="updateRouteDay('${r.id}',this.value)" style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 8px;color:var(--text);font-size:13px;">
+          <select onchange="updateRouteDay('${r.id}',this.value)" style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12px;box-sizing:border-box;">
             ${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(d=>`<option ${r.day===d?'selected':''}>${d}</option>`).join('')}
           </select>
         </div>
         <div>
           <div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">CREW</div>
-          <select onchange="updateRouteCrew('${r.id}',this.value)" style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 8px;color:var(--text);font-size:13px;">
+          <select onchange="updateRouteCrew('${r.id}',this.value)" style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12px;box-sizing:border-box;max-width:100%;">
             <option value="">Unassigned</option>
             ${(state.crew||[]).map(c=>`<option value="${c.id}" ${r.crewId===c.id?'selected':''}>${c.name}</option>`).join('')}
           </select>
         </div>
         <div>
           <div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">STATUS</div>
-          <select onchange="updateRouteStatus('${r.id}',this.value)" style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 8px;color:var(--text);font-size:13px;">
+          <select onchange="updateRouteStatus('${r.id}',this.value)" style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12px;box-sizing:border-box;">
             ${['Scheduled','In Progress','Done'].map(s=>`<option ${r.status===s?'selected':''}>${s}</option>`).join('')}
           </select>
         </div>
         <div>
           <div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">STOPS</div>
-          <div style="font-size:16px;font-weight:800;color:var(--text);padding:4px 0;">${stops.length}</div>
+          <div style="font-size:20px;font-weight:800;color:var(--text);padding:4px 0;">${stops.length}</div>
         </div>
       </div>`;
   } else {
@@ -1950,13 +1951,15 @@ function openRouteDetail(id) {
     if (state.role === 'manager') {
       html += '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:12px;border:1px solid var(--border);">';
       html += '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">ADD STOP</div>';
-      html += '<div style="display:flex;gap:8px;">';
       const existingIds = new Set((r.stops||[]).map(s=>s.propId));
       const addableProps = (state.properties||[]).filter(p=>!existingIds.has(p.id));
-      let optHtml = '<option value="">— Select property —</option>';
-      addableProps.forEach(p => { optHtml += '<option value="' + p.id + '">' + p.name + (p.address?' · '+p.address:'')+'</option>'; });
-      html += '<select id="add-stop-select-' + r.id + '" style="flex:1;background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:8px;color:var(--text);font-size:13px;">' + optHtml + '</select>';
-      html += '<button class="btn btn-green" onclick="addStopToRoute(\''+ r.id +'\')" style="flex-shrink:0;font-size:13px;padding:8px 14px;">+ Add</button>';
+      let optHtml = '<option value="">— Search & select property —</option>';
+      addableProps.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(p => {
+        optHtml += '<option value="' + p.id + '">' + p.name + (p.address?' · '+p.address:'')+'</option>';
+      });
+      html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+      html += '<select id="add-stop-select-' + r.id + '" style="width:100%;background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:8px;color:var(--text);font-size:13px;box-sizing:border-box;">' + optHtml + '</select>';
+      html += '<button class="btn btn-green" onclick="addStopToRoute(\''+ r.id +'\')" style="width:100%;font-size:13px;padding:8px 14px;">+ Add Stop</button>';
       html += '</div></div>';
     }
   if (!stops.length) {
