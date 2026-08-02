@@ -1501,7 +1501,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v7'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v8'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1703,16 +1703,7 @@ function applyRole(r) {
   if (r === 'field') { showCrewBottomNav(); } else { hideCrewBottomNav(); }
 
   if (r === 'field') {
-    document.getElementById('nav').innerHTML = `<div id="nav-tabs-wrap">
-    <button class="nb active" onclick="switchTab('field')" data-tab="field"><span class="ni">📋</span><span class="nl">My Jobs</span></button>
-    <button class="nb" onclick="switchTab('crew-week')" data-tab="crew-week"><span class="ni">📅</span><span class="nl">My Week</span></button>
-    <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni">🏡</span><span class="nl">Properties</span></button>
-    <button class="nb" onclick="switchTab('wo-crew')" data-tab="wo-crew"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
-    <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni">📅</span><span class="nl">Attendance</span></button>
-    </div>
-    <div id="nav-utils-inner">
-      <button class="nb" onclick="signOut()"><span class="ni">🔒</span><span class="nl">Sign Out</span></button>
-    </div>`;
+    rebuildCrewNav('field');
     switchTab('field');
     // pre-select the logged-in crew member
     setTimeout(() => {
@@ -2190,7 +2181,7 @@ function saveCrewEdit(id) {
   saveAndSync('crew',c);
   // If this is the currently logged-in crew member, rebuild their menu live
   if (state.loggedInCrewId === id && state.role === 'field') {
-    buildDrawerItems(getCrewMenu(), state.currentTab || 'field');
+    rebuildCrewNav(state.currentTab || 'field');
   }
   openCrewDetail(id); renderCrew(); toast('Saved ✓');
 }
@@ -5494,9 +5485,10 @@ function _listenCollection(name) {
         });
       }
       if (name === 'crew') {
-        // If logged in as crew, rebuild menu in case permissions changed (e.g. canViewRoutes toggled by manager)
+        // Always rebuild crew nav when crew data arrives — catches initial load
+        // and live changes (e.g. manager toggling canViewRoutes)
         if (state.role === 'field' && state.loggedInCrewId) {
-          buildDrawerItems(getCrewMenu(), state.currentTab || 'field');
+          rebuildCrewNav(state.currentTab || 'field');
         }
       }
       if (name === 'workOrders') {
@@ -6153,6 +6145,31 @@ function buildDrawerItems(menuItems, activeTab) {
 function drawerNav(tab) {
   closeDrawer();
   setTimeout(() => switchTab(tab), 180);
+}
+
+// Rebuild crew navigation on both desktop sidebar and mobile drawer
+// Called on login and whenever crew permissions change via Firestore listener
+function rebuildCrewNav(activeTab) {
+  var menu = getCrewMenu();
+  activeTab = activeTab || state.currentTab || 'field';
+
+  // Desktop sidebar
+  var navEl = document.getElementById('nav');
+  if (navEl) {
+    var navHtml = '<div id="nav-tabs-wrap">';
+    menu.forEach(function(m) {
+      navHtml += '<button class="nb' + (m.tab === activeTab ? ' active' : '') + '" onclick="switchTab(\'' + m.tab + '\')" data-tab="' + m.tab + '">'
+        + '<span class="ni">' + m.icon + '</span>'
+        + '<span class="nl">' + m.label + '</span></button>';
+    });
+    navHtml += '</div><div id="nav-utils-inner">'
+      + '<button class="nb" onclick="signOut()"><span class="ni">🔒</span><span class="nl">Sign Out</span></button>'
+      + '</div>';
+    navEl.innerHTML = navHtml;
+  }
+
+  // Mobile drawer
+  buildDrawerItems(menu, activeTab);
 }
 
 function toggleDrawer() {
