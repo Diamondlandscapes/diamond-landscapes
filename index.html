@@ -1501,7 +1501,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v11'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v12'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2296,12 +2296,14 @@ function openStopCompletion(routeId, propId) {
     stop:       s,
     crew:       crew,
     flags:      openFlags,
-    flagIdx:    0,           // which flag we're currently reviewing
-    flagResolutions: [],     // [{flagId, resolved, resolveNote, resolvePhoto}]
-    photo:      null,        // property photo (required)
-    services:   [],          // services performed
-    notes:      '',          // completion notes
-    newFlags:   [],          // flags created during this completion
+    flagIdx:    0,
+    flagResolutions: [],
+    photo:      null,
+    services:   [],
+    notes:      '',
+    newFlags:   [],
+    requiredPeriodic: getRequiredPeriodicServices(routeId, propId),
+    skippedPeriodic:  {},
     step:       openFlags.length > 0 ? 'flags' : 'photo'
   };
 
@@ -2398,20 +2400,51 @@ function renderStopCompletionSheet(c) {
   // ── STEP: SERVICES ──────────────────────────────────────────────────────
   else if (c.step === 'services') {
     var propServices = c.prop.services || [];
+
+    // Periodic services due this visit but not yet selected or skipped
+    var pendingPeriodic = (c.requiredPeriodic||[]).filter(function(svc) {
+      return !c.services.includes(svc) && !c.skippedPeriodic[svc];
+    });
+    var skippedKeys = Object.keys(c.skippedPeriodic||{});
+
+    // Warning banner if periodic services are still pending
+    if (pendingPeriodic.length > 0) {
+      html += '<div style="background:rgba(250,204,21,.1);border:1px solid rgba(250,204,21,.4);border-radius:12px;padding:12px 14px;margin-bottom:14px;">'
+        + '<div style="font-size:12px;font-weight:700;color:var(--yellow);margin-bottom:4px;">⚠ LAST VISIT THIS MONTH</div>'
+        + '<div style="font-size:12px;color:var(--text2);line-height:1.5;">The following service' + (pendingPeriodic.length>1?'s have':'has') + ' not been done this month. Select ' + (pendingPeriodic.length>1?'them':'it') + ' below or tap Skip to acknowledge.</div>'
+        + '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">'
+        + pendingPeriodic.map(function(svc) {
+            return '<span style="background:rgba(250,204,21,.15);border:1px solid rgba(250,204,21,.4);border-radius:20px;padding:3px 10px;font-size:12px;font-weight:700;color:var(--yellow);">⚠ ' + svc + '</span>';
+          }).join('')
+        + '</div>'
+      + '</div>';
+    }
+
     html += '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;">Select all services performed today. At least one is required.</div>';
 
     if (propServices.length) {
       html += '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">ASSIGNED SERVICES</div>';
       propServices.forEach(function(svc) {
         var checked = c.services.includes(svc);
-        html += '<div onclick="sca_toggleService(\'' + svc.replace(/'/g,"\\'") + '\')" style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:' + (checked?'rgba(74,222,128,.08)':'var(--bg3)') + ';border:1px solid ' + (checked?'var(--green)':'var(--border2)') + ';border-radius:10px;margin-bottom:8px;cursor:pointer;">'
+        var isPeriodic = (c.requiredPeriodic||[]).includes(svc);
+        var isSkipped  = c.skippedPeriodic && c.skippedPeriodic[svc];
+        var borderColor = checked ? 'var(--green)' : (isPeriodic && !isSkipped ? 'rgba(250,204,21,.5)' : 'var(--border2)');
+        var bgColor     = checked ? 'rgba(74,222,128,.08)' : (isPeriodic && !isSkipped ? 'rgba(250,204,21,.05)' : 'var(--bg3)');
+        html += '<div onclick="sca_toggleService(\'' + svc.replace(/'/g,"\\'") + '\')" style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:' + bgColor + ';border:1px solid ' + borderColor + ';border-radius:10px;margin-bottom:8px;cursor:pointer;">'
           + '<div style="width:22px;height:22px;border-radius:6px;border:2px solid ' + (checked?'var(--green)':'var(--border2)') + ';background:' + (checked?'var(--green3)':'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;color:#fff;font-weight:800;">' + (checked?'✓':'') + '</div>'
-          + '<div style="font-size:14px;font-weight:600;">' + svc + '</div>'
+          + '<div style="flex:1;">'
+            + '<div style="font-size:14px;font-weight:600;">' + svc + '</div>'
+            + (isPeriodic && !checked && !isSkipped ? '<div style="font-size:10px;color:var(--yellow);margin-top:2px;">⚠ Due this month</div>' : '')
+            + (isSkipped ? '<div style="font-size:10px;color:var(--text4);margin-top:2px;">Skipped — ' + isSkipped + '</div>' : '')
+          + '</div>'
+          + (isPeriodic && !checked && !isSkipped
+            ? '<button onclick="event.stopPropagation();sca_showSkipReason(\'' + svc.replace(/'/g,"\\'") + '\')" style="font-size:10px;padding:4px 8px;background:var(--bg4);border:1px solid var(--border2);border-radius:6px;color:var(--text3);cursor:pointer;white-space:nowrap;">Skip →</button>'
+            : (isSkipped ? '<button onclick="event.stopPropagation();sca_unskipService(\'' + svc.replace(/'/g,"\\'") + '\')" style="font-size:10px;padding:4px 8px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text4);cursor:pointer;">Undo</button>' : ''))
         + '</div>';
       });
     }
 
-    // "Other" free text
+    // Other / additional
     html += '<div style="margin-top:12px;">'
       + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">OTHER / ADDITIONAL</div>'
       + '<div style="display:flex;gap:8px;">'
@@ -2419,15 +2452,33 @@ function renderStopCompletionSheet(c) {
         + '<button onclick="sca_addOtherService()" style="padding:10px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);cursor:pointer;font-weight:700;">+ Add</button>'
       + '</div>'
       + (c.services.filter(function(sv){return !(c.prop.services||[]).includes(sv);}).length
-        ? '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">' +
-          c.services.filter(function(sv){return !(c.prop.services||[]).includes(sv);}).map(function(sv){
-            return '<div style="display:flex;align-items:center;gap:6px;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.3);border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;color:var(--blue);">'
-              + sv + '<span onclick="sca_removeService(\'' + sv.replace(/'/g,"\\'") + '\')" style="cursor:pointer;opacity:.7;">✕</span>'
-            + '</div>';
-          }).join('') + '</div>'
+        ? '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">'
+          + c.services.filter(function(sv){return !(c.prop.services||[]).includes(sv);}).map(function(sv){
+              return '<div style="display:flex;align-items:center;gap:6px;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.3);border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;color:var(--blue);">'
+                + sv + '<span onclick="sca_removeService(\'' + sv.replace(/'/g,"\\'") + '\')" style="cursor:pointer;opacity:.7;">✕</span>'
+              + '</div>';
+            }).join('') + '</div>'
         : '')
-    + '</div>'
-    + '<button onclick="sca_nextStep()" ' + (!c.services.length?'disabled style="opacity:.4;cursor:not-allowed;"':'') + ' class="btn btn-green" style="width:100%;margin-top:16px;">Continue →</button>';
+    + '</div>';
+
+    // Skip reason modal (inline)
+    if (c._showSkipFor) {
+      html += '<div style="position:fixed;inset:0;z-index:5000;background:rgba(0,0,0,.7);display:flex;align-items:flex-end;">'
+        + '<div style="width:100%;max-width:480px;margin:0 auto;background:var(--bg2);border-radius:20px 20px 0 0;padding:20px 16px;">'
+          + '<div style="font-size:14px;font-weight:800;margin-bottom:6px;">Skip "' + c._showSkipFor + '"?</div>'
+          + '<div style="font-size:12px;color:var(--text3);margin-bottom:12px;">This service hasn\'t been done this month. Please provide a reason for skipping.</div>'
+          + '<textarea id="skip-reason-input" class="inp" rows="2" placeholder="Reason (e.g. Not needed, will do next visit...)"></textarea>'
+          + '<div style="display:flex;gap:8px;margin-top:10px;">'
+            + '<button onclick="sca_confirmSkip()" class="btn btn-green" style="flex:1;">Confirm Skip</button>'
+            + '<button onclick="sca_cancelSkip()" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);cursor:pointer;font-weight:700;">Cancel</button>'
+          + '</div>'
+        + '</div>'
+      + '</div>';
+    }
+
+    // Continue disabled if: no services selected AND there are pending periodic services with no skip acknowledgment
+    var canContinue = c.services.length > 0 && pendingPeriodic.length === 0;
+    html += '<button onclick="sca_nextStep()" ' + (!canContinue?'disabled style="opacity:.4;cursor:not-allowed;"':'') + ' class="btn btn-green" style="width:100%;margin-top:16px;">Continue →</button>';
   }
 
   // ── STEP: NOTES & NEW FLAGS ──────────────────────────────────────────────
@@ -2481,6 +2532,17 @@ function renderStopCompletionSheet(c) {
       + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">SERVICES PERFORMED</div>'
       + c.services.map(function(sv) { return '<div style="font-size:13px;color:var(--green);margin-bottom:3px;">✓ ' + sv + '</div>'; }).join('')
     + '</div>';
+
+    // Skipped periodic services
+    var skippedKeys2 = Object.keys(c.skippedPeriodic||{});
+    if (skippedKeys2.length) {
+      html += '<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.25);border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+        + '<div style="font-size:11px;font-weight:700;color:var(--yellow);letter-spacing:1px;margin-bottom:6px;">SKIPPED THIS VISIT</div>'
+        + skippedKeys2.map(function(svc){
+            return '<div style="font-size:12px;color:var(--text2);margin-bottom:3px;">⚠ ' + svc + ' — <span style="color:var(--text3);">' + c.skippedPeriodic[svc] + '</span></div>';
+          }).join('')
+      + '</div>';
+    }
 
     // Notes
     if (c.notes) {
@@ -2675,6 +2737,34 @@ window.sca_removeService = function(svc) {
   renderStopCompletionSheet(c);
 };
 
+window.sca_showSkipReason = function(svc) {
+  var c = _getComp(); if (!c) return;
+  c._showSkipFor = svc;
+  renderStopCompletionSheet(c);
+};
+
+window.sca_cancelSkip = function() {
+  var c = _getComp(); if (!c) return;
+  c._showSkipFor = null;
+  renderStopCompletionSheet(c);
+};
+
+window.sca_confirmSkip = function() {
+  var c = _getComp(); if (!c) return;
+  var svc    = c._showSkipFor;
+  var reason = (document.getElementById('skip-reason-input')?.value||'').trim() || 'Not needed this visit';
+  if (!c.skippedPeriodic) c.skippedPeriodic = {};
+  c.skippedPeriodic[svc] = reason;
+  c._showSkipFor = null;
+  renderStopCompletionSheet(c);
+};
+
+window.sca_unskipService = function(svc) {
+  var c = _getComp(); if (!c) return;
+  if (c.skippedPeriodic) delete c.skippedPeriodic[svc];
+  renderStopCompletionSheet(c);
+};
+
 // New flag handlers
 window.sca_addFlag = function() {
   var c = _getComp(); if (!c) return;
@@ -2720,16 +2810,17 @@ window.sca_submit = async function() {
 
   // 2. Build service log entry for the property
   var logEntry = {
-    id:        uid(),
-    date:      today,
-    timestamp: now,
-    crewId:    crew ? crew.id : '',
-    crewName:  crewName,
-    routeId:   c.routeId,
-    services:  c.services,
-    notes:     c.notes,
-    photo:     photoUrl || c.photo || '',
-    flags:     c.newFlags.map(function(nf){return nf.service;})
+    id:              uid(),
+    date:            today,
+    timestamp:       now,
+    crewId:          crew ? crew.id : '',
+    crewName:        crewName,
+    routeId:         c.routeId,
+    services:        c.services,
+    skippedServices: c.skippedPeriodic || {},
+    notes:           c.notes,
+    photo:           photoUrl || c.photo || '',
+    flags:           c.newFlags.map(function(nf){return nf.service;})
   };
 
   // 3. Update property record
@@ -2843,6 +2934,76 @@ function markStopDone(routeId, propId) {
   if (document.getElementById('route-panel')?.classList.contains('open')) openRouteDetail(routeId);
   else loadFieldView();
   toast('Stop reopened');
+}
+
+
+// ── Periodic Service Enforcement ─────────────────────────────────────────
+// These services are required once per month. On the last scheduled visit
+// of the month for a property, any not yet done this month are flagged.
+const PERIODIC_SERVICES = ['Trim Shrubs', 'Weed Control', 'Fertilize', 'Irrigation Check'];
+
+// Check which periodic services have already been done this month for a property
+function getPeriodicDoneThisMonth(propId) {
+  var prop = (state.properties||[]).find(function(p){return p.id===propId;});
+  if (!prop || !prop.serviceLog) return [];
+  var now = new Date();
+  var thisMonth = now.getMonth();
+  var thisYear  = now.getFullYear();
+  var done = new Set();
+  (prop.serviceLog||[]).forEach(function(entry) {
+    var d = new Date(entry.date);
+    if (isNaN(d.getTime())) return;
+    if (d.getMonth() === thisMonth && d.getFullYear() === thisYear) {
+      (entry.services||[]).forEach(function(sv) { done.add(sv); });
+    }
+  });
+  return Array.from(done);
+}
+
+// Determine if this is the last scheduled visit this month for a property
+function isLastVisitThisMonth(routeId, propId) {
+  var now = new Date();
+  var thisMonth = now.getMonth();
+  var thisYear  = now.getFullYear();
+  var today     = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  // Find all routes that include this property
+  var routes = (state.routes||[]).filter(function(r) {
+    return (r.stops||[]).some(function(s){return s.propId===propId;});
+  });
+
+  // Get the day name for each route
+  var dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+  // Find all future dates this month where this property is scheduled
+  var futureVisits = [];
+  routes.forEach(function(r) {
+    var routeDay = r.day; // e.g. "Monday"
+    var dayIdx = dayNames.indexOf(routeDay);
+    if (dayIdx === -1) return;
+    // Walk through rest of month to find matching days
+    var d = new Date(today.getTime() + 24*60*60*1000); // start from tomorrow
+    while (d.getMonth() === thisMonth && d.getFullYear() === thisYear) {
+      if (d.getDay() === dayIdx) futureVisits.push(new Date(d));
+      d = new Date(d.getTime() + 24*60*60*1000);
+    }
+  });
+
+  // If no future visits this month — this IS the last visit
+  return futureVisits.length === 0;
+}
+
+// Returns list of periodic services that need to be flagged on this visit
+// (periodic, assigned to this property, not done this month, last visit of month)
+function getRequiredPeriodicServices(routeId, propId) {
+  if (!isLastVisitThisMonth(routeId, propId)) return [];
+  var prop = (state.properties||[]).find(function(p){return p.id===propId;});
+  if (!prop) return [];
+  var propServices = prop.services || [];
+  var doneThisMonth = getPeriodicDoneThisMonth(propId);
+  return PERIODIC_SERVICES.filter(function(svc) {
+    return propServices.includes(svc) && !doneThisMonth.includes(svc);
+  });
 }
 
 function toggleService(routeId, propId, svc, checked) {
