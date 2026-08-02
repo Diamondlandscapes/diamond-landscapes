@@ -1172,7 +1172,9 @@ select.inp{cursor:pointer;}
           <option value="">Assign crew member...</option>
         </select>
         <div style="font-size:12px;color:var(--text3);font-weight:700;letter-spacing:1px;">ADD PROPERTIES TO ROUTE</div>
-        <div id="nr-prop-list" style="max-height:200px;overflow-y:auto;"></div>
+        <input type="text" id="nr-prop-search" placeholder="🔍 Search properties..." style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:8px 12px;color:var(--text);font-size:13px;width:100%;box-sizing:border-box;"/>
+        <div id="nr-selected-chips" style="display:flex;flex-wrap:wrap;gap:6px;min-height:0;"></div>
+        <div id="nr-prop-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;"></div>
         <button class="btn btn-green" onclick="saveRoute()">Create Route</button>
         <button class="btn btn-outline" onclick="closeOverlay('add-route-overlay')">Cancel</button>
       </div>
@@ -1493,7 +1495,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-07-13-v9'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v1'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2265,56 +2267,119 @@ function deleteRoute(id) {
 }
 
 function openAddRoute() {
-  // populate crew select
+  // Populate crew select
   const sel = document.getElementById('nr-crew');
   sel.innerHTML = '<option value="">Assign crew member...</option>' +
     state.crew.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
 
-  // populate properties as tap-to-select rows
-  const listEl = document.getElementById('nr-prop-list');
-  if (!state.properties.length) {
-    listEl.innerHTML = '<div style="font-size:13px;color:var(--text4);padding:8px 0;">Add properties first</div>';
-  } else {
+  // Selection state — persists across searches
+  const _selectedIds = new Set();
+
+  const sortedProps = [...state.properties].sort((a,b) => (a.name||'').localeCompare(b.name||''));
+
+  function renderChips() {
+    const el = document.getElementById('nr-selected-chips');
+    if (!_selectedIds.size) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:2px;width:100%;">✓ ' + _selectedIds.size + ' selected</div>'
+      + [..._selectedIds].map(id => {
+          const p = sortedProps.find(x => x.id === id);
+          if (!p) return '';
+          return '<div style="display:flex;align-items:center;gap:4px;background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.3);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;color:var(--green);">'
+            + p.name
+            + '<span onclick="window._nrDeselect(\'' + id + '\')" style="cursor:pointer;margin-left:4px;opacity:.7;">✕</span>'
+            + '</div>';
+        }).join('');
+  }
+
+  window._nrDeselect = function(id) {
+    _selectedIds.delete(id);
+    renderChips();
+    renderList(document.getElementById('nr-prop-search').value);
+  };
+
+  function renderList(query) {
+    const listEl = document.getElementById('nr-prop-list');
+    if (!sortedProps.length) {
+      listEl.innerHTML = '<div style="font-size:13px;color:var(--text4);padding:12px;">Add properties first</div>';
+      return;
+    }
+    const q = (query || '').toLowerCase().trim();
+    const filtered = q
+      ? sortedProps.filter(p =>
+          (p.name||'').toLowerCase().includes(q) ||
+          (p.address||'').toLowerCase().includes(q))
+      : sortedProps;
+
+    if (!filtered.length) {
+      listEl.innerHTML = '<div style="font-size:13px;color:var(--text4);padding:12px;text-align:center;">No properties match "' + query + '"</div>';
+      return;
+    }
+
     listEl.innerHTML = '';
-    state.properties.forEach(function(p) {
-      var row = document.createElement('div');
+    filtered.forEach(function(p) {
+      const isSel = _selectedIds.has(p.id);
+      const row = document.createElement('div');
       row.dataset.propId = p.id;
-      row.dataset.selected = '0';
-      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 8px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:8px;';
+      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;'
+        + (isSel ? 'background:rgba(74,222,128,.06);' : '');
       row.innerHTML =
-        '<div style="width:24px;height:24px;border-radius:6px;border:2px solid var(--border2);background:var(--bg4);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;transition:all .15s;" class="nr-row-check"></div>' +
-        '<div><div style="font-size:13px;font-weight:700;">' + p.name + '</div>' +
-        '<div style="font-size:11px;color:var(--text3);">' + p.address + '</div></div>';
+        '<div style="width:22px;height:22px;border-radius:6px;border:2px solid '+(isSel?'var(--green)':'var(--border2)')+';background:'+(isSel?'var(--green3)':'var(--bg4)')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;color:#fff;font-weight:800;">'
+          + (isSel ? '✓' : '') +
+        '</div>'
+        + '<div style="flex:1;min-width:0;">'
+          + '<div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + p.name + '</div>'
+          + '<div style="font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (p.address||'') + '</div>'
+        + '</div>';
       row.onclick = function() {
-        var sel = row.dataset.selected === '1';
-        sel = !sel;
-        row.dataset.selected = sel ? '1' : '0';
-        var check = row.querySelector('.nr-row-check');
-        check.style.background    = sel ? 'var(--green3)' : 'var(--bg4)';
-        check.style.borderColor   = sel ? 'var(--green)'  : 'var(--border2)';
-        check.style.color         = sel ? '#fff'          : 'transparent';
-        check.textContent         = sel ? '✓' : '';
-        row.style.background      = sel ? 'rgba(74,222,128,.06)' : '';
+        if (_selectedIds.has(p.id)) { _selectedIds.delete(p.id); }
+        else { _selectedIds.add(p.id); }
+        renderChips();
+        renderList(document.getElementById('nr-prop-search').value);
+        // Restore scroll position
+        var scrollTop = listEl.scrollTop;
+        requestAnimationFrame(function() { listEl.scrollTop = scrollTop; });
       };
       listEl.appendChild(row);
     });
   }
+
+  // Wire search input
+  const searchInp = document.getElementById('nr-prop-search');
+  searchInp.value = '';
+  searchInp.oninput = function() { renderList(this.value); };
+
+  // Initial render
+  renderChips();
+  renderList('');
+
+  // Store selected IDs reference so saveRoute can access it
+  document.getElementById('add-route-overlay')._selectedIds = _selectedIds;
+
   openOverlay('add-route-overlay');
 }
 
 function saveRoute() {
   const name = document.getElementById('nr-name').value.trim();
   if (!name) { toast('Enter a route name'); return; }
-  const checked = [...document.querySelectorAll('#nr-prop-list div[data-selected="1"]')].map(r => r.dataset.propId);
-  state.routes.push({
+
+  // Get selected IDs from the overlay's stored reference
+  const overlay = document.getElementById('add-route-overlay');
+  const selectedIds = overlay._selectedIds ? [...overlay._selectedIds] : [];
+
+  const newRoute = {
     id: uid(), name, day: document.getElementById('nr-day').value,
     crewId: document.getElementById('nr-crew').value,
     status: 'Scheduled', optimized: false,
-    stops: checked.map(pid => ({ propId: pid, completed: false, completedServices: [], photos: [], notes:'' }))
-  });
-  save(); closeOverlay('add-route-overlay');
+    stops: selectedIds.map(pid => ({ propId: pid, completed: false, completedServices: [], photos: [], notes:'' }))
+  };
+  state.routes.push(newRoute);
+  saveAndSync('routes', newRoute);
+  save();
+  closeOverlay('add-route-overlay');
   document.getElementById('nr-name').value = '';
-  renderRoutes(); renderDashboard(); toast('Route created!');
+  document.getElementById('nr-prop-search').value = '';
+  renderRoutes(); renderDashboard();
+  toast('Route created with ' + selectedIds.length + ' stop' + (selectedIds.length !== 1 ? 's' : '') + ' ✓');
 }
 
 // ─── PROPERTIES ───────────────────────────────────────────────────────────
@@ -4575,8 +4640,12 @@ function confirmImport() {
     let record = null;
 
     if (type === 'properties') {
-      isDup = state.properties.some(p => p.name.toLowerCase() === name.toLowerCase());
-      record = { id:uid(), name, address:get(row,'address'),
+      const addr = get(row,'address');
+      // Check by address — same client can have multiple properties
+      isDup = addr
+        ? state.properties.some(p => (p.address||'').toLowerCase().trim() === addr.toLowerCase().trim())
+        : state.properties.some(p => p.name.toLowerCase() === name.toLowerCase());
+      record = { id:uid(), name, address:addr,
         phone:get(row,'phone'), notes:get(row,'notes'),
         services:[], frequency:'', customFreq:'', lastServiceDate:'' };
     } else if (type === 'crew') {
