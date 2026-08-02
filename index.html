@@ -1502,7 +1502,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v16'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v17'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -7288,7 +7288,14 @@ function renderSchedule() {
   const weekEl = document.getElementById('sched-week');
   if (weekEl) {
     weekEl.innerHTML = WEEK_DAYS.map(day => {
-      const dayRoutes = routes.filter(r => r.day === day);
+      // Find the actual date for this day name in the current week
+      var now = new Date();
+      var days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      var diff = days.indexOf(day) - now.getDay();
+      var d = new Date(now); d.setDate(now.getDate() + diff);
+      var dateKey = d.toISOString().slice(0,10);
+      // Match by specific date first, fall back to day name
+      const dayRoutes = routes.filter(r => r.date ? r.date === dateKey : r.day === day);
       const stops = dayRoutes.reduce((a,r) => a+(r.stops?.length||0), 0);
       const done  = dayRoutes.reduce((a,r) => a+(r.stops?.filter(s=>s.completed).length||0), 0);
       const crews = dayRoutes.map(r => state.crew.find(c=>c.id===r.crewId)?.name?.split(' ')[0]||'').filter(Boolean);
@@ -7314,7 +7321,14 @@ function renderSchedule() {
   }
 
   const filtered = (state.schedDay && state.schedDay !== 'All')
-    ? routes.filter(r => r.day === state.schedDay) : routes;
+    ? routes.filter(r => {
+        if (r.date) {
+          var d = new Date(r.date + 'T12:00:00');
+          return d.toLocaleDateString('en-US',{weekday:'long'}) === state.schedDay;
+        }
+        return r.day === state.schedDay;
+      })
+    : routes;
 
   const listEl = document.getElementById('sched-routes-list');
   if (listEl) {
@@ -8458,11 +8472,19 @@ function renderMonthCalendar() {
     }
   });
 
-  // Map routes by day name
-  const routesByDay = {};
+  // Map routes by specific date (new) AND by day name (legacy fallback)
+  const routesByDate = {};
+  const routesByDay  = {};
   routes.forEach(r => {
-    if (!routesByDay[r.day]) routesByDay[r.day] = [];
-    routesByDay[r.day].push(r);
+    if (r.date) {
+      // New model: specific date
+      if (!routesByDate[r.date]) routesByDate[r.date] = [];
+      routesByDate[r.date].push(r);
+    } else if (r.day) {
+      // Legacy: day of week repeating
+      if (!routesByDay[r.day]) routesByDay[r.day] = [];
+      routesByDay[r.day].push(r);
+    }
   });
 
   let html = '<div style="background:var(--bg2);border-radius:16px;border:1px solid var(--border);overflow:hidden;">';
@@ -8486,7 +8508,9 @@ function renderMonthCalendar() {
     const isToday   = day===today.getDate() && calMonth===today.getMonth() && calYear===today.getFullYear();
     const dayOfWeek = new Date(calYear, calMonth, day).getDay();
     const dayName   = DAY_NAMES[dayOfWeek];
-    const dayRoutes = routesByDay[dayName] || [];
+    const dateKey   = calYear + '-' + String(calMonth+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+    // Use specific-date routes first, fall back to day-name routes for legacy data
+    const dayRoutes = (routesByDate[dateKey] || []).concat(routesByDay[dayName] || []);
     const dueProp   = dueByDate[day] || [];
     const col       = (firstDay + day - 1) % 7;
     const isLastCol = col === 6;
