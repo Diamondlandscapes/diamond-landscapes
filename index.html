@@ -867,6 +867,14 @@ select.inp{cursor:pointer;}
         <button class="btn btn-green" onclick="switchTab('routes')" style="margin-top:4px;">View All Routes →</button>
       </div>
 
+      <div class="card" id="dash-pnl-card" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div class="sec-title" style="margin-bottom:0;">Today's P&L</div>
+          <span style="font-size:10px;color:var(--text3);">Manager Only</span>
+        </div>
+        <div id="dash-pnl"></div>
+      </div>
+
 
       <div class="card" onclick="openDashFlags()" style="cursor:pointer;">
         <div class="sec-title">Recent Flags & Issues</div>
@@ -1529,7 +1537,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v20'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v21'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1794,6 +1802,10 @@ function renderDashboard() {
   document.title = 'Diamond Landscapes';
 const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
 
+  // Show P&L card only for managers
+  var pnlCard = document.getElementById('dash-pnl-card');
+  if (pnlCard) pnlCard.style.display = state.role === 'manager' ? '' : 'none';
+
   const todayRoutes = state.routes.filter(r => r.day === today);
   const completed = todayRoutes.filter(r => r.status === 'Done').length;
   const openFlags = state.flags.filter(f => !f.resolved);
@@ -1867,6 +1879,42 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
         <div style="font-size:12px;color:var(--red);">⚠️ Only ${i.qty} ${i.unit} remaining</div></div>
         <button class="btn-sm" onclick="openAddInventory()" style="background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);">Restock</button>
       </div>`).join('');
+  }
+  // Today's P&L summary (manager only)
+  if (state.role === 'manager') {
+    var pnlEl = document.getElementById('dash-pnl');
+    if (pnlEl) {
+      var todayISO = new Date().toISOString().slice(0,10);
+      var todayDateRoutes = state.routes.filter(function(r){ return r.date === todayISO || r.day === today; });
+      var propsWithRates = (state.properties||[]).filter(function(p){ return parseFloat(p.monthlyRate) > 0; });
+      if (!todayDateRoutes.length || !propsWithRates.length) {
+        pnlEl.innerHTML = '<div style="font-size:13px;color:var(--text4);text-align:center;padding:8px 0;">Add monthly rates to properties to see today\'s P&L</div>';
+      } else {
+        var totalRev = 0, totalCost = 0;
+        todayDateRoutes.forEach(function(r) {
+          var p = getRoutePnL(r);
+          totalRev  += p.revenue;
+          totalCost += p.cost;
+        });
+        var totalMargin = totalRev - totalCost;
+        var marginPct   = totalRev > 0 ? (totalMargin/totalRev)*100 : 0;
+        var mColor = totalMargin > 0 ? 'var(--green)' : 'var(--red)';
+        pnlEl.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
+          + '<div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;">'
+            + '<div style="font-size:18px;font-weight:700;color:var(--blue);">$' + totalRev.toFixed(0) + '</div>'
+            + '<div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Revenue</div>'
+          + '</div>'
+          + '<div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;">'
+            + '<div style="font-size:18px;font-weight:700;color:var(--text2);">$' + totalCost.toFixed(0) + '</div>'
+            + '<div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Labor+Fuel</div>'
+          + '</div>'
+          + '<div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;">'
+            + '<div style="font-size:18px;font-weight:700;color:' + mColor + ';">$' + totalMargin.toFixed(0) + '</div>'
+            + '<div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:2px;">' + marginPct.toFixed(0) + '% Margin</div>'
+          + '</div>'
+        + '</div>';
+      }
+    }
   }
 }
 
@@ -2017,7 +2065,9 @@ function openRouteDetail(id) {
     <div class="card" style="margin-bottom:12px;">`;
 
   if (state.role === 'manager') {
-    // Manager: editable grid
+    // Manager: editable grid + P&L
+    var pnl = getRoutePnL(r);
+    var pnlColor = pnl.margin > 0 ? 'var(--green)' : pnl.margin === 0 ? 'var(--yellow)' : 'var(--red)';
     html += `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;box-sizing:border-box;">
         <div>
@@ -2043,7 +2093,26 @@ function openRouteDetail(id) {
           <div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">STOPS</div>
           <div style="font-size:20px;font-weight:800;color:var(--text);padding:4px 0;">${stops.length}</div>
         </div>
-      </div>`;
+      </div>
+      ${pnl.revenue > 0 ? `
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
+        <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;">Route P&L · ${pnl.truck||'Truck'}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+          <div style="background:var(--bg3);border-radius:8px;padding:8px;text-align:center;">
+            <div style="font-size:15px;font-weight:700;color:var(--blue);">$${pnl.revenue.toFixed(0)}</div>
+            <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-top:2px;">Revenue</div>
+          </div>
+          <div style="background:var(--bg3);border-radius:8px;padding:8px;text-align:center;">
+            <div style="font-size:15px;font-weight:700;color:var(--text2);">$${pnl.cost.toFixed(0)}</div>
+            <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-top:2px;">Cost</div>
+          </div>
+          <div style="background:var(--bg3);border-radius:8px;padding:8px;text-align:center;">
+            <div style="font-size:15px;font-weight:700;color:${pnlColor};">$${pnl.margin.toFixed(0)}</div>
+            <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-top:2px;">${pnl.marginPct.toFixed(0)}% Margin</div>
+          </div>
+        </div>
+      </div>` : '<div style="font-size:11px;color:var(--text3);margin-top:8px;">Add monthly rates to properties to see P&L</div>'}
+    `;
   } else {
     // Crew viewer: clean read-only summary
     const done = stops.filter(s=>s.completed).length;
@@ -3060,7 +3129,98 @@ function markStopDone(routeId, propId) {
 }
 
 
-// ── Periodic Service Enforcement ─────────────────────────────────────────
+// ── Profitability Engine ─────────────────────────────────────────────────
+const TRUCK_DAILY_COST = { T1: 610, T2: 610, T3: 610, T4: 400 };
+const TRUCK_DEFAULT_COST = 610;
+
+// Extract truck number from route name e.g. "8/3 T1" → "T1"
+function getTruckFromRoute(routeName) {
+  var m = (routeName||'').match(/\bT(\d)\b/i);
+  return m ? 'T' + m[1] : null;
+}
+
+// Get daily cost for a route based on truck number
+function getRouteDailyCost(route) {
+  var truck = getTruckFromRoute(route.name||'');
+  return truck && TRUCK_DAILY_COST[truck] ? TRUCK_DAILY_COST[truck] : TRUCK_DEFAULT_COST;
+}
+
+// Get cost per stop for a route (daily cost ÷ number of stops)
+function getCostPerStop(route) {
+  var stops = (route.stops||[]).length;
+  if (!stops) return 0;
+  return getRouteDailyCost(route) / stops;
+}
+
+// Get visits per month for a property based on frequency
+function getVisitsPerMonth(frequency) {
+  var map = {
+    'Weekly': 4, '2x Per Week': 8, 'Bi-Weekly': 2,
+    'Monthly': 1, '2x Per Month': 2, 'Quarterly': 0.33,
+    'As Needed': 1
+  };
+  return map[frequency] || 1;
+}
+
+// Get revenue per visit for a property
+function getRevenuePerVisit(prop) {
+  var rate = parseFloat(prop.monthlyRate) || 0;
+  var visits = getVisitsPerMonth(prop.frequency);
+  return visits ? rate / visits : 0;
+}
+
+// Get parts cost for a property in a given month from work orders
+function getPartsCostForProp(propId, month, year) {
+  var total = 0;
+  (state.workOrders||[]).forEach(function(wo) {
+    if (wo.status !== 'completed') return;
+    var d = new Date(wo.completedOn || wo.dateCompleted || '');
+    if (isNaN(d.getTime())) return;
+    if (d.getMonth() !== month || d.getFullYear() !== year) return;
+    (wo.partsUsed||[]).forEach(function(p) {
+      total += p.totalCost || ((+(p.unitPrice)||0) * p.qty);
+    });
+  });
+  return total;
+}
+
+// Get profitability for a property on a specific route stop
+function getPropStopMargin(prop, route) {
+  var revenuePerVisit = getRevenuePerVisit(prop);
+  var costPerStop = getCostPerStop(route);
+  var margin = revenuePerVisit - costPerStop;
+  var marginPct = revenuePerVisit > 0 ? (margin / revenuePerVisit) * 100 : 0;
+  return {
+    revenue:    revenuePerVisit,
+    cost:       costPerStop,
+    margin:     margin,
+    marginPct:  marginPct,
+    truck:      getTruckFromRoute(route.name),
+    dailyCost:  getRouteDailyCost(route)
+  };
+}
+
+// Get full route P&L for a given date
+function getRoutePnL(route) {
+  var stops = route.stops || [];
+  var dailyCost = getRouteDailyCost(route);
+  var totalRevenue = 0;
+  stops.forEach(function(s) {
+    var prop = (state.properties||[]).find(function(p){return p.id===s.propId;});
+    if (prop) totalRevenue += getRevenuePerVisit(prop);
+  });
+  var margin = totalRevenue - dailyCost;
+  return {
+    revenue:   totalRevenue,
+    cost:      dailyCost,
+    margin:    margin,
+    marginPct: totalRevenue > 0 ? (margin/totalRevenue)*100 : 0,
+    truck:     getTruckFromRoute(route.name),
+    stops:     stops.length
+  };
+}
+
+
 // These services are required once per month. On the last scheduled visit
 // of the month for a property, any not yet done this month are flagged.
 const PERIODIC_SERVICES = ['Trim Shrubs', 'Weed Control', 'Fertilize', 'Irrigation Check'];
@@ -3375,12 +3535,21 @@ function openPropDetail(id) {
         ${p.notes?`<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.2);border-radius:8px;padding:10px;font-size:12px;color:var(--yellow);">📝 ${p.notes}</div>`:''}
       </div>
 
+    </div>
+
+    ${state.role === 'manager' ? getPropProfitabilityCard(p) : ''}
+
 
       <div id="prop-edit-${id}" style="display:none;flex-direction:column;gap:10px;">
         <input class="inp" id="pe-name-${id}" value="${p.name||''}" placeholder="Customer name"/>
         <input class="inp" id="pe-address-${id}" value="${p.address||''}" placeholder="Address"/>
         <input class="inp" id="pe-phone-${id}" value="${p.phone||''}" placeholder="Phone" type="tel"/>
         <textarea class="inp" id="pe-notes-${id}" rows="2" placeholder="Notes (gate code, dog, etc.)">${p.notes||''}</textarea>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;">MONTHLY RATE ($)</div>
+          <input class="inp" id="pe-rate-${id}" value="${p.monthlyRate||''}" placeholder="e.g. 180" type="number" min="0" step="0.01"/>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;">What you charge this client per month</div>
+        </div>
         <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">SERVICE FREQUENCY</div>
         <select class="inp" id="pe-freq-${id}" onchange="onPeFreqChange('${id}',this.value)">
           <option value="">— Not set —</option>
@@ -3517,6 +3686,7 @@ function savePropEdit(id) {
   p.address    = document.getElementById('pe-address-'+id)?.value.trim() || '';
   p.phone      = document.getElementById('pe-phone-'+id)?.value.trim()   || '';
   p.notes      = document.getElementById('pe-notes-'+id)?.value          || '';
+  p.monthlyRate= parseFloat(document.getElementById('pe-rate-'+id)?.value) || 0;
   p.frequency  = document.getElementById('pe-freq-'+id)?.value           || '';
   p.customFreq = document.getElementById('pe-custom-'+id)?.value         || '';
   // Save service days for 2x Per Week
@@ -3584,6 +3754,63 @@ function savePropServices(id) {
   toast('Services saved ✓');
 }
 
+
+function getPropProfitabilityCard(prop) {
+  var rate    = parseFloat(prop.monthlyRate) || 0;
+  var visits  = getVisitsPerMonth(prop.frequency);
+  var revPerVisit = rate > 0 ? rate / visits : 0;
+
+  // Find routes this property appears on to get cost per stop
+  var propRoutes = (state.routes||[]).filter(function(r){
+    return (r.stops||[]).some(function(s){return s.propId===prop.id;});
+  });
+  var avgCostPerStop = 0;
+  if (propRoutes.length) {
+    avgCostPerStop = propRoutes.reduce(function(sum, r){ return sum + getCostPerStop(r); }, 0) / propRoutes.length;
+  }
+
+  var margin    = revPerVisit - avgCostPerStop;
+  var marginPct = revPerVisit > 0 ? (margin / revPerVisit) * 100 : 0;
+  var monthlyMargin = margin * visits;
+  var marginColor = margin > 0 ? 'var(--green)' : margin === 0 ? 'var(--yellow)' : 'var(--red)';
+
+  if (!rate) {
+    return `<div class="card" style="margin-bottom:12px;border-left:3px solid var(--border2);">
+      <div class="sec-title">Profitability</div>
+      <div style="font-size:13px;color:var(--text3);">Set a monthly rate to see margin analysis.</div>
+      <button onclick="togglePropEdit('${prop.id}')" style="margin-top:8px;font-size:12px;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.25);border-radius:7px;padding:5px 12px;color:var(--blue);cursor:pointer;">+ Add Monthly Rate</button>
+    </div>`;
+  }
+
+  return `<div class="card" style="margin-bottom:12px;border-left:3px solid ${marginColor};">
+    <div class="sec-title">Profitability <span style="font-size:9px;opacity:.5;font-weight:400;text-transform:none;letter-spacing:0;">(manager only)</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:18px;font-weight:700;color:var(--blue);">$${rate.toFixed(0)}</div>
+        <div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-top:2px;">Monthly Rate</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:18px;font-weight:700;color:var(--text);">$${revPerVisit.toFixed(0)}</div>
+        <div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-top:2px;">Per Visit</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:18px;font-weight:700;color:${marginColor};">$${avgCostPerStop.toFixed(0)}</div>
+        <div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-top:2px;">Cost/Stop</div>
+      </div>
+    </div>
+    <div style="background:var(--bg3);border-radius:8px;padding:10px;display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div style="font-size:11px;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;">Visit Margin</div>
+        <div style="font-size:20px;font-weight:700;color:${marginColor};margin-top:2px;">$${margin.toFixed(0)} <span style="font-size:13px;opacity:.7;">(${marginPct.toFixed(0)}%)</span></div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:11px;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;">Monthly Margin</div>
+        <div style="font-size:20px;font-weight:700;color:${marginColor};margin-top:2px;">$${monthlyMargin.toFixed(0)}</div>
+      </div>
+    </div>
+    ${propRoutes.length === 0 ? '<div style="font-size:11px;color:var(--text3);margin-top:6px;">⚠ Add to a route to see accurate cost per stop</div>' : ''}
+  </div>`;
+}
 
 function getPropertyHistory(propId) {
   var prop = (state.properties||[]).find(function(p){return p.id===propId;});
