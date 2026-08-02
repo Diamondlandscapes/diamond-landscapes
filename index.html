@@ -1495,7 +1495,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v2'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v3'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2060,15 +2060,14 @@ function openCrewDetail(id) {
           <div style="font-size:11px;color:var(--text3);margin-top:4px;">${c.pin?'Leave blank to keep current PIN.':'Leave blank for no PIN.'}</div>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg3);border-radius:10px;padding:12px 14px;">
-          <div>
+          <div style="flex:1;">
             <div style="font-size:13px;font-weight:700;">🗺️ View All Routes</div>
             <div style="font-size:11px;color:var(--text3);margin-top:2px;">Allow this crew member to view all routes (read-only)</div>
           </div>
-          <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;">
-            <input type="checkbox" id="ce-viewroutes-${id}" ${c.canViewRoutes?'checked':''} style="opacity:0;width:0;height:0;"/>
-            <span onclick="this.previousElementSibling.click()" style="position:absolute;cursor:pointer;inset:0;background:${c.canViewRoutes?'var(--green3)':'var(--bg4)'};border-radius:24px;border:1px solid var(--border2);transition:.2s;">
-              <span style="position:absolute;height:18px;width:18px;left:${c.canViewRoutes?'22px':'3px'};bottom:2px;background:#fff;border-radius:50%;transition:.2s;"></span>
-            </span>
+          <label for="ce-viewroutes-${id}" style="position:relative;display:inline-block;width:44px;height:26px;flex-shrink:0;cursor:pointer;">
+            <input type="checkbox" id="ce-viewroutes-${id}" ${c.canViewRoutes?'checked':''} style="position:absolute;opacity:0;width:0;height:0;"/>
+            <span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:${c.canViewRoutes?'var(--green3)':'var(--bg4)'};border-radius:26px;border:1px solid var(--border2);transition:.2s;" id="ce-viewroutes-track-${id}"></span>
+            <span style="position:absolute;height:18px;width:18px;left:${c.canViewRoutes?'21px':'3px'};bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.3);" id="ce-viewroutes-thumb-${id}"></span>
           </label>
         </div>
         <button class="btn btn-green" onclick="saveCrewEdit('${id}')" style="font-size:13px;">Save Changes</button>
@@ -2189,7 +2188,16 @@ function saveCrewEdit(id) {
   openCrewDetail(id); renderCrew(); toast('Saved ✓');
 }
 
-function assignCrewToRoute(crewId) {
+// Animate view-routes toggle when checkbox state changes
+document.addEventListener('change', function(e) {
+  if (!e.target || !e.target.id || !e.target.id.startsWith('ce-viewroutes-')) return;
+  var cid = e.target.id.replace('ce-viewroutes-', '');
+  var track = document.getElementById('ce-viewroutes-track-' + cid);
+  var thumb = document.getElementById('ce-viewroutes-thumb-' + cid);
+  if (!track || !thumb) return;
+  track.style.background = e.target.checked ? 'var(--green3)' : 'var(--bg4)';
+  thumb.style.left = e.target.checked ? '21px' : '3px';
+});
   const routeId = document.getElementById('crew-assign-route-'+crewId)?.value;
   if (!routeId) { toast('Select a route first'); return; }
   const r = state.routes.find(x => x.id === routeId);
