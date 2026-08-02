@@ -846,7 +846,7 @@ select.inp{cursor:pointer;}
       <div class="stat-row" style="grid-template-columns:1fr 1fr;">
         <div class="stat-c" onclick="switchTab('routes')" style="cursor:pointer;" title="View Routes">
           <div class="stat-v" style="color:var(--green);" id="dash-jobs-today">0</div>
-          <div class="stat-l">Jobs Today</div>
+          <div class="stat-l">Stops Today</div>
           <div style="font-size:9px;color:var(--text4);margin-top:4px;letter-spacing:.3px;">tap to view →</div>
         </div>
         <div class="stat-c" onclick="switchTab('routes')" style="cursor:pointer;" title="View Routes">
@@ -1554,7 +1554,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v22'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v23'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1835,14 +1835,19 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
   // Render live crew status card
   renderCrewStatusCard();
 
-  const todayRoutes = state.routes.filter(r => r.day === today);
-  const completed = todayRoutes.filter(r => r.status === 'Done').length;
-  const openFlags = state.flags.filter(f => !f.resolved);
-  const activeCrew = new Set(todayRoutes.map(r => r.crewId).filter(Boolean)).size;
+  var todayISO    = new Date().toISOString().slice(0,10);
+  const todayRoutes = state.routes.filter(r => r.date === todayISO || r.day === today);
+  const completed   = todayRoutes.filter(r => r.status === 'Done').length;
+  const openFlags   = state.flags.filter(f => !f.resolved);
+  const activeCrew  = new Set(todayRoutes.map(r => r.crewId).filter(Boolean)).size;
 
-  document.getElementById('dash-jobs-today').textContent = todayRoutes.length;
-  document.getElementById('dash-completed').textContent = completed;
-  document.getElementById('dash-flags').textContent = openFlags.length;
+  // Count total stops across today's routes for "Jobs Today"
+  const totalStops = todayRoutes.reduce((sum, r) => sum + (r.stops?.length||0), 0);
+  const doneStops  = todayRoutes.reduce((sum, r) => sum + (r.stops?.filter(s=>s.completed).length||0), 0);
+
+  document.getElementById('dash-jobs-today').textContent = totalStops || todayRoutes.length;
+  document.getElementById('dash-completed').textContent  = doneStops || completed;
+  document.getElementById('dash-flags').textContent      = openFlags.length;
   document.getElementById('dash-crew-active').textContent = activeCrew;
 
   // routes summary
@@ -6560,14 +6565,18 @@ let ls_mgrBuffer  = '';
 let ls_crewBuffer = '';
 
 function ls_showWho() {
-  document.getElementById('ls-who').style.display        = 'flex';
-  document.getElementById('ls-manager').style.display    = 'none';
-  document.getElementById('ls-crew').style.display       = 'none';
-  document.getElementById('ls-crew-names').style.display = 'none';
+  var who = document.getElementById('ls-who');
+  var mgr = document.getElementById('ls-manager');
+  var crew = document.getElementById('ls-crew');
+  var names = document.getElementById('ls-crew-names');
+  if (who)   who.style.display   = 'flex';
+  if (mgr)   mgr.style.display   = 'none';
+  if (crew)  crew.style.display  = 'none';
+  if (names) names.style.display = 'none';
   ls_mgrBuffer = ''; ls_crewBuffer = '';
   ls_updateDots('lpd', 0); ls_updateDots('lcd', 0);
-  document.getElementById('ls-pin-error').textContent  = '';
-  document.getElementById('ls-crew-error').textContent = '';
+  var pe = document.getElementById('ls-pin-error');   if (pe) pe.textContent = '';
+  var ce = document.getElementById('ls-crew-error');  if (ce) ce.textContent = '';
 }
 
 function ls_showManager() {
