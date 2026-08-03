@@ -1589,7 +1589,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v42'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v43'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -4270,7 +4270,7 @@ function openPropDetail(id) {
               </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;margin-left:8px;">
-              ${getFlagPhoto(f)?`<img src="${getFlagPhoto(f)}" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f)}','Issue')" style="width:60px;height:60px;border-radius:8px;object-fit:cover;cursor:zoom-in;border:2px solid var(--border2);"/>`:'' }
+              ${getFlagPhoto(f)?`<img src="${getFlagPhoto(f)}" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f)}','Issue')" referrerpolicy="no-referrer" onerror="this.style.display='none'" style="width:60px;height:60px;border-radius:8px;object-fit:cover;cursor:zoom-in;border:2px solid var(--border2);"/>`:'' }
               ${!f.resolved?`
                 <div style="display:flex;gap:4px;margin-top:4px;">
                   <button onclick="event.stopPropagation();openEditFlag('${f.id}')"
@@ -4825,7 +4825,7 @@ function openEditFlag(flagId) {
     '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">DESCRIPTION</div>' +
     '<textarea id="ef-note" class="inp" rows="3" style="margin-bottom:12px;">' + (f.note||'') + '</textarea>' +
     '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">PHOTO</div>' +
-    (getFlagPhoto(f) ? '<img src="'+getFlagPhoto(f)+'" style="width:100%;border-radius:10px;object-fit:contain;max-height:300px;margin-bottom:8px;cursor:zoom-in;" onclick="openPhoto(\''+getFlagPhoto(f)+'\',\'Flag Photo\')" />' : '') +
+    (getFlagPhoto(f) ? '<img src="'+getFlagPhoto(f)+'" referrerpolicy="no-referrer" style="width:100%;border-radius:10px;object-fit:contain;max-height:300px;margin-bottom:8px;cursor:zoom-in;" onclick="openPhoto(\''+getFlagPhoto(f)+'\',\'Flag Photo\')" />' : '') +
     '<label style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:10px 14px;cursor:pointer;margin-bottom:12px;">' +
       '<span style="font-size:20px;">📷</span>' +
       '<span style="font-size:13px;font-weight:700;">'+( getFlagPhoto(f) ? 'Replace Photo' : 'Add Photo' )+'</span>' +
@@ -7778,7 +7778,7 @@ function renderReports() {
           +'<div style="font-size:12px;color:var(--text3);margin-top:2px;">'+f.note+'</div>'
           +'<div style="font-size:11px;color:var(--text4);margin-top:3px;">Reported by '+(f.by||'—')+' · '+(f.date||'')+'</div>'
           +'</div>'
-          +(getFlagPhoto(f)?'<img src="'+getFlagPhoto(f)+'" style="width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0;"/>':'')+
+          +(getFlagPhoto(f)?'<img src="'+getFlagPhoto(f)+'" referrerpolicy="no-referrer" style="width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0;"/>':'')+
           +'</div>';
       }).join('');
     }
@@ -7806,7 +7806,7 @@ function renderReports() {
           +'<div style="font-size:11px;color:var(--text4);margin-top:3px;">Resolved '+(f.resolveDate||'')+'</div>'
           +'</div>'
           +'<div style="display:flex;gap:4px;">'
-          +(getFlagPhoto(f)?'<img src="'+getFlagPhoto(f)+'" style="width:48px;height:48px;border-radius:6px;object-fit:cover;"/>':'')
+          +(getFlagPhoto(f)?'<img src="'+getFlagPhoto(f)+'" referrerpolicy="no-referrer" style="width:48px;height:48px;border-radius:6px;object-fit:cover;"/>':'')
           +(getFlagResolvePhoto(f)?'<img src="'+getFlagResolvePhoto(f)+'" style="width:48px;height:48px;border-radius:6px;object-fit:cover;border:2px solid var(--green);"/>':'')+
           +'</div></div>';
       }).join('');
@@ -8197,7 +8197,7 @@ function openDashFlags() {
                     <div style="font-weight:800;font-size:14px;">${prop?.name||'Unknown Property'}</div>
                     <div style="font-size:12px;color:var(--text3);margin-top:2px;">📍 ${prop?.address||'No address'}</div>
                   </div>
-                  ${getFlagPhoto(f) ? `<img src="${getFlagPhoto(f)}" style="width:70px;height:70px;border-radius:8px;object-fit:cover;margin-left:10px;flex-shrink:0;cursor:zoom-in;border:2px solid var(--border2);" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f)}','Issue')"/>` : ''}
+                  ${getFlagPhoto(f) ? `<img src="${getFlagPhoto(f)}" referrerpolicy="no-referrer" onerror="this.style.display='none'" style="width:70px;height:70px;border-radius:8px;object-fit:cover;margin-left:10px;flex-shrink:0;cursor:zoom-in;border:2px solid var(--border2);" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f)}','Issue')"/>` : ''}
                 </div>
                 <div style="background:var(--bg3);border-radius:8px;padding:10px;font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:8px;">
                   ${f.note}
@@ -8646,7 +8646,7 @@ function openReportFlag(flagId) {
           <span>Reported by <strong style="color:var(--text3);">${f.by||'—'}</strong> · ${f.date||''}</span>
           <button onclick="translateFlagPanelNote('${f.note.replace(/'/g,"\\'")}')" id="flag-panel-translate-btn" style="background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;color:var(--blue);cursor:pointer;">🇲🇽 Español</button>
         </div>
-        ${f.photo ? `<img src="${f.photo}" onclick="openPhoto('${getFlagPhoto(f) || f.photo}','Issue Photo — ${f.service}')" style="width:100%;border-radius:10px;margin-top:10px;max-height:200px;object-fit:cover;cursor:zoom-in;"/>` : ''}
+        ${(getFlagPhoto(f) || f.photo) ? `<img src="${getFlagPhoto(f) || f.photo}" onclick="openPhoto('${getFlagPhoto(f) || f.photo}','Issue Photo — ${f.service}')" referrerpolicy="no-referrer" onerror="this.parentElement.querySelector('.photo-error')&&(this.style.display='none',this.parentElement.querySelector('.photo-error').style.display='block')" style="width:100%;height:auto;border-radius:10px;margin-top:10px;cursor:zoom-in;display:block;"/><div class="photo-error" style="display:none;font-size:12px;color:var(--text4);margin-top:8px;text-align:center;padding:12px;background:var(--bg3);border-radius:8px;">⚠ Photo unavailable</div>` : ''}
       </div>
 
 
