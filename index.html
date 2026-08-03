@@ -1571,7 +1571,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v33'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v34'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -6851,7 +6851,8 @@ function ls_showCrewNames() {
       </div>`;
       return;
     }
-    list.innerHTML = state.crew.map(c => `
+    const sorted = [...state.crew].sort((a,b) => (a.sortOrder||0) - (b.sortOrder||0));
+    list.innerHTML = sorted.map(c => `
       <button onclick="ls_crewSelected('${c.id}')" style="display:flex;align-items:center;gap:14px;width:100%;
         background:#1f281f;border:1px solid #2e3d2e;border-radius:14px;padding:14px 16px;
         cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
