@@ -844,12 +844,12 @@ select.inp{cursor:pointer;}
 
     <div id="screen-dashboard" class="screen active">
       <div class="stat-row" style="grid-template-columns:1fr 1fr;">
-        <div class="stat-c" onclick="switchTab('routes')" style="cursor:pointer;" title="View Routes">
+        <div class="stat-c" onclick="openDashStopsList(false)" style="cursor:pointer;" title="View all stops today">
           <div class="stat-v" style="color:var(--green);" id="dash-jobs-today">0</div>
           <div class="stat-l">Stops Today</div>
           <div style="font-size:9px;color:var(--text4);margin-top:4px;letter-spacing:.3px;">tap to view →</div>
         </div>
-        <div class="stat-c" onclick="switchTab('routes')" style="cursor:pointer;" title="View Routes">
+        <div class="stat-c" onclick="openDashStopsList(true)" style="cursor:pointer;" title="View completed stops">
           <div class="stat-v" style="color:var(--lime);" id="dash-completed">0</div>
           <div class="stat-l">Completed</div>
           <div style="font-size:9px;color:var(--text4);margin-top:4px;letter-spacing:.3px;">tap to view →</div>
@@ -859,7 +859,7 @@ select.inp{cursor:pointer;}
           <div class="stat-l">Flags / Issues</div>
           <div style="font-size:9px;color:var(--text4);margin-top:4px;letter-spacing:.3px;">tap to view →</div>
         </div>
-        <div class="stat-c" onclick="switchTab('crew')" style="cursor:pointer;" title="View Crew">
+        <div class="stat-c" onclick="openDispatchBoard()" style="cursor:pointer;" title="Open Dispatch Board">
           <div class="stat-v" style="color:var(--teal);" id="dash-crew-active">0</div>
           <div class="stat-l">Crew Active</div>
           <div style="font-size:9px;color:var(--text4);margin-top:4px;letter-spacing:.3px;">tap to view →</div>
@@ -1571,7 +1571,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v40'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v41'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -3520,7 +3520,7 @@ function renderCrewStatusCard() {
   var sColors = { green:'var(--green)', yellow:'var(--yellow)', red:'var(--red)', gray:'var(--text3)' };
   el.innerHTML = data.map(function(d) {
     var col = sColors[d.status];
-    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">'
+    return '<div onclick="openDashCrewRoute(\'' + d.route.id + '\')" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;" onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'\'">'
       + '<div style="width:7px;height:7px;border-radius:50%;background:' + col + ';flex-shrink:0;' + (d.status==='green'?'animation:pulse 2s infinite;':'') + '"></div>'
       + '<div style="width:30px;height:30px;border-radius:8px;background:rgba(63,185,80,.1);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--green);flex-shrink:0;">' + (d.crew.name||'?')[0].toUpperCase() + '</div>'
       + '<div style="flex:1;min-width:0;">'
@@ -3535,6 +3535,80 @@ function renderCrewStatusCard() {
       + '</div>'
     + '</div>';
   }).join('');
+}
+
+function openDashCrewRoute(routeId) {
+  // Switch to routes tab, show the day for this route, open the detail panel
+  switchTab('routes');
+  var r = (state.routes||[]).find(function(x){return x.id===routeId;});
+  if (!r) return;
+  var dateISO = r.date || new Date().toISOString().slice(0,10);
+  window._routesCalYear  = new Date(dateISO+'T12:00:00').getFullYear();
+  window._routesCalMonth = new Date(dateISO+'T12:00:00').getMonth();
+  routesShowDay(dateISO);
+  setTimeout(function(){ openRouteDetail(routeId); }, 100);
+}
+
+function openDashStopsList(completedOnly) {
+  var todayISO  = new Date().toISOString().slice(0,10);
+  var todayName = new Date().toLocaleDateString('en-US',{weekday:'long'});
+  var todayRoutes = (state.routes||[]).filter(function(r){
+    return r.date === todayISO || r.day === todayName;
+  });
+
+  var ex = document.getElementById('dash-stops-sheet'); if(ex) ex.remove();
+  var sheet = document.createElement('div');
+  sheet.id = 'dash-stops-sheet';
+  sheet.style.cssText = 'position:fixed;inset:0;z-index:5000;background:var(--bg);overflow-y:auto;';
+
+  var totalStops = 0, doneStops = 0;
+  var html = '<div style="max-width:680px;margin:0 auto;padding:20px 16px 80px;">'
+    + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">'
+      + '<button onclick="document.getElementById(\'dash-stops-sheet\').remove()" style="padding:8px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);cursor:pointer;font-size:13px;font-weight:600;">← Back</button>'
+      + '<div>'
+        + '<div style="font-size:18px;font-weight:800;">' + (completedOnly ? '✓ Completed Stops' : 'All Stops Today') + '</div>'
+        + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">' + new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}) + '</div>'
+      + '</div>'
+    + '</div>';
+
+  if (!todayRoutes.length) {
+    html += '<div class="card" style="text-align:center;color:var(--text4);padding:30px;">No routes scheduled today</div>';
+  } else {
+    todayRoutes.forEach(function(r) {
+      var crew = (state.crew||[]).find(function(c){return c.id===r.crewId;});
+      var stops = (r.stops||[]).filter(function(s){
+        return completedOnly ? s.completed : true;
+      });
+      if (!stops.length) return;
+      totalStops += stops.length;
+      doneStops  += stops.filter(function(s){return s.completed;}).length;
+
+      html += '<div style="margin-bottom:16px;">'
+        + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px 12px;background:var(--bg2);border-radius:10px;border:1px solid var(--border);">'
+          + '<div style="font-size:14px;font-weight:800;">' + r.name + '</div>'
+          + (crew ? '<div style="font-size:12px;color:var(--text3);">· ' + crew.name + '</div>' : '')
+          + '<div style="margin-left:auto;font-size:12px;color:var(--text3);">' + stops.filter(function(s){return s.completed;}).length + '/' + (r.stops||[]).length + ' done</div>'
+        + '</div>';
+
+      stops.forEach(function(s, i) {
+        var prop = (state.properties||[]).find(function(p){return p.id===s.propId;});
+        html += '<div onclick="openDashCrewRoute(\'' + r.id + '\')" style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg2);border-radius:10px;margin-bottom:6px;border:1px solid var(--border);border-left:3px solid ' + (s.completed?'var(--green)':'var(--border2)') + ';cursor:pointer;">'
+          + '<div style="width:24px;height:24px;border-radius:50%;background:' + (s.completed?'var(--green3)':'var(--bg4)') + ';border:2px solid ' + (s.completed?'var(--green)':'var(--border2)') + ';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:' + (s.completed?'#fff':'var(--text3)') + ';flex-shrink:0;">' + (s.completed?'✓':(i+1)) + '</div>'
+          + '<div style="flex:1;min-width:0;">'
+            + '<div style="font-size:13px;font-weight:700;">' + (prop?prop.name:'Unknown') + '</div>'
+            + '<div style="font-size:11px;color:var(--text3);">' + (prop?prop.address:'') + '</div>'
+            + (s.completed && s.completedBy ? '<div style="font-size:10px;color:var(--green);margin-top:2px;">✓ by ' + s.completedBy + (s.completedAt?' · '+s.completedAt:'') + '</div>' : '')
+            + (s.completedServices&&s.completedServices.length ? '<div style="font-size:10px;color:var(--text3);">' + s.completedServices.join(', ') + '</div>' : '')
+          + '</div>'
+          + '<span class="badge badge-' + (s.completed?'green':'blue') + '">' + (s.completed?'Done':'Pending') + '</span>'
+        + '</div>';
+      });
+      html += '</div>';
+    });
+  }
+  html += '</div>';
+  sheet.innerHTML = html;
+  document.body.appendChild(sheet);
 }
 
 function openDispatchBoard() {
