@@ -17,6 +17,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCJcEu25G-mITZOjzQdOq6eG_jSnAsq0PQ&libraries=geocoding" async defer></script>
 <style>
 button,a{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
 :root{
@@ -362,6 +363,11 @@ select.inp{cursor:pointer;}
     box-shadow: -4px 0 40px rgba(0,0,0,.5);
     border-left: 1px solid var(--border);
     overflow-x: hidden !important;
+    transition: width .3s ease !important;
+  }
+  .panel.map-open {
+    width: 880px !important;
+    max-width: 880px !important;
   }
 
   /* overlays center on screen */
@@ -1212,9 +1218,21 @@ select.inp{cursor:pointer;}
   <div id="route-panel" class="panel">
     <div class="panel-head">
       <div class="panel-title" id="rp-title">Route Detail</div>
-      <button class="close-btn" onclick="closePanel('route-panel')">✕</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button id="rp-map-btn" onclick="toggleRouteMap()" style="padding:5px 12px;background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.25);border-radius:8px;color:var(--blue);cursor:pointer;font-size:12px;font-weight:600;display:none;"><i class="ti ti-map"></i> Map</button>
+        <button class="close-btn" onclick="closePanel('route-panel')">✕</button>
+      </div>
     </div>
-    <div style="flex:1;overflow-y:auto;overflow-x:hidden;padding:14px;-webkit-overflow-scrolling:touch;box-sizing:border-box;" id="rp-body"></div>
+    <div style="display:flex;height:calc(100% - 60px);">
+      <div style="flex:1;overflow-y:auto;overflow-x:hidden;padding:14px;-webkit-overflow-scrolling:touch;box-sizing:border-box;" id="rp-body"></div>
+      <div id="rp-map-pane" style="display:none;width:50%;border-left:1px solid var(--border);position:relative;">
+        <div id="rp-map" style="width:100%;height:100%;"></div>
+        <div id="rp-map-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg2);flex-direction:column;gap:8px;">
+          <i class="ti ti-map-pin" style="font-size:32px;color:var(--text3);"></i>
+          <div style="font-size:13px;color:var(--text3);">Loading map...</div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="prop-panel" class="panel">
@@ -1571,7 +1589,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v41'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v42'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2376,6 +2394,18 @@ function openRouteDetail(id) {
   html += canEdit ? `<div style="margin-top:12px;"><button class="btn btn-red" onclick="deleteRoute('${r.id}')" style="font-size:13px;">Delete Route</button></div>` : '';
   document.getElementById('rp-body').innerHTML = html;
   document.getElementById('route-panel').classList.add('open');
+  // Show map button for managers
+  var mapBtn = document.getElementById('rp-map-btn');
+  if (mapBtn) mapBtn.style.display = state.role === 'manager' ? '' : 'none';
+  // Store current route id for map
+  window._currentRouteMapId = id;
+  // Reset map pane if open
+  var mapPane = document.getElementById('rp-map-pane');
+  if (mapPane && mapPane.style.display !== 'none') {
+    mapPane.style.display = 'none';
+    document.getElementById('route-panel').classList.remove('map-open');
+    if (mapBtn) { mapBtn.innerHTML = '<i class="ti ti-map"></i> Map'; mapBtn.style.background = 'rgba(88,166,255,.12)'; mapBtn.style.color = 'var(--blue)'; }
+  }
   if (canEdit) initRouteDragDrop(r.id);
 }
 
@@ -3455,6 +3485,139 @@ function translateTextToSpanish(text) {
     });
   });
   return result;
+}
+
+// ── Route Map View ────────────────────────────────────────────────────────
+var _routeMapInstance = null;
+var _routeMapMarkers  = [];
+
+function toggleRouteMap() {
+  var pane  = document.getElementById('rp-map-pane');
+  var panel = document.getElementById('route-panel');
+  var btn   = document.getElementById('rp-map-btn');
+  var isOpen = pane && pane.style.display !== 'none';
+  if (isOpen) {
+    pane.style.display = 'none';
+    panel.classList.remove('map-open');
+    if (btn) { btn.innerHTML = '<i class="ti ti-map"></i> Map'; btn.style.background='rgba(88,166,255,.12)'; btn.style.color='var(--blue)'; }
+  } else {
+    if (pane) pane.style.display = '';
+    panel.classList.add('map-open');
+    if (btn) { btn.innerHTML = '<i class="ti ti-list"></i> List'; btn.style.background='rgba(63,185,80,.12)'; btn.style.color='var(--green)'; }
+    renderRouteMap(window._currentRouteMapId);
+  }
+}
+
+async function renderRouteMap(routeId) {
+  var r = (state.routes||[]).find(function(x){return x.id===routeId;});
+  if (!r) return;
+  var loadingEl = document.getElementById('rp-map-loading');
+  var mapEl     = document.getElementById('rp-map');
+  if (loadingEl) loadingEl.style.display = 'flex';
+
+  // Wait for Google Maps API
+  var attempts = 0;
+  while (typeof google === 'undefined' && attempts < 20) {
+    await new Promise(function(res){setTimeout(res,500);});
+    attempts++;
+  }
+  if (typeof google === 'undefined') {
+    if (loadingEl) loadingEl.innerHTML = '<div style="font-size:13px;color:var(--red);text-align:center;padding:20px;">Could not load Google Maps</div>';
+    return;
+  }
+
+  // Clear old markers
+  _routeMapMarkers.forEach(function(m){m.setMap(null);}); _routeMapMarkers = [];
+
+  // Init or reuse map instance
+  if (!_routeMapInstance || !mapEl.querySelector('canvas')) {
+    _routeMapInstance = new google.maps.Map(mapEl, {
+      zoom: 12,
+      center: {lat:26.4615, lng:-80.0728},
+      mapTypeId: 'roadmap',
+      styles:[
+        {elementType:'geometry',stylers:[{color:'#1c2128'}]},
+        {elementType:'labels.text.fill',stylers:[{color:'#adbac7'}]},
+        {elementType:'labels.text.stroke',stylers:[{color:'#1c2128'}]},
+        {featureType:'road',elementType:'geometry',stylers:[{color:'#22272e'}]},
+        {featureType:'road',elementType:'geometry.stroke',stylers:[{color:'#2d333b'}]},
+        {featureType:'water',elementType:'geometry',stylers:[{color:'#0d1117'}]},
+        {featureType:'poi',stylers:[{visibility:'off'}]},
+        {featureType:'transit',stylers:[{visibility:'off'}]}
+      ],
+      disableDefaultUI:false, zoomControl:true, streetViewControl:false, mapTypeControl:false
+    });
+  }
+
+  var geocoder   = new google.maps.Geocoder();
+  var infoWindow = new google.maps.InfoWindow();
+  var bounds     = new google.maps.LatLngBounds();
+  var stops      = r.stops || [];
+  var processed  = 0;
+
+  if (!stops.length) {
+    if (loadingEl) loadingEl.innerHTML = '<div style="font-size:13px;color:var(--text3);">No stops on this route</div>';
+    return;
+  }
+
+  stops.forEach(function(s, i) {
+    var prop = (state.properties||[]).find(function(p){return p.id===s.propId;});
+    if (!prop || !prop.address) { processed++; checkDone(); return; }
+
+    geocoder.geocode({address: prop.address + ', FL'}, function(results, status) {
+      processed++;
+      if (status === 'OK' && results[0]) {
+        var pos   = results[0].geometry.location;
+        var color = s.completed ? '#3fb950' : '#58a6ff';
+        bounds.extend(pos);
+
+        var pinSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">'
+          + '<path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 24 16 24s16-12 16-24C32 7.163 24.837 0 16 0z" fill="' + color + '"/>'
+          + '<circle cx="16" cy="16" r="10" fill="rgba(0,0,0,0.25)"/>'
+          + '<text x="16" y="21" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" font-weight="bold" fill="#fff">' + (i+1) + '</text>'
+          + '</svg>';
+
+        var marker = new google.maps.Marker({
+          position: pos, map: _routeMapInstance, title: prop.name,
+          icon: {
+            url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(pinSvg),
+            scaledSize: new google.maps.Size(32,40),
+            anchor: new google.maps.Point(16,40)
+          },
+          zIndex: i+1
+        });
+
+        marker.addListener('click', function() {
+          var flags = (state.flags||[]).filter(function(f){return f.propId===prop.id&&!f.resolved;});
+          infoWindow.setContent(
+            '<div style="font-family:-apple-system,sans-serif;min-width:180px;padding:4px;">'
+            + '<div style="font-weight:700;font-size:14px;margin-bottom:4px;">' + (i+1) + '. ' + prop.name + '</div>'
+            + '<div style="font-size:12px;color:#666;margin-bottom:6px;">' + (prop.address||'') + '</div>'
+            + (s.completed
+              ? '<div style="font-size:12px;color:#3fb950;font-weight:600;">✓ Done' + (s.completedBy?' · '+s.completedBy:'') + '</div>'
+                + (s.completedServices&&s.completedServices.length?'<div style="font-size:11px;color:#666;">' + s.completedServices.join(', ') + '</div>':'')
+              : '<div style="font-size:12px;color:#58a6ff;font-weight:600;">⏳ Pending</div>')
+            + (flags.length?'<div style="font-size:12px;color:#f85149;margin-top:4px;">⚑ '+flags.length+' open flag'+(flags.length>1?'s':'')+'</div>':'')
+            + '</div>'
+          );
+          infoWindow.open(_routeMapInstance, marker);
+        });
+        _routeMapMarkers.push(marker);
+      }
+      checkDone();
+    });
+  });
+
+  function checkDone() {
+    if (processed < stops.length) return;
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (_routeMapMarkers.length) {
+      _routeMapInstance.fitBounds(bounds);
+      google.maps.event.addListenerOnce(_routeMapInstance, 'bounds_changed', function() {
+        if (_routeMapInstance.getZoom() > 15) _routeMapInstance.setZoom(15);
+      });
+    }
+  }
 }
 
 
