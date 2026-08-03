@@ -1057,16 +1057,15 @@ select.inp{cursor:pointer;}
           <span id="report-open-flag-count" class="badge badge-red"></span>
         </div>
         <div style="font-size:11px;color:var(--text4);margin-bottom:8px;">Tap any flag to view details, assign to a route, or resolve</div>
-      <div id="report-open-flags"></div>
+        <div id="report-open-flags" style="display:flex;flex-direction:column;gap:0;"></div>
       </div>
-
 
       <div class="card" style="margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <div class="sec-title" style="margin-bottom:0;">Recently Resolved</div>
+          <div class="sec-title" style="margin-bottom:0;">Resolved Flags</div>
           <span id="report-resolved-count" class="badge badge-green"></span>
         </div>
-        <div id="report-resolved-flags"></div>
+        <div id="report-resolved-flags" style="display:flex;flex-direction:column;gap:0;"></div>
       </div>
 
 
@@ -1592,7 +1591,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v50'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v51'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -8020,22 +8019,27 @@ function renderReports() {
       openFlagsEl.innerHTML = '<div style="font-size:13px;color:var(--green);text-align:center;padding:10px;">✓ No open flags</div>';
     } else {
       var sorted = openFlags.slice().sort(function(a,b){ var o={Urgent:0,High:1,Medium:2,Low:3}; return (o[a.priority]||3)-(o[b.priority]||3); });
-      openFlagsEl.innerHTML = sorted.map(function(f) {
-        var prop = state.properties.find(function(p){ return p.id===f.propId; });
-        var borderColor = (f.priority==='Urgent'||f.priority==='High')?'var(--red)':'var(--yellow)';
-        var badgeColor = PCOLORS[f.priority]||'yellow';
-        return '<div onclick="openReportFlag(\'' + f.id + '\')" style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:var(--bg3);border-radius:10px;margin-bottom:6px;border-left:3px solid '+borderColor+';cursor:pointer;">'
-          +'<div style="flex:1;">'
-          +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">'
-          +'<span class="badge badge-'+badgeColor+'">'+f.priority+'</span>'
-          +'<span style="font-size:12px;color:var(--blue);">'+f.service+'</span></div>'
-          +'<div style="font-weight:700;font-size:13px;">'+(prop?prop.name:'Unknown')+'</div>'
-          +'<div style="font-size:12px;color:var(--text3);margin-top:2px;">'+f.note+'</div>'
-          +'<div style="font-size:11px;color:var(--text4);margin-top:3px;">Reported by '+(f.by||'—')+' · '+(f.date||'')+'</div>'
-          +'</div>'
-          +(getFlagPhoto(f)?'<img src="'+getFlagPhoto(f)+'" referrerpolicy="no-referrer" style="width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0;"/>':'')+
+      openFlagsEl.innerHTML = '<div style="display:flex;flex-direction:column;gap:8px;">'
+        + sorted.map(function(f) {
+          var prop = state.properties.find(function(p){ return p.id===f.propId; });
+          var borderColor = (f.priority==='Urgent'||f.priority==='High')?'var(--red)':'var(--yellow)';
+          var badgeColor = PCOLORS[f.priority]||'yellow';
+          var photo = getFlagPhoto(f);
+          return '<div onclick="openReportFlag(\'' + f.id + '\')" style="display:flex;gap:12px;align-items:flex-start;padding:12px 14px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);border-left:3px solid '+borderColor+';cursor:pointer;transition:background .1s;" onmouseover="this.style.background=\'var(--bg4)\'" onmouseout="this.style.background=\'var(--bg3)\'">'
+            +'<div style="flex:1;min-width:0;">'
+              +'<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">'
+                +'<span class="badge badge-'+badgeColor+'">'+f.priority+'</span>'
+                +'<span style="font-size:12px;color:var(--blue);font-weight:700;">'+f.service+'</span>'
+              +'</div>'
+              +'<div style="font-weight:700;font-size:14px;margin-bottom:2px;">'+(prop?prop.name:'Unknown Property')+'</div>'
+              +'<div style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:4px;">'+f.note+'</div>'
+              +'<div style="font-size:11px;color:var(--text4);">Reported by '+(f.by||'—')+(f.date?' · '+f.date:'')+'</div>'
+            +'</div>'
+            +(photo?'<img src="'+photo+'" referrerpolicy="no-referrer" onclick="event.stopPropagation();openPhoto(\''+photo+'\',\'Flag Photo\')" onerror="this.style.display=\'none\'" style="width:60px;height:60px;border-radius:8px;object-fit:cover;flex-shrink:0;cursor:zoom-in;border:1px solid var(--border2);"/>':'')
           +'</div>';
-      }).join('');
+        }).join('')
+      + '</div>';
+      setTimeout(function(){ patchFirebaseImages(openFlagsEl); }, 150);
     }
   }
 
@@ -8044,28 +8048,54 @@ function renderReports() {
   if(resolvedCountEl) resolvedCountEl.textContent = resolvedFlags.length+' resolved';
   var resolvedEl = document.getElementById('report-resolved-flags');
   if(resolvedEl) {
-    var recentResolved = resolvedFlags.slice(-10).reverse();
-    if (!recentResolved.length) {
+    var todayStr = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    var todayResolved = resolvedFlags.filter(function(f){ return f.resolveDate === todayStr; });
+    var recentResolved = resolvedFlags.filter(function(f){ return f.resolveDate !== todayStr; }).slice(-10).reverse();
+
+    if (!resolvedFlags.length) {
       resolvedEl.innerHTML = '<div style="font-size:13px;color:var(--text4);text-align:center;padding:10px;">No resolved flags yet</div>';
     } else {
-      resolvedEl.innerHTML = recentResolved.map(function(f) {
-        var prop = state.properties.find(function(p){ return p.id===f.propId; });
-        return '<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:var(--bg3);border-radius:10px;margin-bottom:6px;border-left:3px solid var(--green);">'
-          +'<div style="flex:1;">'
-          +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">'
-          +'<span class="badge badge-green">✓ Resolved</span>'
-          +'<span style="font-size:12px;color:var(--text3);">'+f.service+'</span></div>'
-          +'<div style="font-weight:700;font-size:13px;">'+(prop?prop.name:'Unknown')+'</div>'
-          +'<div style="font-size:12px;color:var(--text3);margin-top:2px;">'+f.note+'</div>'
-          +(f.resolveNote?'<div style="font-size:11px;color:var(--green);margin-top:3px;">"'+f.resolveNote+'"</div>':'')
-          +'<div style="font-size:11px;color:var(--text4);margin-top:3px;">Resolved '+(f.resolveDate||'')+'</div>'
-          +'</div>'
-          +'<div style="display:flex;gap:4px;">'
-          +(getFlagPhoto(f)?'<img src="'+getFlagPhoto(f)+'" referrerpolicy="no-referrer" style="width:48px;height:48px;border-radius:6px;object-fit:cover;"/>':'')
-          +(getFlagResolvePhoto(f)?'<img src="'+getFlagResolvePhoto(f)+'" style="width:48px;height:48px;border-radius:6px;object-fit:cover;border:2px solid var(--green);"/>':'')+
-          +'</div></div>';
-      }).join('');
+      var html = '';
+      if (todayResolved.length) {
+        html += '<div style="font-size:10px;font-weight:700;color:var(--green);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;">✓ Resolved Today (' + todayResolved.length + ')</div>';
+        html += '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">'
+          + todayResolved.map(function(f){ return buildResolvedFlagRow(f, true); }).join('')
+        + '</div>';
+      }
+      if (recentResolved.length) {
+        html += '<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;">Recent</div>';
+        html += '<div style="display:flex;flex-direction:column;gap:8px;">'
+          + recentResolved.map(function(f){ return buildResolvedFlagRow(f, false); }).join('')
+        + '</div>';
+      }
+      resolvedEl.innerHTML = html;
+      setTimeout(function(){ patchFirebaseImages(resolvedEl); }, 150);
     }
+  }
+
+  function buildResolvedFlagRow(f, isToday) {
+    var prop = state.properties.find(function(p){ return p.id===f.propId; });
+    var photo = getFlagPhoto(f);
+    var resolvePhoto = getFlagResolvePhoto(f);
+    return '<div style="display:flex;gap:12px;align-items:flex-start;padding:12px 14px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);border-left:3px solid var(--green);">'
+      +'<div style="flex:1;min-width:0;">'
+        +'<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">'
+          +'<span class="badge badge-green">✓ Resolved</span>'
+          +'<span style="font-size:12px;color:var(--text3);">'+f.service+'</span>'
+        +'</div>'
+        +'<div style="font-weight:700;font-size:14px;margin-bottom:2px;">'+(prop?prop.name:'Unknown')+'</div>'
+        +'<div style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:4px;">'+f.note+'</div>'
+        +(f.resolveNote?'<div style="font-size:11px;color:var(--green);margin-bottom:4px;font-style:italic;">"'+f.resolveNote+'"</div>':'')
+        +'<div style="font-size:11px;color:var(--text4);">'
+          +(f.resolvedBy?'by '+f.resolvedBy+' · ':'')
+          +(f.resolveDate||'')
+        +'</div>'
+      +'</div>'
+      +'<div style="display:flex;flex-direction:column;gap:4px;">'
+        +(photo?'<img src="'+photo+'" referrerpolicy="no-referrer" onclick="openPhoto(\''+photo+'\',\'Issue Photo\')" onerror="this.style.display=\'none\'" style="width:52px;height:52px;border-radius:7px;object-fit:cover;cursor:zoom-in;"/>':'')
+        +(resolvePhoto?'<img src="'+resolvePhoto+'" referrerpolicy="no-referrer" onclick="openPhoto(\''+resolvePhoto+'\',\'Resolution Photo\')" onerror="this.style.display=\'none\'" style="width:52px;height:52px;border-radius:7px;object-fit:cover;cursor:zoom-in;border:2px solid var(--green);"/>':'')
+      +'</div>'
+    +'</div>';
   }
 
   // ── 7-day timeline ─────────────────────────────────────────────────────
