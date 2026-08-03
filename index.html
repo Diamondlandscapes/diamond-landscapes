@@ -1571,7 +1571,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v34'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v35'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -3210,7 +3210,18 @@ window.sca_submit = async function() {
 
   // 4. Mark route stop complete
   var r = (state.routes||[]).find(function(x){return x.id===c.routeId;});
-  var s = r ? (r.stops||[]).find(function(x){return x.propId===c.propId;}) : null;
+  var s = null;
+  if (r) {
+    if (r.date) {
+      // Date-specific route — write directly to route.stops
+      s = (r.stops||[]).find(function(x){return x.propId===c.propId;});
+    } else {
+      // Legacy weekly route — write to week instance
+      var inst = state.routeWeeks && state.routeWeeks[getWeekKey(r.id, new Date())];
+      s = inst ? (inst.stops||[]).find(function(x){return x.propId===c.propId;}) : null;
+      if (!s) s = (r.stops||[]).find(function(x){return x.propId===c.propId;});
+    }
+  }
   if (s) {
     s.completed         = true;
     s.completedAt       = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
@@ -5508,11 +5519,19 @@ function loadFieldView() {
     return;
   }
 
-  // Use today's weekly instance so completion is week-specific
-  const todayDate  = new Date();
-  const instance   = getOrCreateWeekInstance(route, todayDate);
-  const stops      = instance.stops || [];
-  const done       = stops.filter(s=>s.completed).length;
+  // For date-specific routes (new model), use stops directly — no frequency filtering
+  // For legacy day-name routes, use week instance (frequency-aware)
+  const todayDate = new Date();
+  var stops, instance;
+  if (route.date) {
+    // Date-specific route — use all stops as-is
+    stops = route.stops || [];
+  } else {
+    // Legacy weekly route — use week instance with frequency filtering
+    instance = getOrCreateWeekInstance(route, todayDate);
+    stops    = instance ? instance.stops || [] : route.stops || [];
+  }
+  const done = stops.filter(s=>s.completed).length;
   el.innerHTML = `
     ${buildDueWOsHTML(crewId)}
     <div style="background:linear-gradient(135deg,var(--green3),var(--green2));border-radius:14px;padding:14px;margin-bottom:12px;color:#fff;">
@@ -8950,17 +8969,22 @@ function renderCwDayContent() {
 
   // Get or create the weekly instance for this specific date
   const selectedDate = new Date(dateStr + 'T12:00:00');
-  const instance     = getOrCreateWeekInstance(route, selectedDate);
-  const stops        = instance.stops || [];
+  // For date-specific routes, use stops directly — no frequency filtering
+  // For legacy day-name routes, use week instance
+  var stops, instance;
+  if (route.date) {
+    stops = route.stops || [];
+  } else {
+    instance = getOrCreateWeekInstance(route, selectedDate);
+    stops    = instance ? instance.stops || [] : route.stops || [];
+  }
   const done         = stops.filter(s => s.completed).length;
   const total        = stops.length;
   const pct          = total ? Math.round((done/total)*100) : 0;
   const isToday      = dayName === todayName && new Date().toDateString() === selectedDate.toDateString();
   const label        = selectedDate.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
-
-  // Count skipped (in template but not due this week)
   const templateTotal = (route.stops||[]).length;
-  const skipped = templateTotal - total;
+  const skipped = route.date ? 0 : templateTotal - total; // no skipping for date-specific routes
 
   let html = '<div style="background:' + (isToday?'linear-gradient(135deg,var(--green3),var(--green2))':'linear-gradient(135deg,var(--bg3),var(--bg2))') + ';border-radius:14px;padding:16px;margin-bottom:14px;' + (isToday?'color:#fff;':'border:1px solid var(--border);') + '">'
     + '<div style="font-size:11px;font-weight:700;letter-spacing:1px;opacity:.8;margin-bottom:4px;">' + label.toUpperCase() + (isToday?' — TODAY':'') + '</div>'
