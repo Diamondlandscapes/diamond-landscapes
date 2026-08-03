@@ -1571,7 +1571,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v27'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v29'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2451,7 +2451,10 @@ function openCrewDetail(id) {
         <div>
           <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">LOGIN PIN ${c.pin?'<span style="color:var(--green);">● Set</span>':'<span style="color:var(--red);">● Not set</span>'}</div>
           <input class="inp" id="ce-pin-${id}" placeholder="New 4-digit PIN" type="tel" maxlength="4" inputmode="numeric" style="letter-spacing:6px;font-weight:800;font-size:18px;"/>
-          <div style="font-size:11px;color:var(--text3);margin-top:4px;">${c.pin?'Leave blank to keep current PIN.':'Leave blank for no PIN.'}</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+            <div style="font-size:11px;color:var(--text3);">${c.pin?'Leave blank to keep current PIN.':'Leave blank for no PIN.'}</div>
+            ${c.pin?`<button onclick="removeCrewPin('${id}')" style="font-size:11px;padding:3px 10px;background:rgba(248,81,73,.12);border:1px solid rgba(248,81,73,.25);border-radius:7px;color:var(--red);cursor:pointer;font-weight:600;">Remove PIN</button>`:''}
+          </div>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg3);border-radius:10px;padding:12px 14px;">
           <div style="flex:1;">
@@ -2595,7 +2598,16 @@ function assignCrewToRoute(crewId) {
   toast('Assigned ✓');
 }
 
-// Animate view-routes toggle when checkbox state changes
+function removeCrewPin(id) {
+  if (!confirm('Remove PIN for this crew member? They will be able to log in without a PIN.')) return;
+  const c = state.crew.find(x => x.id === id);
+  if (!c) return;
+  c.pin = '';
+  saveAndSync('crew', c);
+  openCrewDetail(id);
+  renderCrew();
+  toast('PIN removed ✓');
+}
 document.addEventListener('change', function(e) {
   if (!e.target || !e.target.id || !e.target.id.startsWith('ce-viewroutes-')) return;
   var cid = e.target.id.replace('ce-viewroutes-', '');
@@ -3391,7 +3403,43 @@ function getRoutePnL(route) {
 
 // These services are required once per month. On the last scheduled visit
 // of the month for a property, any not yet done this month are flagged.
-// ── Crew Status Board ─────────────────────────────────────────────────────
+// Simple Spanish word map for common landscaping terms (instant, no API needed)
+var _esWordMap = {
+  'trim':'podar', 'trimmed':'podado', 'trimming':'poda',
+  'shrubs':'arbustos', 'shrub':'arbusto',
+  'trees':'árboles', 'tree':'árbol',
+  'mow':'cortar el césped', 'mowed':'cortado',
+  'weed':'maleza', 'weeds':'malezas', 'weed control':'control de maleza',
+  'fertilize':'fertilizar', 'fertilizer':'fertilizante',
+  'irrigation':'irrigación', 'sprinkler':'aspersor', 'sprinklers':'aspersores',
+  'dead':'muerto', 'broken':'roto', 'damaged':'dañado',
+  'grow':'crecer', 'growing':'creciendo', 'growth':'crecimiento',
+  'center':'centro', 'island':'isla', 'back':'atrás',
+  'do not':'no', 'needs':'necesita', 'need':'necesitar',
+  'round':'redondo', 'three':'tres', 'two':'dos', 'one':'uno',
+  'plant':'planta', 'plants':'plantas',
+  'grass':'césped', 'lawn':'jardín',
+  'blow':'soplar', 'clean':'limpiar', 'edge':'bordear',
+  'customer':'cliente', 'reported':'reportado', 'issue':'problema',
+  'high':'alto', 'medium':'medio', 'low':'bajo',
+  'open':'abierto', 'resolved':'resuelto',
+};
+
+function translateTextToSpanish(text) {
+  if (!text) return text;
+  var result = text;
+  // Case-insensitive word replacement
+  Object.keys(_esWordMap).forEach(function(en) {
+    var re = new RegExp('\\b' + en + '\\b', 'gi');
+    result = result.replace(re, function(match) {
+      var t = _esWordMap[en];
+      return match[0] === match[0].toUpperCase() ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+    });
+  });
+  return result;
+}
+
+
 
 function getCrewStatusData() {
   var todayISO  = new Date().toISOString().slice(0,10);
@@ -10780,41 +10828,58 @@ function openCrewPropFlags(propId) {
 
   var sheet = document.createElement('div');
   sheet.id = 'crew-prop-flags-sheet';
-  sheet.className = 'overlay open';
-  sheet.style.zIndex = '9999'; // above everything including nav
+  sheet.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;';
   document.body.appendChild(sheet);
 
-  var inner = document.createElement('div');
-  inner.className = 'sheet';
-  sheet.appendChild(inner);
+  var _spanish = false;
 
-  var rows = flags.map(function(f) {
-    var photo = getFlagPhoto(f);
-    return '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px;border-left:3px solid var(--red);">' +
-      '<div class="sheet-hdr">' +
-        '<div>' +
-          '<span class="badge badge-red" style="margin-right:6px;">' + f.priority + '</span>' +
-          '<span style="font-size:12px;color:var(--blue);font-weight:700;">' + f.service + '</span>' +
-        '</div>' +
-        '<div style="font-size:11px;color:var(--text4);">' + (f.date||'') + '</div>' +
-      '</div>' +
-      '<div style="font-size:13px;color:var(--text2);margin-bottom:8px;">' + f.note + '</div>' +
-      (photo ? '<img src="' + photo + '" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-bottom:8px;"/>' : '') +
-      '<div style="font-size:11px;color:var(--text4);margin-bottom:10px;">Reported by ' + (f.by||'Team') + '</div>' +
-      '<button data-flagid="' + f.id + '" data-propid="' + f.propId + '" onclick="crewResolveFlag(this.dataset.flagid, this.dataset.propid)"' +
-        ' style="width:100%;padding:10px;border-radius:10px;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);font-size:13px;font-weight:700;cursor:pointer;">✓ Resolve This Flag</button>' +
-    '</div>';
-  }).join('');
+  function render() {
+    var rows = flags.map(function(f) {
+      var photo = getFlagPhoto(f);
+      var note  = _spanish ? translateTextToSpanish(f.note||'') : (f.note||'');
+      var svc   = _spanish ? translateTextToSpanish(f.service||'') : (f.service||'');
+      return '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px;border-left:3px solid var(--red);">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+          + '<div style="display:flex;align-items:center;gap:8px;">'
+            + '<span class="badge badge-red">' + (f.priority||'Medium') + '</span>'
+            + '<span style="font-size:13px;color:var(--text);font-weight:700;">' + svc + '</span>'
+          + '</div>'
+          + '<div style="font-size:11px;color:var(--text4);">' + (f.date||'') + '</div>'
+        + '</div>'
+        + '<div style="font-size:14px;color:var(--text2);margin-bottom:8px;line-height:1.5;">' + note + '</div>'
+        + (photo ? '<img src="' + photo + '" referrerpolicy="no-referrer" style="width:100%;border-radius:8px;max-height:200px;object-fit:cover;margin-bottom:10px;"/>' : '')
+        + '<div style="font-size:11px;color:var(--text4);margin-bottom:10px;">Reported by ' + (f.by||'Team') + '</div>'
+        + '<button data-flagid="' + f.id + '" data-propid="' + f.propId + '" onclick="crewResolveFlag(this.dataset.flagid, this.dataset.propid)"'
+          + ' style="width:100%;padding:12px;border-radius:10px;background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3);font-size:14px;font-weight:700;cursor:pointer;">'
+          + (_spanish ? '✓ Resolver Esta Bandera' : '✓ Resolve This Flag')
+        + '</button>'
+      + '</div>';
+    }).join('');
 
-  inner.innerHTML =
-    '<div class="sheet-hdr">' +
-      '<div>' +
-        '<div class="sheet-title" style="margin-bottom:2px;">⚑ Open Flags</div>' +
-        '<div style="font-size:12px;color:var(--text3);">' + (prop ? prop.name : '') + '</div>' +
-      '<button onclick="crewPropFlagsClose()" class="sheet-close">✕</button>' +
-      '<button onclick="crewPropFlagsClose()" class="sheet-close">✕</button>' +
-    '</div>' +
-    rows;
+    sheet.innerHTML = '<div style="width:100%;max-width:480px;background:var(--bg2);border-radius:20px 20px 0 0;max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2);border-radius:20px 20px 0 0;">'
+        + '<div>'
+          + '<div style="font-size:16px;font-weight:800;color:var(--red);">⚑ ' + (_spanish ? 'Banderas Abiertas' : 'Open Flags') + '</div>'
+          + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">' + (prop ? prop.name : '') + ' · ' + flags.length + ' ' + (_spanish?'abiertas':'open') + '</div>'
+        + '</div>'
+        + '<div style="display:flex;gap:8px;align-items:center;">'
+          + '<button id="flags-lang-btn" onclick="window._crewFlagsToggleSpanish()" style="font-size:11px;padding:5px 10px;background:' + (_spanish?'rgba(96,165,250,.15)':'var(--bg3)') + ';border:1px solid ' + (_spanish?'rgba(96,165,250,.3)':'var(--border2)') + ';border-radius:8px;color:' + (_spanish?'var(--blue)':'var(--text3)') + ';cursor:pointer;font-weight:600;">🇪🇸 ' + (_spanish?'English':'Español') + '</button>'
+          + '<button onclick="document.getElementById(\'crew-prop-flags-sheet\').remove()" style="width:30px;height:30px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;">✕</button>'
+        + '</div>'
+      + '</div>'
+      + '<div style="padding:14px;">' + rows + '</div>'
+    + '</div>';
+  }
+
+  window._crewFlagsToggleSpanish = function() {
+    _spanish = !_spanish;
+    render();
+  };
+
+  // Tap backdrop to close
+  sheet.addEventListener('click', function(e) { if (e.target === sheet) sheet.remove(); });
+
+  render();
 }
 
 function openCrewWODetail(woId) {
