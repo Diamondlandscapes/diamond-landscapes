@@ -1592,7 +1592,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v47'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v48'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -8307,6 +8307,7 @@ function openDashFlags() {
     </div>`;
 
   document.getElementById('app').appendChild(panel);
+  setTimeout(function() { patchFirebaseImages(panel); }, 150);
 }
 
 
@@ -8787,17 +8788,78 @@ function openReportOutstanding(routeId, propId) {
 
 
 // ─── FULL SIZE PHOTO VIEWER ───────────────────────────────────────────────
-function openPhoto(src, caption) {
+// Cache for blob URLs to avoid re-fetching
+var _photoBlobCache = {};
+
+async function loadFirebasePhoto(src) {
+  if (!src) return src;
+  if (src.startsWith('data:')) return src; // base64 — use directly
+  if (!src.includes('firebasestorage.googleapis.com')) return src; // not Firebase Storage
+  if (_photoBlobCache[src]) return _photoBlobCache[src]; // use cached blob URL
+
+  try {
+    var resp = await fetch(src);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var blob = await resp.blob();
+    var blobUrl = URL.createObjectURL(blob);
+    _photoBlobCache[src] = blobUrl;
+    return blobUrl;
+  } catch(e) {
+    console.warn('Photo load failed, trying direct:', e);
+    return src; // fall back to direct URL
+  }
+}
+
+async function openPhoto(src, caption) {
   if (!src || (!src.startsWith('data:') && !src.startsWith('http'))) return;
-  const viewer  = document.getElementById('photo-viewer');
-  const img     = document.getElementById('photo-viewer-img');
-  const cap     = document.getElementById('photo-viewer-caption');
+  const viewer = document.getElementById('photo-viewer');
+  const img    = document.getElementById('photo-viewer-img');
+  const cap    = document.getElementById('photo-viewer-caption');
   if (!viewer || !img) return;
-  img.src = src;
+
+  // Show viewer immediately with loading state
+  img.src = '';
+  img.style.opacity = '0';
   if (cap) cap.textContent = caption || '';
   viewer.classList.add('open');
-  // prevent body scroll
   document.body.style.overflow = 'hidden';
+
+  // Load photo (fetch blob for Firebase Storage to bypass CORS)
+  var displaySrc = await loadFirebasePhoto(src);
+  img.src = displaySrc;
+  img.onload = function() { img.style.opacity = '1'; img.style.transition = 'opacity .2s'; };
+  img.onerror = function() {
+    // If blob fetch also fails, show error
+    img.src = '';
+    img.style.opacity = '1';
+    if (cap) cap.textContent = (caption||'') + ' (photo unavailable)';
+  };
+}
+
+// Auto-fix Firebase Storage images that fail due to CORS
+// Called via onerror on any img tag with a Firebase Storage URL
+async function fixFirebaseImg(imgEl) {
+  var src = imgEl.getAttribute('data-src') || imgEl.src;
+  if (!src || !src.includes('firebasestorage')) return;
+  imgEl.style.opacity = '0';
+  try {
+    var blobUrl = await loadFirebasePhoto(src);
+    imgEl.setAttribute('data-src', src); // keep original
+    imgEl.src = blobUrl;
+    imgEl.style.opacity = '1';
+    imgEl.onerror = null; // prevent loop
+  } catch(e) {
+    imgEl.style.display = 'none';
+  }
+}
+
+// Patch all Firebase Storage img tags in a container to use blob URLs
+async function patchFirebaseImages(container) {
+  var imgs = (container||document).querySelectorAll('img[src*="firebasestorage"]');
+  imgs.forEach(async function(img) {
+    var blobUrl = await loadFirebasePhoto(img.src);
+    if (blobUrl !== img.src) img.src = blobUrl;
+  });
 }
 
 function closePhotoViewer() {
@@ -11253,6 +11315,7 @@ function openManagerFlagDetail(propId) {
 
   sheet.addEventListener('click', function(e){ if(e.target===sheet) sheet.remove(); });
   document.body.appendChild(sheet);
+  setTimeout(function() { patchFirebaseImages(sheet); }, 150);
 }
 
 function openCrewPropFlags(propId) {
@@ -11322,6 +11385,7 @@ function openCrewPropFlags(propId) {
   sheet.addEventListener('click', function(e) { if (e.target === sheet) sheet.remove(); });
 
   render();
+  setTimeout(function() { patchFirebaseImages(sheet); }, 150);
 }
 
 function openCrewWODetail(woId) {
