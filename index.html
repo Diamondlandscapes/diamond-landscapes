@@ -1571,7 +1571,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v38'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v40'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2360,7 +2360,9 @@ function openRouteDetail(id) {
                   ${s.completedAt?`<div style="font-size:11px;color:var(--text3);margin-top:2px;">${s.completedAt}</div>`:''}
                   ${s.completedBy?`<div style="font-size:11px;color:var(--text3);">by ${s.completedBy}</div>`:''}
                   ${(s.completedServices||[]).length?`<div style="font-size:11px;color:var(--text3);margin-top:4px;">✓ ${s.completedServices.join(', ')}</div>`:''}
-                  ${state.role!=='manager'?`<button class="btn btn-outline" onclick="markStopDone('${r.id}','${s.propId}')" style="margin-top:8px;font-size:12px;color:var(--red);border-color:var(--red);">↩ Reopen</button>`:''}
+                  ${s.completedNotes?`<div style="font-size:11px;color:var(--text3);margin-top:4px;font-style:italic;">"${s.completedNotes}"</div>`:''}
+                  ${s.completedPhoto?`<img src="${s.completedPhoto}" referrerpolicy="no-referrer" onclick="openPhoto('${s.completedPhoto}','${prop?.name||''} — Completion Photo')" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-top:8px;cursor:zoom-in;" />`:''}
+                  ${state.role==='manager'?`<button class="btn btn-outline" onclick="markStopDone('${r.id}','${s.propId}')" style="margin-top:8px;font-size:12px;color:var(--red);border-color:var(--red);">↩ Reopen</button>`:''}
                 </div>`
               : `<button class="btn btn-green" onclick="openStopCompletion('${r.id}','${s.propId}')" style="margin-top:10px;font-size:13px;">📷 Complete Job</button>`}
           </div>
@@ -4251,8 +4253,11 @@ function getPropertyHistory(propId) {
           + '</div>'
         : '')
       + (v.notes ? '<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">' + v.notes + '</div>' : '')
-      + (v.photo && v.photo.startsWith('http')
-        ? '<img src="' + v.photo + '" referrerpolicy="no-referrer" style="width:100%;border-radius:8px;max-height:140px;object-fit:cover;" />'
+      + (v.photo && (v.photo.startsWith('http') || v.photo.startsWith('data:'))
+        ? '<div style="margin-top:8px;cursor:zoom-in;" onclick="openPhoto(\'' + v.photo.replace(/'/g,"\\'") + '\',\'Service Photo — ' + v.date + '\')">'
+            + '<img src="' + v.photo + '" referrerpolicy="no-referrer" style="width:100%;height:auto;border-radius:8px;display:block;" />'
+            + '<div style="font-size:10px;color:var(--text3);text-align:center;padding:3px 0;">Tap to view full size</div>'
+          + '</div>'
         : '')
       + (v.flags&&v.flags.length
         ? '<div style="font-size:11px;color:var(--red);margin-top:6px;">⚑ ' + v.flags.join(', ') + '</div>'
