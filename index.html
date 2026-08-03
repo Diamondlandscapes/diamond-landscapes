@@ -899,8 +899,11 @@ select.inp{cursor:pointer;}
       </div>
 
 
-      <div class="card" onclick="openDashFlags()" style="cursor:pointer;">
-        <div class="sec-title">Recent Flags & Issues</div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div class="sec-title" style="margin-bottom:0;">Flags & Issues <span id="dash-flags-count" style="color:var(--red);"></span></div>
+          <button onclick="openDashFlags()" style="font-size:11px;padding:4px 10px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.25);border-radius:7px;color:var(--red);cursor:pointer;font-weight:600;">View All →</button>
+        </div>
         <div id="dash-flags-list"></div>
         <div id="dash-no-flags" style="font-size:13px;color:var(--text4);text-align:center;padding:10px 0;">No open issues 🎉</div>
       </div>
@@ -1589,7 +1592,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v45'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v46'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1905,19 +1908,24 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
   // flags
   const fl = document.getElementById('dash-flags-list');
   const nofl = document.getElementById('dash-no-flags');
+  const flagCount = document.getElementById('dash-flags-count');
+  if (flagCount) flagCount.textContent = openFlags.length ? '(' + openFlags.length + ')' : '';
   if (!openFlags.length) { fl.innerHTML=''; nofl.style.display='block'; }
   else {
     nofl.style.display='none';
-    fl.innerHTML = openFlags.slice(0,4).map(f => {
+    // Sort by priority: Urgent > High > Medium > Low
+    const pOrder = {Urgent:0,High:1,Medium:2,Low:3};
+    const sorted = [...openFlags].sort((a,b)=>(pOrder[a.priority]||3)-(pOrder[b.priority]||3));
+    fl.innerHTML = sorted.map(f => {
       const prop = state.properties.find(p => p.id === f.propId);
-      return `<div class="card-flat" style="display:flex;gap:10px;align-items:flex-start;">
-        <div class="dot dot-${PCOLORS[f.priority]||'yellow'}" style="margin-top:4px;"></div>
-        <div style="flex:1;">
+      return `<div class="card-flat" onclick="openDashFlags('${f.id}')" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;transition:background .1s;" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+        <div class="dot dot-${PCOLORS[f.priority]||'yellow'}" style="margin-top:4px;flex-shrink:0;"></div>
+        <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:700;">${prop?.name||'Unknown'}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px;">${f.note}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${f.note}</div>
           <div style="font-size:11px;color:var(--text4);margin-top:3px;">${f.service||''} · ${f.date||''}</div>
         </div>
-        <span class="badge badge-${PCOLORS[f.priority]||'yellow'}">${f.priority}</span>
+        <span class="badge badge-${PCOLORS[f.priority]||'yellow'}" style="flex-shrink:0;">${f.priority}</span>
       </div>`;
     }).join('');
   }
