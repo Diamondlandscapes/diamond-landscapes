@@ -1571,7 +1571,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v35'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v36'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2956,8 +2956,8 @@ function renderStopCompletionSheet(c) {
   sheet.innerHTML = html;
   document.body.appendChild(sheet);
 
-  // Store completion state on the sheet element for access by handlers
-  sheet._comp = c;
+  // Store completion state globally — DOM element ref is unstable across re-renders
+  window._stopCompletionState = c;
 
   // Wire photo inputs after render
   if (c.step === 'photo') {
@@ -3012,12 +3012,12 @@ function renderStopCompletionSheet(c) {
 function closeStopCompletion() {
   var sheet = document.getElementById('stop-completion-sheet');
   if (sheet) sheet.remove();
+  window._stopCompletionState = null;
   window._scaFlagPhoto = null;
 }
 
 function _getComp() {
-  var sheet = document.getElementById('stop-completion-sheet');
-  return sheet ? sheet._comp : null;
+  return window._stopCompletionState || null;
 }
 
 // Flag review handlers
