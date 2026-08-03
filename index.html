@@ -1571,7 +1571,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v31'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v32'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1821,8 +1821,6 @@ function applyRole(r) {
     <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni"><i class="ti ti-calendar-check"></i></span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
-      <button class="nb" onclick="gsLoad()"><span class="ni"><i class="ti ti-refresh"></i></span><span class="nl">Refresh Data</span></button>
-      <button class="nb" onclick="clearCacheAndReload()"><span class="ni"><i class="ti ti-trash"></i></span><span class="nl">Clear Cache</span></button>
       <button class="nb" onclick="openLoginSheet()"><span class="ni"><i class="ti ti-logout"></i></span><span class="nl">Switch / Sign Out</span></button>
     </div>`;
     switchTab('dashboard');
@@ -4836,13 +4834,21 @@ function renderCrew() {
     el.innerHTML = `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">No crew members yet. Tap + Add Member.</div>`;
     return;
   }
-  el.innerHTML = state.crew.map(c => {
+
+  // Sort by sortOrder field if set
+  const sorted = [...state.crew].sort((a,b) => (a.sortOrder||0) - (b.sortOrder||0));
+
+  el.innerHTML = sorted.map((c,i) => {
+    const todayISO = new Date().toISOString().slice(0,10);
     const todayDay = new Date().toLocaleDateString('en-US',{weekday:'long'});
-    const route = state.routes.find(r => r.crewId === c.id && r.day === todayDay);
-    const done = route?.stops?.filter(s=>s.completed).length || 0;
+    const route = state.routes.find(r => r.crewId === c.id && (r.date === todayISO || r.day === todayDay));
+    const done  = route?.stops?.filter(s=>s.completed).length || 0;
     const total = route?.stops?.length || 0;
-    return `<div class="crew-card" onclick="openCrewDetail('${c.id}')" style="cursor:pointer;">
-      <div style="display:flex;gap:12px;align-items:center;flex:1;">
+    return `<div class="crew-card" data-crew-id="${c.id}" draggable="true" style="cursor:pointer;position:relative;">
+      <div style="display:flex;gap:12px;align-items:center;flex:1;" onclick="openCrewDetail('${c.id}')">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:0 4px;cursor:grab;color:var(--text4);" onclick="event.stopPropagation()">
+          <i class="ti ti-grip-vertical" style="font-size:16px;opacity:.5;"></i>
+        </div>
         <div class="crew-avatar">${c.name[0].toUpperCase()}</div>
         <div style="flex:1;">
           <div style="font-weight:800;font-size:15px;">${c.name}</div>
@@ -4850,9 +4856,45 @@ function renderCrew() {
           ${route?`<div style="font-size:11px;color:var(--green);margin-top:4px;">Today: ${route.name} · ${done}/${total} stops</div>`:`<div style="font-size:11px;color:var(--text4);margin-top:4px;">No route today</div>`}
         </div>
       </div>
-      <button onclick="deleteCrew('${c.id}')" style="background:none;border:none;color:var(--text4);font-size:20px;cursor:pointer;">×</button>
+      <button onclick="event.stopPropagation();deleteCrew('${c.id}')" style="background:none;border:none;color:var(--text4);font-size:20px;cursor:pointer;">×</button>
     </div>`;
   }).join('');
+
+  // Wire drag-to-reorder
+  initCrewDragDrop();
+}
+
+function initCrewDragDrop() {
+  const list = document.getElementById('crew-list');
+  if (!list) return;
+  let dragEl = null;
+
+  list.querySelectorAll('.crew-card').forEach(card => {
+    card.addEventListener('dragstart', function(e) {
+      dragEl = card;
+      card.style.opacity = '.4';
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', function() {
+      card.style.opacity = '';
+      dragEl = null;
+      // Save new order
+      const newOrder = [...list.querySelectorAll('.crew-card')].map(c => c.dataset.crewId);
+      newOrder.forEach((id, idx) => {
+        const crew = state.crew.find(c => c.id === id);
+        if (crew) { crew.sortOrder = idx; saveAndSync('crew', crew); }
+      });
+      save();
+    });
+    card.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      if (!dragEl || dragEl === card) return;
+      const rect = card.getBoundingClientRect();
+      const mid  = rect.top + rect.height / 2;
+      if (e.clientY < mid) list.insertBefore(dragEl, card);
+      else list.insertBefore(dragEl, card.nextSibling);
+    });
+  });
 }
 
 function openAddCrew() { openOverlay('add-crew-overlay'); }
@@ -6929,8 +6971,6 @@ function signOut() {
     <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni">📅</span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
-      <button class="nb" onclick="gsLoad()"><span class="ni">↺</span><span class="nl">Refresh Data</span></button>
-      <button class="nb" onclick="clearCacheAndReload()"><span class="ni">🔄</span><span class="nl">Clear Cache</span></button>
       <button class="nb" onclick="openLoginSheet()"><span class="ni">🔒</span><span class="nl">Switch / Sign Out</span></button>
     </div>`;
 }
@@ -7688,10 +7728,7 @@ function buildDrawerItems(menuItems, activeTab) {
   }).join('');
 
   html += '<div style="height:1px;background:var(--border);margin:8px 4px;"></div>';
-  html += '<button class="drawer-item" onclick="gsLoad();closeDrawer();"><span class="d-icon"><i class="ti ti-refresh" style="font-size:17px;"></i></span><span class="d-label">Refresh Data</span></button>';
-  html += '<button class="drawer-item" onclick="clearCacheAndReload();closeDrawer();"><span class="d-icon"><i class="ti ti-trash" style="font-size:17px;"></i></span><span class="d-label">Clear Cache</span></button>';
   html += '<button class="drawer-item" onclick="openInstallInstructions();closeDrawer();"><span class="d-icon"><i class="ti ti-device-mobile" style="font-size:17px;"></i></span><span class="d-label">Install App</span></button>';
-  if (isManager) html += '<button class="drawer-item" onclick="openSheetDebug();closeDrawer();"><span class="d-icon"><i class="ti ti-settings" style="font-size:17px;"></i></span><span class="d-label">Fix Crew Data</span></button>';
   html += '<button class="drawer-item" onclick="' + (isManager ? 'openLoginSheet()' : 'signOut()') + ';closeDrawer();"><span class="d-icon"><i class="ti ti-logout" style="font-size:17px;"></i></span><span class="d-label">' + (isManager ? 'Switch / Sign Out' : 'Sign Out') + '</span></button>';
 
   el.innerHTML = html;
