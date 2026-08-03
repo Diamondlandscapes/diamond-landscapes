@@ -1554,7 +1554,7 @@ select.inp{cursor:pointer;}
   <button class="cbn-btn" data-tab="wo-crew" onclick="switchTab('wo-crew');updateCrewBottomNav('wo-crew')">
     <i class="ti ti-clipboard-check" style="font-size:20px;"></i><span class="cbn-label">Work Orders</span>
   </button>
-  <button class="cbn-btn" data-tab="attendance" onclick="switchTab('attendance');updateCrewBottomNav('attendance')">
+  <button class="cbn-btn" id="cbn-attendance" data-tab="attendance" onclick="switchTab('attendance');updateCrewBottomNav('attendance')" style="display:none;">
     <i class="ti ti-calendar-check" style="font-size:20px;"></i><span class="cbn-label">Attendance</span>
   </button>
   <button class="cbn-btn" data-tab="menu" onclick="toggleDrawer()">
@@ -1588,7 +1588,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v52'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v53'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2504,6 +2504,17 @@ function openCrewDetail(id) {
             <span style="position:absolute;height:18px;width:18px;left:${c.canViewRoutes?"21px":"3px"};bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.3);" id="ce-viewroutes-thumb-${id}"></span>
           </label>
         </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg3);border-radius:10px;padding:12px 14px;">
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:700;">📅 Supervisor — View Attendance</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px;">Allow this crew member to view and manage attendance</div>
+          </div>
+          <label for="ce-viewatt-${id}" style="position:relative;display:inline-block;width:44px;height:26px;flex-shrink:0;cursor:pointer;">
+            <input type="checkbox" id="ce-viewatt-${id}" ${c.canViewAttendance?"checked":""} style="position:absolute;opacity:0;width:0;height:0;"/>
+            <span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:${c.canViewAttendance?"var(--green3)":"var(--bg4)"};border-radius:26px;border:1px solid var(--border2);transition:.2s;" id="ce-viewatt-track-${id}"></span>
+            <span style="position:absolute;height:18px;width:18px;left:${c.canViewAttendance?"21px":"3px"};bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.3);" id="ce-viewatt-thumb-${id}"></span>
+          </label>
+        </div>
         <button class="btn btn-green" onclick="saveCrewEdit('${id}')" style="font-size:13px;">Save Changes</button>
         <button class="btn btn-outline" onclick="toggleCrewEdit('${id}')" style="font-size:13px;">Cancel</button>
       </div>
@@ -2606,7 +2617,8 @@ function saveCrewEdit(id) {
   c.name  = document.getElementById('ce-name-'+id)?.value.trim()  || c.name;
   c.phone = document.getElementById('ce-phone-'+id)?.value.trim() || '';
   c.role  = document.getElementById('ce-role-'+id)?.value         || c.role;
-  c.canViewRoutes = document.getElementById('ce-viewroutes-'+id)?.checked || false;
+  c.canViewRoutes    = document.getElementById('ce-viewroutes-'+id)?.checked || false;
+  c.canViewAttendance = document.getElementById('ce-viewatt-'+id)?.checked || false;
   const pinVal = (document.getElementById('ce-pin-'+id)?.value||'').trim();
   if (pinVal) {
     if (pinVal.length!==4||!/^\d{4}$/.test(pinVal)) { toast('PIN must be 4 digits'); return; }
@@ -2646,13 +2658,21 @@ function removeCrewPin(id) {
   toast('PIN removed ✓');
 }
 document.addEventListener('change', function(e) {
-  if (!e.target || !e.target.id || !e.target.id.startsWith('ce-viewroutes-')) return;
-  var cid = e.target.id.replace('ce-viewroutes-', '');
-  var track = document.getElementById('ce-viewroutes-track-' + cid);
-  var thumb = document.getElementById('ce-viewroutes-thumb-' + cid);
-  if (!track || !thumb) return;
-  track.style.background = e.target.checked ? 'var(--green3)' : 'var(--bg4)';
-  thumb.style.left = e.target.checked ? '21px' : '3px';
+  if (!e.target || !e.target.id) return;
+  if (e.target.id.startsWith('ce-viewroutes-')) {
+    var cid = e.target.id.replace('ce-viewroutes-', '');
+    var t = document.getElementById('ce-viewroutes-track-' + cid);
+    var th = document.getElementById('ce-viewroutes-thumb-' + cid);
+    if (t) t.style.background = e.target.checked ? 'var(--green3)' : 'var(--bg4)';
+    if (th) th.style.left = e.target.checked ? '21px' : '3px';
+  }
+  if (e.target.id.startsWith('ce-viewatt-')) {
+    var cid2 = e.target.id.replace('ce-viewatt-', '');
+    var t2 = document.getElementById('ce-viewatt-track-' + cid2);
+    var th2 = document.getElementById('ce-viewatt-thumb-' + cid2);
+    if (t2) t2.style.background = e.target.checked ? 'var(--green3)' : 'var(--bg4)';
+    if (th2) th2.style.left = e.target.checked ? '21px' : '3px';
+  }
 });
 
 function updateRouteCrew(routeId, crewId) {
@@ -8251,27 +8271,29 @@ const MANAGER_MENU = [
   { tab:'attendance',  icon:'📅', label:'Attendance' },
 ];
 const CREW_MENU = [
-  { tab:'field',       icon:'📋', label:'My Jobs' },
-  { tab:'crew-week',   icon:'📅', label:'My Week' },
-  { tab:'wo-crew',     icon:'📋', label:'Work Orders' },
-  { tab:'attendance',  icon:'📅', label:'Attendance' },
+  { tab:'field',     icon:'📋', label:'My Jobs' },
+  { tab:'crew-week', icon:'📅', label:'My Week' },
+  { tab:'wo-crew',   icon:'📋', label:'Work Orders' },
 ];
 
 // Returns the menu for the currently logged-in crew member
-// Adds Routes (view-only) if the crew member has canViewRoutes permission
+// Adds Routes if canViewRoutes, Attendance if canViewAttendance (Supervisor)
 function getCrewMenu() {
   if (state.role !== 'field') return CREW_MENU;
   var crew = (state.crew||[]).find(function(c){ return c.id === state.loggedInCrewId; });
-  if (crew && (crew.canViewRoutes === true || crew.canViewRoutes === 'true')) {
-    return [
-      { tab:'field',      icon:'📋', label:'My Jobs' },
-      { tab:'crew-week',  icon:'📅', label:'My Week' },
-      { tab:'routes',     icon:'🗺️', label:'Routes' },
-      { tab:'wo-crew',    icon:'📋', label:'Work Orders' },
-      { tab:'attendance', icon:'📅', label:'Attendance' },
-    ];
-  }
-  return CREW_MENU;
+  if (!crew) return CREW_MENU;
+
+  var isSupervisor   = crew.canViewAttendance === true || crew.canViewAttendance === 'true';
+  var canViewRoutes  = crew.canViewRoutes === true || crew.canViewRoutes === 'true';
+
+  var menu = [
+    { tab:'field',     icon:'📋', label:'My Jobs' },
+    { tab:'crew-week', icon:'📅', label:'My Week' },
+  ];
+  if (canViewRoutes)  menu.push({ tab:'routes',     icon:'🗺️', label:'Routes' });
+  menu.push({ tab:'wo-crew', icon:'📋', label:'Work Orders' });
+  if (isSupervisor)   menu.push({ tab:'attendance', icon:'📅', label:'Attendance' });
+  return menu;
 }
 
 function buildDrawerItems(menuItems, activeTab) {
@@ -8347,6 +8369,14 @@ function rebuildCrewNav(activeTab) {
 
   // Mobile drawer
   buildDrawerItems(menu, activeTab);
+
+  // Show/hide Attendance in bottom nav
+  var attBtn = document.getElementById('cbn-attendance');
+  if (attBtn) {
+    var crewMember = (state.crew||[]).find(function(c){ return c.id === state.loggedInCrewId; });
+    var showAtt = crewMember && (crewMember.canViewAttendance === true || crewMember.canViewAttendance === 'true');
+    attBtn.style.display = showAtt ? '' : 'none';
+  }
 }
 
 function toggleDrawer() {
