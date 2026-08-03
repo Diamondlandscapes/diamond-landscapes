@@ -1571,7 +1571,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v32'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v33'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2322,17 +2322,20 @@ function openRouteDetail(id) {
       const flags = state.flags.filter(f => f.propId === s.propId && !f.resolved);
       html += `<div class="stop-card" data-idx="${i}" data-prop="${s.propId}">
         <div class="stop-head" onclick="toggleStop('stop-${id}-${i}')">
-          <div style="display:flex;gap:10px;align-items:center;">
+          <div style="display:flex;gap:10px;align-items:center;flex:1;min-width:0;">
             <div style="width:26px;height:26px;border-radius:50%;background:${s.completed?'var(--green3)':'var(--bg4)'};
-              border:2px solid ${s.completed?'var(--green)':'var(--border2)'};
+              border:2px solid ${s.completed?'var(--green)':'var(--border2)'};flex-shrink:0;
               display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:${s.completed?'#fff':'var(--text3)'};">${i+1}</div>
-            <div>
-              <div style="font-weight:700;font-size:14px;">${prop?.name||'Unknown'}</div>
+            <div style="min-width:0;flex:1;">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <div style="font-weight:700;font-size:14px;">${prop?.name||'Unknown'}</div>
+                ${s.completed?'<span style="font-size:10px;color:var(--green);font-weight:700;">✓</span>':''}
+              </div>
               ${prop?.address ? `<a href="https://maps.google.com/?q=${encodeURIComponent(prop.address)}" target="_blank" onclick="event.stopPropagation();" style="font-size:11px;color:var(--blue);text-decoration:none;display:flex;align-items:center;gap:3px;"><i class="ti ti-map-pin" style="font-size:11px;"></i>${prop.address}</a>` : ''}
+              ${flags.length ? `<button onclick="event.stopPropagation();openManagerFlagDetail('${s.propId}')" style="display:inline-flex;align-items:center;gap:4px;margin-top:4px;background:rgba(248,81,73,.12);border:1px solid rgba(248,81,73,.3);border-radius:20px;padding:2px 8px;color:var(--red);font-size:11px;font-weight:700;cursor:pointer;">⚑ ${flags.length} open flag${flags.length>1?'s':''} — tap to view</button>` : ''}
             </div>
           </div>
-          <div style="display:flex;gap:6px;align-items:center;">
-            ${flags.length?`<span class="badge badge-red">⚑ ${flags.length}</span>`:''}
+          <div style="display:flex;gap:5px;align-items:center;flex-shrink:0;">
             ${state.role==='manager'?`
               <button onclick="event.stopPropagation();moveStop('${r.id}','${s.propId}',-1)" ${i===0?'disabled':''} style="background:none;border:1px solid var(--border2);border-radius:6px;color:var(--text3);font-size:11px;width:24px;height:24px;cursor:pointer;padding:0;">↑</button>
               <button onclick="event.stopPropagation();moveStop('${r.id}','${s.propId}',1)" ${i===stops.length-1?'disabled':''} style="background:none;border:1px solid var(--border2);border-radius:6px;color:var(--text3);font-size:11px;width:24px;height:24px;cursor:pointer;padding:0;">↓</button>
@@ -10854,6 +10857,47 @@ function crewResolveFlag(flagId, propId) {
 }
 
 function crewPropFlagsClose() { var s=document.getElementById('crew-prop-flags-sheet'); if(s)s.remove(); }
+
+function openManagerFlagDetail(propId) {
+  var prop  = (state.properties||[]).find(function(p){return p.id===propId;});
+  var flags = (state.flags||[]).filter(function(f){return f.propId===propId&&!f.resolved;});
+  if (!flags.length) { toast('No open flags'); return; }
+
+  var ex = document.getElementById('mgr-flag-detail-sheet'); if(ex) ex.remove();
+  var sheet = document.createElement('div');
+  sheet.id = 'mgr-flag-detail-sheet';
+  sheet.style.cssText = 'position:fixed;inset:0;z-index:99000;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;';
+
+  var rows = flags.map(function(f) {
+    var photo = getFlagPhoto(f);
+    return '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px;border-left:3px solid var(--red);">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+        + '<div style="display:flex;align-items:center;gap:8px;">'
+          + '<span class="badge badge-red">' + (f.priority||'Medium') + '</span>'
+          + '<span style="font-size:13px;font-weight:700;color:var(--text);">' + (f.service||'Issue') + '</span>'
+        + '</div>'
+        + '<span style="font-size:11px;color:var(--text4);">' + (f.date||'') + '</span>'
+      + '</div>'
+      + '<div style="font-size:14px;color:var(--text2);margin-bottom:8px;line-height:1.5;">' + (f.note||'No description') + '</div>'
+      + (photo ? '<img src="' + photo + '" referrerpolicy="no-referrer" onclick="openPhoto(\'' + photo + '\',\'Flag Photo\')" style="width:100%;height:auto;border-radius:8px;margin-bottom:10px;cursor:zoom-in;display:block;"/>' : '')
+      + '<div style="font-size:11px;color:var(--text4);">Reported by ' + (f.by||'Team') + '</div>'
+    + '</div>';
+  }).join('');
+
+  sheet.innerHTML = '<div style="width:100%;max-width:480px;background:var(--bg2);border-radius:20px 20px 0 0;max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2);border-radius:20px 20px 0 0;">'
+      + '<div>'
+        + '<div style="font-size:16px;font-weight:800;color:var(--red);">⚑ Open Flags</div>'
+        + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">' + (prop?prop.name:'') + ' · ' + flags.length + ' open</div>'
+      + '</div>'
+      + '<button onclick="document.getElementById(\'mgr-flag-detail-sheet\').remove()" style="width:30px;height:30px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);cursor:pointer;font-size:16px;">✕</button>'
+    + '</div>'
+    + '<div style="padding:14px;">' + rows + '</div>'
+  + '</div>';
+
+  sheet.addEventListener('click', function(e){ if(e.target===sheet) sheet.remove(); });
+  document.body.appendChild(sheet);
+}
 
 function openCrewPropFlags(propId) {
   var prop  = (state.properties||[]).find(function(p) { return p.id === propId; });
