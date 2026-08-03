@@ -1592,7 +1592,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v48'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v49'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2713,9 +2713,11 @@ function openStopCompletion(routeId, propId) {
     services:   [],
     notes:      '',
     newFlags:   [],
+    checklist:  prop.checklist || [],
+    checklistDone: {}, // {itemId: {confirmed:true, photo:null}}
     requiredPeriodic: getRequiredPeriodicServices(routeId, propId),
     skippedPeriodic:  {},
-    step:       openFlags.length > 0 ? 'flags' : 'photo'
+    step: openFlags.length > 0 ? 'flags' : (prop.checklist && prop.checklist.length > 0 ? 'checklist' : 'photo')
   };
 
   renderStopCompletionSheet(_comp);
@@ -2733,15 +2735,17 @@ function renderStopCompletionSheet(c) {
   sheet.style.cssText = 'position:fixed;inset:0;z-index:4000;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;';
 
   var stepLabels = {
-    flags:    'Review Flags',
-    photo:    'Property Photo',
-    services: 'Services Done',
-    notes:    'Notes & Issues',
-    submit:   'Review & Submit'
+    flags:     'Review Flags',
+    checklist: 'Property Checklist',
+    photo:     'Property Photo',
+    services:  'Services Done',
+    notes:     'Notes & Issues',
+    submit:    'Review & Submit'
   };
-  var steps = c.flags.length > 0
-    ? ['flags','photo','services','notes','submit']
-    : ['photo','services','notes','submit'];
+  var steps = [];
+  if (c.flags.length > 0) steps.push('flags');
+  if (c.checklist && c.checklist.length > 0) steps.push('checklist');
+  steps.push('photo', 'services', 'notes', 'submit');
   var stepIdx  = steps.indexOf(c.step);
   var stepPct  = Math.round(((stepIdx+1)/steps.length)*100);
   var stepLabel = stepLabels[c.step] || '';
@@ -2799,7 +2803,45 @@ function renderStopCompletionSheet(c) {
     + '</button>';
   }
 
-  // ── STEP: PROPERTY PHOTO ────────────────────────────────────────────────
+  // ── STEP: CHECKLIST ─────────────────────────────────────────────────────
+  else if (c.step === 'checklist') {
+    var allDone = c.checklist.every(function(item) {
+      return c.checklistDone[item.id] && c.checklistDone[item.id].confirmed;
+    });
+
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.6;">'
+      + 'Please confirm the following before starting work on this property.'
+    + '</div>';
+
+    c.checklist.forEach(function(item) {
+      var done   = c.checklistDone[item.id] || {};
+      var isDone = done.confirmed;
+      html += '<div style="background:' + (isDone?'rgba(63,185,80,.06)':'var(--bg3)') + ';border:1px solid ' + (isDone?'rgba(63,185,80,.25)':'var(--border2)') + ';border-radius:12px;padding:14px;margin-bottom:10px;">'
+        + '<div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:10px;line-height:1.5;">' + item.text + '</div>'
+        + (item.requiresPhoto
+          ? '<div>'
+              + (done.photo
+                ? '<img src="' + done.photo + '" style="width:100%;border-radius:8px;max-height:160px;object-fit:cover;margin-bottom:8px;"/>'
+                : '')
+              + '<label style="display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px dashed var(--border2);border-radius:8px;padding:8px 12px;cursor:pointer;margin-bottom:8px;">'
+                + '<span style="font-size:18px;">' + (done.photo?'✅':'📷') + '</span>'
+                + '<span style="font-size:12px;color:var(--text3);">' + (done.photo?'Photo taken — tap to retake':'Take photo to confirm') + '</span>'
+                + '<input type="file" accept="image/*" capture="environment" data-item-id="' + item.id + '" class="cli-photo-inp" style="display:none;"/>'
+              + '</label>'
+            + '</div>'
+          : '')
+        + '<button data-item-id="' + item.id + '" onclick="sca_confirmChecklist(this.dataset.itemId)" '
+          + 'style="width:100%;padding:11px;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;'
+          + 'background:' + (isDone?'rgba(63,185,80,.15)':'var(--bg4)') + ';'
+          + 'border:2px solid ' + (isDone?'var(--green)':'var(--border2)') + ';'
+          + 'color:' + (isDone?'var(--green)':'var(--text2)') + ';">'
+          + (isDone ? '✓ Confirmed' : (item.requiresPhoto ? 'Confirm with photo above' : 'Tap to confirm'))
+        + '</button>'
+      + '</div>';
+    });
+
+    html += '<button onclick="sca_nextStep()" ' + (!allDone?'disabled style="opacity:.4;cursor:not-allowed;"':'') + ' class="btn btn-green" style="width:100%;margin-top:4px;">Continue →</button>';
+  }
   else if (c.step === 'photo') {
     html += '<div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.6;">Take a photo of the property before starting work. This is required to complete the job.</div>'
       + '<label id="sca-photo-zone" style="display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg3);border:2px dashed var(--border2);border-radius:14px;padding:32px 20px;cursor:pointer;margin-bottom:16px;text-align:center;">'
@@ -2941,6 +2983,19 @@ function renderStopCompletionSheet(c) {
       html += '<img src="' + c.photo + '" style="width:100%;border-radius:12px;max-height:180px;object-fit:cover;margin-bottom:14px;"/>';
     }
 
+    // Checklist confirmations
+    if (c.checklist && c.checklist.length) {
+      html += '<div style="background:var(--bg3);border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+        + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">CHECKLIST</div>'
+        + c.checklist.map(function(item){
+            var done = c.checklistDone[item.id];
+            return '<div style="font-size:12px;color:' + (done&&done.confirmed?'var(--green)':'var(--red)') + ';margin-bottom:3px;">'
+              + (done&&done.confirmed?'✓ ':'✕ ') + item.text
+            + '</div>';
+          }).join('')
+      + '</div>';
+    }
+
     // Services summary
     html += '<div style="background:var(--bg3);border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
       + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">SERVICES PERFORMED</div>'
@@ -2998,6 +3053,25 @@ function renderStopCompletionSheet(c) {
   html += '</div></div>';
   sheet.innerHTML = html;
   document.body.appendChild(sheet);
+
+  // Wire checklist photo inputs
+  if (c.step === 'checklist') {
+    document.querySelectorAll('.cli-photo-inp').forEach(function(inp) {
+      inp.addEventListener('change', function() {
+        var itemId = inp.dataset.itemId;
+        var file = this.files[0]; if (!file) return;
+        readFileAsDataUrl(file, function(dataUrl) {
+          if (!dataUrl) return;
+          compressPhoto(dataUrl, 1000, 0.88, function(compressed) {
+            var c = _getComp(); if (!c) return;
+            if (!c.checklistDone[itemId]) c.checklistDone[itemId] = {};
+            c.checklistDone[itemId].photo = compressed;
+            renderStopCompletionSheet(c);
+          });
+        });
+      });
+    });
+  }
 
   // Wire photo inputs after render
   if (c.step === 'photo') {
@@ -3060,6 +3134,18 @@ function _getComp() {
   return window._stopCompletionState || null;
 }
 
+window.sca_confirmChecklist = function(itemId) {
+  var c = _getComp(); if (!c) return;
+  var item = c.checklist.find(function(i){return i.id===itemId;});
+  if (!item) return;
+  if (item.requiresPhoto && !(c.checklistDone[itemId] && c.checklistDone[itemId].photo)) {
+    toast('Please take a photo first'); return;
+  }
+  if (!c.checklistDone[itemId]) c.checklistDone[itemId] = {};
+  c.checklistDone[itemId].confirmed = true;
+  renderStopCompletionSheet(c);
+};
+
 // Flag review handlers
 window.sca_flagYes = function() {
   var c = _getComp(); if (!c) return;
@@ -3104,21 +3190,20 @@ window.sca_nextStep = function() {
     var notesEl = document.getElementById('sca-notes');
     if (notesEl) c.notes = notesEl.value.trim();
   }
-  var steps = c.flags.length > 0
-    ? ['flags','photo','services','notes','submit']
-    : ['photo','services','notes','submit'];
+  var steps = [];
+  if (c.flags.length > 0) steps.push('flags');
+  if (c.checklist && c.checklist.length > 0) steps.push('checklist');
+  steps.push('photo', 'services', 'notes', 'submit');
   var idx = steps.indexOf(c.step);
-  if (idx < steps.length - 1) {
-    c.step = steps[idx + 1];
-    renderStopCompletionSheet(c);
-  }
+  if (idx < steps.length - 1) { c.step = steps[idx + 1]; renderStopCompletionSheet(c); }
 };
 
 window.sca_goBack = function() {
   var c = _getComp(); if (!c) return;
-  var steps = c.flags.length > 0
-    ? ['flags','photo','services','notes','submit']
-    : ['photo','services','notes','submit'];
+  var steps = [];
+  if (c.flags.length > 0) steps.push('flags');
+  if (c.checklist && c.checklist.length > 0) steps.push('checklist');
+  steps.push('photo', 'services', 'notes', 'submit');
   var idx = steps.indexOf(c.step);
   if (idx > 0) { c.step = steps[idx-1]; renderStopCompletionSheet(c); }
 };
@@ -3235,7 +3320,11 @@ window.sca_submit = async function() {
     skippedServices: c.skippedPeriodic || {},
     notes:           c.notes,
     photo:           photoUrl || c.photo || '',
-    flags:           c.newFlags.map(function(nf){return nf.service;})
+    flags:           c.newFlags.map(function(nf){return nf.service;}),
+    checklist:       Object.keys(c.checklistDone||{}).map(function(id){
+      var item = (c.checklist||[]).find(function(i){return i.id===id;});
+      return { id:id, text:item?item.text:'', confirmed:true };
+    })
   };
 
   // 3. Update property record
@@ -3883,7 +3972,59 @@ function openDispatchBoard() {
   }, 30000);
 }
 
-// ── Periodic Service Enforcement ─────────────────────────────────────────
+// ── Property Visit Checklist ─────────────────────────────────────────────
+function openAddChecklistItem(propId) {
+  var p = (state.properties||[]).find(function(x){return x.id===propId;});
+  if (!p) return;
+  var ex = document.getElementById('checklist-add-modal'); if(ex) ex.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'checklist-add-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:99000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;';
+  modal.innerHTML = '<div style="width:100%;max-width:400px;background:var(--bg2);border-radius:16px;padding:20px;">'
+    + '<div style="font-size:16px;font-weight:800;margin-bottom:14px;">Add Checklist Item</div>'
+    + '<div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:700;letter-spacing:1px;">INSTRUCTION TEXT</div>'
+    + '<textarea id="cli-text" class="inp" rows="3" placeholder="e.g. Close the side gate before leaving — take a photo to confirm" style="margin-bottom:12px;"></textarea>'
+    + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:10px 12px;background:var(--bg3);border-radius:10px;">'
+      + '<input type="checkbox" id="cli-photo" style="width:18px;height:18px;accent-color:var(--green);cursor:pointer;"/>'
+      + '<label for="cli-photo" style="font-size:13px;font-weight:600;cursor:pointer;">Require a photo to confirm</label>'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;">'
+      + '<button onclick="saveChecklistItem(\'' + propId + '\')" class="btn btn-green" style="flex:1;font-size:13px;">Add Item</button>'
+      + '<button onclick="document.getElementById(\'checklist-add-modal\').remove()" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);cursor:pointer;font-size:13px;font-weight:600;">Cancel</button>'
+    + '</div>'
+  + '</div>';
+  modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
+  document.body.appendChild(modal);
+  setTimeout(function(){ var t=document.getElementById('cli-text'); if(t) t.focus(); }, 100);
+}
+
+function saveChecklistItem(propId) {
+  var text = (document.getElementById('cli-text')?.value||'').trim();
+  if (!text) { toast('Enter an instruction'); return; }
+  var requiresPhoto = document.getElementById('cli-photo')?.checked || false;
+  var p = (state.properties||[]).find(function(x){return x.id===propId;});
+  if (!p) return;
+  if (!p.checklist) p.checklist = [];
+  p.checklist.push({ id: uid(), text: text, requiresPhoto: requiresPhoto });
+  saveAndSync('properties', p);
+  save();
+  document.getElementById('checklist-add-modal')?.remove();
+  openPropDetail(propId); // refresh detail panel
+  toast('Checklist item added ✓');
+}
+
+function removeChecklistItem(propId, idx) {
+  var p = (state.properties||[]).find(function(x){return x.id===propId;});
+  if (!p || !p.checklist) return;
+  p.checklist.splice(idx, 1);
+  saveAndSync('properties', p);
+  save();
+  openPropDetail(propId);
+  toast('Removed ✓');
+}
+
+
 const PERIODIC_SERVICES = ['Trim Shrubs', 'Weed Control', 'Fertilize', 'Irrigation Check'];
 
 // Check which periodic services have already been done this month for a property
@@ -4245,6 +4386,32 @@ function openPropDetail(id) {
         <div style="font-size:11px;color:var(--text4);">&#x1F4A1; Next service auto-calculates when you save.</div>
         <button class="btn btn-green" onclick="savePropEdit('${id}')" style="font-size:13px;">Save Changes</button>
         <button class="btn btn-outline" onclick="togglePropEdit('${id}')" style="font-size:13px;">Cancel</button>
+
+        <!-- Property Checklist Section -->
+        <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div>
+              <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;">Visit Checklist</div>
+              <div style="font-size:11px;color:var(--text4);margin-top:2px;">Shown to crew on every visit — must confirm before completing</div>
+            </div>
+            <button onclick="openAddChecklistItem('${id}')" style="padding:5px 12px;background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.25);border-radius:8px;color:var(--green);cursor:pointer;font-size:12px;font-weight:600;">+ Add</button>
+          </div>
+          <div id="pe-checklist-${id}">
+            ${(p.checklist||[]).length === 0
+              ? '<div style="font-size:12px;color:var(--text4);text-align:center;padding:12px;background:var(--bg3);border-radius:8px;">No checklist items. Tap + Add to create one.</div>'
+              : (p.checklist||[]).map((item, idx) => `
+                <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:10px;margin-bottom:6px;border:1px solid var(--border);">
+                  <div style="flex:1;">
+                    <div style="font-size:13px;font-weight:600;color:var(--text);">${item.text}</div>
+                    <div style="display:flex;gap:6px;margin-top:4px;">
+                      <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${item.requiresPhoto?'rgba(88,166,255,.12)':'rgba(255,255,255,.06)'};color:${item.requiresPhoto?'var(--blue)':'var(--text3)'};">${item.requiresPhoto?'📷 Photo required':'✓ Confirm only'}</span>
+                    </div>
+                  </div>
+                  <button onclick="removeChecklistItem('${id}',${idx})" style="background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.25);border-radius:6px;color:var(--red);cursor:pointer;padding:4px 8px;font-size:12px;">✕</button>
+                </div>`).join('')
+            }
+          </div>
+        </div>
       </div>
     </div>
 
