@@ -1571,7 +1571,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v26'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v27'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2732,8 +2732,8 @@ function renderStopCompletionSheet(c) {
         + '<textarea id="flag-resolve-note" class="inp" rows="2" placeholder="What was done to fix it..." style="margin-bottom:10px;">' + (res.resolveNote||'') + '</textarea>'
         + '<label id="flag-photo-zone" style="display:flex;align-items:center;gap:10px;background:var(--bg3);border:1px dashed var(--border2);border-radius:10px;padding:10px 14px;cursor:pointer;margin-bottom:4px;">'
           + '<span id="flag-photo-icon" style="font-size:20px;">' + (res.resolvePhoto?'✅':'📷') + '</span>'
-          + '<span id="flag-photo-label" style="font-size:12px;color:var(--text3);">' + (res.resolvePhoto?'Photo taken ✓':'Add resolution photo (optional)') + '</span>'
-          + '<input type="file" id="flag-resolve-photo-input" accept="image/*" capture="environment" style="display:none;"/>'
+          + '<span id="flag-photo-label" style="font-size:12px;color:var(--text3);">' + (res.resolvePhoto?'Photo taken ✓':'Add photo — camera or library') + '</span>'
+          + '<input type="file" id="flag-resolve-photo-input" accept="image/*" style="display:none;"/>'
         + '</label>'
         + (res.resolvePhoto ? '<img src="' + res.resolvePhoto + '" style="width:100%;border-radius:8px;max-height:140px;object-fit:cover;margin-top:8px;"/>' : '')
       + '</div>' : '')
@@ -2867,8 +2867,8 @@ function renderStopCompletionSheet(c) {
       + '<textarea id="sca-flag-note" class="inp" rows="2" placeholder="Describe the issue..." style="margin-bottom:8px;"></textarea>'
       + '<label id="sca-flag-photo-zone" style="display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px dashed var(--border2);border-radius:8px;padding:8px 12px;cursor:pointer;margin-bottom:8px;">'
         + '<span id="sca-flag-photo-icon" style="font-size:18px;">📷</span>'
-        + '<span id="sca-flag-photo-label" style="font-size:12px;color:var(--text3);">Add photo (optional)</span>'
-        + '<input type="file" id="sca-flag-photo-input" accept="image/*" capture="environment" style="display:none;"/>'
+        + '<span id="sca-flag-photo-label" style="font-size:12px;color:var(--text3);">Add photo — camera or library</span>'
+        + '<input type="file" id="sca-flag-photo-input" accept="image/*" style="display:none;"/>'
       + '</label>'
       + '<img id="sca-flag-preview" style="display:none;width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-bottom:8px;"/>'
       + '<button onclick="sca_addFlag()" class="btn" style="width:100%;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.3);color:var(--red);">+ Add Flag</button>'
@@ -4232,7 +4232,7 @@ function openAddFlag(propId) {
         <label class="photo-zone" for="flag-photo-input">
           <div style="font-size:28px;margin-bottom:6px;">📷</div>
           <div style="font-size:13px;color:var(--text3);">Tap to take/choose photo</div>
-          <input type="file" id="flag-photo-input" accept="image/*" capture="environment" style="display:none;" onchange="previewFlagPhoto(this)"/>
+          <input type="file" id="flag-photo-input" accept="image/*" style="display:none;" onchange="previewFlagPhoto(this)"/>
         </label>
         <img id="flag-photo-preview" style="display:none;width:100%;border-radius:10px;margin-top:8px;max-height:200px;object-fit:cover;"/>
       </div>
@@ -4523,7 +4523,7 @@ function openEditFlag(flagId) {
     '<label style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:10px 14px;cursor:pointer;margin-bottom:12px;">' +
       '<span style="font-size:20px;">📷</span>' +
       '<span style="font-size:13px;font-weight:700;">'+( getFlagPhoto(f) ? 'Replace Photo' : 'Add Photo' )+'</span>' +
-      '<input type="file" accept="image/*" capture="environment" style="display:none;" data-flagid="' + flagId + '" onchange="editFlagPhotoPreview(this)"/>' +
+      '<input type="file" accept="image/*" style="display:none;" data-flagid="' + flagId + '" onchange="editFlagPhotoPreview(this)"/>' +
     '</label>' +
     '<img id="ef-photo-preview" style="display:none;width:100%;border-radius:10px;max-height:180px;object-fit:cover;margin-bottom:12px;"/>' +
     '<button class="btn btn-green" data-flagid="' + flagId + '" onclick="saveEditFlag(this.dataset.flagid)" style="margin-bottom:8px;">Save Changes</button>' +
@@ -4611,7 +4611,7 @@ function resolveFlag(flagId, propId) {
     '<label class="photo-zone" for="mgr-resolve-input" id="mgr-resolve-zone" style="margin-bottom:12px;padding:16px;cursor:pointer;">' +
       '<div style="font-size:28px;margin-bottom:6px;">📷</div>' +
       '<div style="font-size:13px;color:var(--text3);">Tap to take or choose a photo</div>' +
-      '<input type="file" id="mgr-resolve-input" accept="image/*" capture="environment" style="display:none;"/>' +
+      '<input type="file" id="mgr-resolve-input" accept="image/*" style="display:none;"/>' +
     '</label>' +
 
     '<button id="mgr-resolve-submit-btn" class="btn btn-green" style="margin-bottom:8px;opacity:.4;cursor:not-allowed;">📷 Add photo to resolve</button>' +
