@@ -670,7 +670,7 @@ select.inp{cursor:pointer;}
 #photo-viewer {
   position: fixed;
   inset: 0;
-  z-index: 9000;
+  z-index: 99999;
   background: rgba(0,0,0,.95);
   display: none;
   flex-direction: column;
@@ -1571,7 +1571,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v30'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v31'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
