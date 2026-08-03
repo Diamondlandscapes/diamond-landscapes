@@ -1546,22 +1546,19 @@ select.inp{cursor:pointer;}
 <!-- Crew mobile bottom nav -->
 <div id="crew-bottom-nav">
   <button class="cbn-btn active" data-tab="field" onclick="switchTab('field');updateCrewBottomNav('field')">
-    <span class="cbn-icon">📋</span><span class="cbn-label">My Jobs</span>
+    <i class="ti ti-clipboard-list" style="font-size:20px;"></i><span class="cbn-label">My Jobs</span>
   </button>
   <button class="cbn-btn" data-tab="crew-week" onclick="switchTab('crew-week');updateCrewBottomNav('crew-week')">
-    <span class="cbn-icon">📅</span><span class="cbn-label">My Month</span>
-  </button>
-  <button class="cbn-btn" data-tab="properties" onclick="switchTab('properties');updateCrewBottomNav('properties')">
-    <span class="cbn-icon">🏡</span><span class="cbn-label">Properties</span>
+    <i class="ti ti-calendar-week" style="font-size:20px;"></i><span class="cbn-label">My Week</span>
   </button>
   <button class="cbn-btn" data-tab="wo-crew" onclick="switchTab('wo-crew');updateCrewBottomNav('wo-crew')">
-    <span class="cbn-icon">📋</span><span class="cbn-label">Work Orders</span>
+    <i class="ti ti-clipboard-check" style="font-size:20px;"></i><span class="cbn-label">Work Orders</span>
   </button>
   <button class="cbn-btn" data-tab="attendance" onclick="switchTab('attendance');updateCrewBottomNav('attendance')">
-    <span class="cbn-icon">📅</span><span class="cbn-label">Attendance</span>
+    <i class="ti ti-calendar-check" style="font-size:20px;"></i><span class="cbn-label">Attendance</span>
   </button>
   <button class="cbn-btn" data-tab="menu" onclick="toggleDrawer()">
-    <span class="cbn-icon">☰</span><span class="cbn-label">Menu</span>
+    <i class="ti ti-menu-2" style="font-size:20px;"></i><span class="cbn-label">Menu</span>
   </button>
 </div>
 
@@ -1591,7 +1588,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v51'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v52'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -6032,15 +6029,21 @@ function loadFieldView() {
               border:2px solid ${s.completed?'var(--green)':'var(--border2)'};
               display:flex;align-items:center;justify-content:center;font-weight:800;color:${s.completed?'#fff':'var(--text3)'};">${i+1}</div>
             <div style="flex:1;min-width:0;">
-              <div style="display:flex;align-items:center;gap:6px;">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                 <div style="font-weight:800;font-size:15px;">${prop?.name||'Property'}</div>
                 ${(state.flags||[]).filter(f=>f.propId===s.propId&&!f.resolved).length?
                   `<span style="background:rgba(248,81,73,.15);border:1px solid rgba(248,81,73,.3);border-radius:20px;padding:1px 7px;font-size:10px;font-weight:700;color:var(--red);">⚑ ${(state.flags||[]).filter(f=>f.propId===s.propId&&!f.resolved).length}</span>`:''}
               </div>
-              ${prop?.address ? `<a href="https://maps.google.com/?q=${encodeURIComponent(prop.address)}" target="_blank" onclick="event.stopPropagation();" style="font-size:12px;color:var(--blue);text-decoration:none;display:flex;align-items:center;gap:3px;"><i class="ti ti-map-pin" style="font-size:12px;"></i>${prop.address}</a>` : ''}
+              ${prop?.address ? `<div style="display:flex;align-items:center;gap:6px;margin-top:2px;">
+                <span style="font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${prop.address}</span>
+                <a href="https://maps.google.com/?q=${encodeURIComponent(prop.address)}" target="_blank" onclick="event.stopPropagation();" 
+                   style="flex-shrink:0;display:inline-flex;align-items:center;gap:3px;background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.25);border-radius:6px;padding:2px 7px;color:var(--blue);text-decoration:none;font-size:10px;font-weight:700;">
+                  <i class="ti ti-navigation" style="font-size:11px;"></i>Go
+                </a>
+              </div>` : ''}
             </div>
           </div>
-          <span class="badge badge-${s.completed?'green':'blue'}">${s.completed?'Done':'Pending'}</span>
+          <span class="badge badge-${s.completed?'green':'blue'}" style="flex-shrink:0;">${s.completed?'Done':'Pending'}</span>
         </div>
         <div class="stop-body" id="fs-${i}" style="padding-top:12px;">
           ${(prop?.checklist||[]).length && !s.completed ? `
@@ -7727,21 +7730,27 @@ function gsLoad() {
             q.forEach(function(item) { gsSave(item.table, item.record, 0); });
           }
 
-          // Start live listeners now that auth is confirmed
-          var COLLECTIONS = ['crew','properties','routes','flags','workOrders',
-                             'inventory','equipment','attendance'];
-          COLLECTIONS.forEach(function(name) { _listenCollection(name); });
+          // Start live listeners — critical first, then defer secondary
+          var CRITICAL = ['crew','routes','flags'];
+          var SECONDARY = ['properties','workOrders','inventory','equipment','attendance'];
+          CRITICAL.forEach(function(name) { _listenCollection(name); });
+          // Defer secondary collections by 800ms so UI loads fast
+          setTimeout(function() {
+            SECONDARY.forEach(function(name) { _listenCollection(name); });
+          }, 800);
           syncOnline = true;
           lastSync   = new Date();
           resolve(true);
         })
         .catch(function(err) {
           console.warn('Firebase anon auth failed:', err.message);
-          // Start listeners anyway — rules may still allow reads
           window._authReady = true;
-          var COLLECTIONS = ['crew','properties','routes','flags','workOrders',
-                             'inventory','equipment','attendance'];
-          COLLECTIONS.forEach(function(name) { _listenCollection(name); });
+          var CRITICAL = ['crew','routes','flags'];
+          var SECONDARY = ['properties','workOrders','inventory','equipment','attendance'];
+          CRITICAL.forEach(function(name) { _listenCollection(name); });
+          setTimeout(function() {
+            SECONDARY.forEach(function(name) { _listenCollection(name); });
+          }, 800);
           syncOnline = true;
           lastSync   = new Date();
           resolve(true);
@@ -9607,7 +9616,10 @@ function renderCwDayContent() {
         + '<div style="font-weight:800;font-size:14px;color:var(--text);">' + (prop?.name||'Property') + ' <span style="font-size:11px;color:var(--text4);font-weight:400;">ⓘ</span>'
           + ((prop?.checklist||[]).length && !s.completed ? ' <span style="font-size:10px;font-weight:700;color:var(--yellow);background:rgba(250,204,21,.1);border:1px solid rgba(250,204,21,.25);border-radius:10px;padding:1px 6px;">⚠ ' + prop.checklist.length + ' instructions</span>' : '')
         + '</div>'
-        + (prop?.address ? '<a href="https://maps.google.com/?q=' + encodeURIComponent(prop?.address||'') + '" target="_blank" onclick="event.stopPropagation();" style="font-size:11px;color:var(--blue);margin-top:2px;display:flex;align-items:center;gap:3px;text-decoration:none;"><i class="ti ti-map-pin" style="font-size:11px;"></i>' + prop.address + '</a>' : '')
+        + (prop?.address ? '<div style="display:flex;align-items:center;gap:6px;margin-top:2px;">'
+            + '<span style="font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;">' + prop.address + '</span>'
+            + '<a href="https://maps.google.com/?q=' + encodeURIComponent(prop?.address||'') + '" target="_blank" onclick="event.stopPropagation();" style="flex-shrink:0;display:inline-flex;align-items:center;gap:2px;background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.25);border-radius:6px;padding:2px 6px;color:var(--blue);text-decoration:none;font-size:10px;font-weight:700;"><i class="ti ti-navigation" style="font-size:10px;"></i>Go</a>'
+          + '</div>' : '')
         + (prop?.frequency ? '<div style="font-size:11px;color:var(--text4);margin-top:2px;">🔄 ' + prop.frequency + '</div>' : '')
         + (flags.length ? '<div data-propid="' + s.propId + '" onclick="event.stopPropagation();openCrewPropFlags(this.dataset.propid)" style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);border-radius:8px;padding:6px 10px;margin-top:8px;font-size:12px;color:var(--red);font-weight:700;cursor:pointer;">⚑ ' + flags.length + ' open flag' + (flags.length>1?'s':'') + ' — tap to view</div>' : '')
         + '</div>'
