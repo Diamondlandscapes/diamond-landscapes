@@ -1571,7 +1571,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v36'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v37'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2682,6 +2682,9 @@ function openStopCompletion(routeId, propId) {
 }
 
 function renderStopCompletionSheet(c) {
+  // Store completion state globally FIRST — before any rendering
+  window._stopCompletionState = c;
+
   var ex = document.getElementById('stop-completion-sheet');
   if (ex) ex.remove();
 
@@ -2948,16 +2951,13 @@ function renderStopCompletionSheet(c) {
       + '</div>';
     }
 
-    html += '<button onclick="sca_submit()" class="btn btn-green" style="width:100%;font-size:15px;padding:16px;margin-top:4px;">✓ Complete Job</button>'
+    html += '<button id="sca-submit-btn" onclick="sca_submit()" class="btn btn-green" style="width:100%;font-size:15px;padding:16px;margin-top:4px;">✓ Complete Job</button>'
       + '<button onclick="sca_goBack()" style="width:100%;margin-top:8px;padding:12px;background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:13px;">← Back</button>';
   }
 
   html += '</div></div>';
   sheet.innerHTML = html;
   document.body.appendChild(sheet);
-
-  // Store completion state globally — DOM element ref is unstable across re-renders
-  window._stopCompletionState = c;
 
   // Wire photo inputs after render
   if (c.step === 'photo') {
@@ -3159,8 +3159,9 @@ window.sca_removeNewFlag = function(idx) {
 
 // ── Final Submit ─────────────────────────────────────────────────────────
 window.sca_submit = async function() {
-  var c = _getComp(); if (!c) return;
-  var btn = document.querySelector('#stop-completion-sheet .btn-green:last-of-type');
+  var c = _getComp();
+  if (!c) { toast('Error: lost completion state — please try again'); return; }
+  var btn = document.getElementById('sca-submit-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
 
   var crew = c.crew;
@@ -3168,14 +3169,17 @@ window.sca_submit = async function() {
   var today = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   var now   = new Date().toLocaleString('en-US');
 
-  // 1. Upload property photo to Firebase Storage
+  // 1. Upload property photo to Firebase Storage (with 15s timeout)
   var photoUrl = '';
   if (c.photo) {
     try {
-      photoUrl = await new Promise(function(resolve) {
-        var path = 'photos/stops/' + c.propId + '_' + Date.now() + '.jpg';
-        uploadPhotoToStorage(c.photo, path, resolve, function(){ resolve(''); });
-      });
+      photoUrl = await Promise.race([
+        new Promise(function(resolve) {
+          var path = 'photos/stops/' + c.propId + '_' + Date.now() + '.jpg';
+          uploadPhotoToStorage(c.photo, path, resolve, function(){ resolve(''); });
+        }),
+        new Promise(function(resolve) { setTimeout(function(){ resolve(''); }, 15000); })
+      ]);
     } catch(e) { photoUrl = ''; }
   }
 
