@@ -1571,7 +1571,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v37'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v38'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -5584,9 +5584,16 @@ function loadFieldView() {
             <div class="sec-title">Report Issue / Flag</div>
             <button class="btn" onclick="openAddFlag('${s.propId}')" style="font-size:13px;margin-bottom:10px;background:rgba(251,146,60,.15);border:1px solid rgba(251,146,60,.4);color:var(--orange);border-radius:11px;padding:12px;">⚑ Report an Issue</button>
           </div>
-          <button class="btn btn-green" onclick="markWeekStopDone('${route.id}','${s.propId}',new Date());loadFieldView();" style="font-size:14px;">
-            ${s.completed?'✓ Mark Incomplete':'✓ Mark Job Complete'}
-          </button>
+          ${s.completed
+            ? `<div style="background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.25);border-radius:10px;padding:10px;margin-top:8px;">
+                <div style="font-size:12px;font-weight:700;color:var(--green);">✓ Completed</div>
+                ${s.completedAt?`<div style="font-size:11px;color:var(--text3);margin-top:2px;">${s.completedAt}</div>`:''}
+                ${s.completedBy?`<div style="font-size:11px;color:var(--text3);">by ${s.completedBy}</div>`:''}
+                ${(s.completedServices||[]).length?`<div style="font-size:11px;color:var(--text3);margin-top:4px;">✓ ${s.completedServices.join(', ')}</div>`:''}
+                <button class="btn btn-outline" onclick="markStopDone('${route.id}','${s.propId}')" style="margin-top:8px;font-size:12px;color:var(--red);border-color:var(--red);">↩ Reopen</button>
+              </div>`
+            : `<button class="btn btn-green" onclick="openStopCompletion('${route.id}','${s.propId}')" style="font-size:14px;margin-top:8px;">📷 Complete Job</button>`
+          }
         </div>
       </div>`;
     }).join('')}`;
