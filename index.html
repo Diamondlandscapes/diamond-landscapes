@@ -1592,7 +1592,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v46'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v47'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -3763,16 +3763,42 @@ function openDashStopsList(completedOnly) {
 
       stops.forEach(function(s, i) {
         var prop = (state.properties||[]).find(function(p){return p.id===s.propId;});
-        html += '<div onclick="openDashCrewRoute(\'' + r.id + '\')" style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg2);border-radius:10px;margin-bottom:6px;border:1px solid var(--border);border-left:3px solid ' + (s.completed?'var(--green)':'var(--border2)') + ';cursor:pointer;">'
-          + '<div style="width:24px;height:24px;border-radius:50%;background:' + (s.completed?'var(--green3)':'var(--bg4)') + ';border:2px solid ' + (s.completed?'var(--green)':'var(--border2)') + ';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:' + (s.completed?'#fff':'var(--text3)') + ';flex-shrink:0;">' + (s.completed?'✓':(i+1)) + '</div>'
-          + '<div style="flex:1;min-width:0;">'
-            + '<div style="font-size:13px;font-weight:700;">' + (prop?prop.name:'Unknown') + '</div>'
-            + '<div style="font-size:11px;color:var(--text3);">' + (prop?prop.address:'') + '</div>'
-            + (s.completed && s.completedBy ? '<div style="font-size:10px;color:var(--green);margin-top:2px;">✓ by ' + s.completedBy + (s.completedAt?' · '+s.completedAt:'') + '</div>' : '')
-            + (s.completedServices&&s.completedServices.length ? '<div style="font-size:10px;color:var(--text3);">' + s.completedServices.join(', ') + '</div>' : '')
-          + '</div>'
-          + '<span class="badge badge-' + (s.completed?'green':'blue') + '">' + (s.completed?'Done':'Pending') + '</span>'
-        + '</div>';
+        var stopId = r.id + '_' + s.propId;
+        if (s.completed) {
+          // Completed — expandable with photo
+          html += '<div style="background:var(--bg2);border-radius:10px;margin-bottom:6px;border:1px solid var(--border);border-left:3px solid var(--green);overflow:hidden;">'
+            + '<div onclick="document.getElementById(\'stop-exp-' + stopId + '\').style.display=document.getElementById(\'stop-exp-' + stopId + '\').style.display===\'none\'?\'block\':\'none\'" style="display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;">'
+              + '<div style="width:24px;height:24px;border-radius:50%;background:var(--green3);border:2px solid var(--green);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;">✓</div>'
+              + '<div style="flex:1;min-width:0;">'
+                + '<div style="font-size:13px;font-weight:700;">' + (prop?prop.name:'Unknown') + '</div>'
+                + '<div style="font-size:11px;color:var(--text3);">' + (prop?prop.address:'') + '</div>'
+                + (s.completedBy ? '<div style="font-size:10px;color:var(--green);margin-top:2px;">✓ by ' + s.completedBy + (s.completedAt?' · '+s.completedAt:'') + '</div>' : '')
+                + (s.completedServices&&s.completedServices.length ? '<div style="font-size:10px;color:var(--text3);">' + s.completedServices.join(', ') + '</div>' : '')
+              + '</div>'
+              + '<div style="display:flex;align-items:center;gap:8px;">'
+                + (s.completedPhoto ? '<i class="ti ti-photo" style="font-size:14px;color:var(--text3);"></i>' : '')
+                + '<span class="badge badge-green">Done</span>'
+              + '</div>'
+            + '</div>'
+            // Expandable section with photo
+            + '<div id="stop-exp-' + stopId + '" style="display:none;padding:0 14px 12px;">'
+              + (s.completedPhoto
+                ? '<img src="' + s.completedPhoto + '" referrerpolicy="no-referrer" onclick="openPhoto(\'' + s.completedPhoto + '\',\'' + (prop?prop.name:'') + ' — Completion Photo\')" style="width:100%;height:auto;border-radius:8px;cursor:zoom-in;display:block;margin-bottom:6px;" onerror="this.style.display=\'none\'"/>'
+                : '<div style="font-size:12px;color:var(--text4);padding:8px 0;">No photo for this stop</div>')
+              + (s.completedNotes ? '<div style="font-size:12px;color:var(--text2);margin-top:4px;font-style:italic;">"' + s.completedNotes + '"</div>' : '')
+            + '</div>'
+          + '</div>';
+        } else {
+          // Pending — tap to go to route
+          html += '<div onclick="openDashCrewRoute(\'' + r.id + '\')" style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg2);border-radius:10px;margin-bottom:6px;border:1px solid var(--border);border-left:3px solid var(--border2);cursor:pointer;">'
+            + '<div style="width:24px;height:24px;border-radius:50%;background:var(--bg4);border:2px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text3);flex-shrink:0;">' + (i+1) + '</div>'
+            + '<div style="flex:1;min-width:0;">'
+              + '<div style="font-size:13px;font-weight:700;">' + (prop?prop.name:'Unknown') + '</div>'
+              + '<div style="font-size:11px;color:var(--text3);">' + (prop?prop.address:'') + '</div>'
+            + '</div>'
+            + '<span class="badge badge-blue">Pending</span>'
+          + '</div>';
+        }
       });
       html += '</div>';
     });
