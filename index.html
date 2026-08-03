@@ -1592,7 +1592,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v49'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v50'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -6044,6 +6044,16 @@ function loadFieldView() {
           <span class="badge badge-${s.completed?'green':'blue'}">${s.completed?'Done':'Pending'}</span>
         </div>
         <div class="stop-body" id="fs-${i}" style="padding-top:12px;">
+          ${(prop?.checklist||[]).length && !s.completed ? `
+            <div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.3);border-radius:10px;padding:12px;margin-bottom:10px;">
+              <div style="font-size:10px;font-weight:800;color:var(--yellow);letter-spacing:1px;margin-bottom:8px;">⚠ PROPERTY INSTRUCTIONS — READ BEFORE STARTING</div>
+              ${(prop.checklist||[]).map(item=>`
+                <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid rgba(250,204,21,.1);">
+                  <span style="font-size:14px;flex-shrink:0;">${item.requiresPhoto?'📷':'✓'}</span>
+                  <div style="font-size:13px;color:var(--text2);line-height:1.4;">${item.text}</div>
+                </div>`).join('')}
+              <div style="font-size:10px;color:var(--yellow);margin-top:8px;opacity:.7;">You will be required to confirm these when completing the job</div>
+            </div>` : ''}
           ${prop?.notes?`<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.2);border-radius:8px;padding:10px;font-size:12px;color:var(--yellow);margin-bottom:10px;">📝 ${prop.notes}</div>`:''}
           ${(state.flags||[]).filter(f=>f.propId===s.propId&&!f.resolved).length?`
             <div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);border-radius:8px;padding:10px;margin-bottom:10px;">
@@ -9564,7 +9574,9 @@ function renderCwDayContent() {
         + '<div style="display:flex;gap:10px;align-items:flex-start;">'
         + '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:' + (s.completed?'var(--green3)':'var(--bg4)') + ';border:2px solid ' + (s.completed?'var(--green)':'var(--border2)') + ';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:' + (s.completed?'#fff':'var(--text3)') + ';">' + (i+1) + '</div>'
         + '<div style="flex:1;min-width:0;cursor:pointer;" onclick="openCrewPropSnapshot(\'' + s.propId + '\')">'
-        + '<div style="font-weight:800;font-size:14px;color:var(--text);">' + (prop?.name||'Property') + ' <span style="font-size:11px;color:var(--text4);font-weight:400;">ⓘ</span></div>'
+        + '<div style="font-weight:800;font-size:14px;color:var(--text);">' + (prop?.name||'Property') + ' <span style="font-size:11px;color:var(--text4);font-weight:400;">ⓘ</span>'
+          + ((prop?.checklist||[]).length && !s.completed ? ' <span style="font-size:10px;font-weight:700;color:var(--yellow);background:rgba(250,204,21,.1);border:1px solid rgba(250,204,21,.25);border-radius:10px;padding:1px 6px;">⚠ ' + prop.checklist.length + ' instructions</span>' : '')
+        + '</div>'
         + (prop?.address ? '<a href="https://maps.google.com/?q=' + encodeURIComponent(prop?.address||'') + '" target="_blank" onclick="event.stopPropagation();" style="font-size:11px;color:var(--blue);margin-top:2px;display:flex;align-items:center;gap:3px;text-decoration:none;"><i class="ti ti-map-pin" style="font-size:11px;"></i>' + prop.address + '</a>' : '')
         + (prop?.frequency ? '<div style="font-size:11px;color:var(--text4);margin-top:2px;">🔄 ' + prop.frequency + '</div>' : '')
         + (flags.length ? '<div data-propid="' + s.propId + '" onclick="event.stopPropagation();openCrewPropFlags(this.dataset.propid)" style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);border-radius:8px;padding:6px 10px;margin-top:8px;font-size:12px;color:var(--red);font-weight:700;cursor:pointer;">⚑ ' + flags.length + ' open flag' + (flags.length>1?'s':'') + ' — tap to view</div>' : '')
@@ -9612,7 +9624,18 @@ function openCrewPropSnapshot(propId) {
       + '<i class="ti ti-navigation" style="font-size:16px;"></i> Navigate to Property'
     + '</a>' : '')
 
-    // Frequency
+    // Checklist items — prominent at top
+    + ((prop.checklist||[]).length
+      ? '<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.3);border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+        + '<div style="font-size:10px;font-weight:700;color:var(--yellow);letter-spacing:1px;margin-bottom:8px;">⚠ PROPERTY INSTRUCTIONS</div>'
+        + (prop.checklist||[]).map(function(item){
+            return '<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid rgba(250,204,21,.1);">'
+              + '<span style="font-size:14px;flex-shrink:0;">' + (item.requiresPhoto?'📷':'✓') + '</span>'
+              + '<div style="font-size:13px;color:var(--text2);line-height:1.4;">' + item.text + '</div>'
+            + '</div>';
+          }).join('')
+      + '</div>'
+      : '')
     + (prop.frequency ? '<div style="background:var(--bg3);border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">'
       + '<div>'
         + '<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;">FREQUENCY</div>'
