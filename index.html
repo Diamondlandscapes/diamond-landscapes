@@ -1571,7 +1571,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v29'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-02-v30'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -10847,7 +10847,12 @@ function openCrewPropFlags(propId) {
           + '<div style="font-size:11px;color:var(--text4);">' + (f.date||'') + '</div>'
         + '</div>'
         + '<div style="font-size:14px;color:var(--text2);margin-bottom:8px;line-height:1.5;">' + note + '</div>'
-        + (photo ? '<img src="' + photo + '" referrerpolicy="no-referrer" style="width:100%;border-radius:8px;max-height:200px;object-fit:cover;margin-bottom:10px;"/>' : '')
+        + (photo
+          ? '<div style="margin-bottom:10px;border-radius:10px;overflow:hidden;cursor:zoom-in;" onclick="openPhoto(\'' + photo + '\',\'Flag Photo\')">'
+              + '<img src="' + photo + '" referrerpolicy="no-referrer" style="width:100%;height:auto;display:block;border-radius:10px;"/>'
+              + '<div style="font-size:10px;color:var(--text3);text-align:center;padding:4px 0;">Tap to view full size</div>'
+            + '</div>'
+          : '')
         + '<div style="font-size:11px;color:var(--text4);margin-bottom:10px;">Reported by ' + (f.by||'Team') + '</div>'
         + '<button data-flagid="' + f.id + '" data-propid="' + f.propId + '" onclick="crewResolveFlag(this.dataset.flagid, this.dataset.propid)"'
           + ' style="width:100%;padding:12px;border-radius:10px;background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3);font-size:14px;font-weight:700;cursor:pointer;">'
