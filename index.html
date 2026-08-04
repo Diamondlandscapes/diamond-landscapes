@@ -1643,7 +1643,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v9'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v10'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -1753,8 +1753,41 @@ function openOverlay(id) { document.getElementById(id).classList.add('open'); }
 
 // ─── ROLE ─────────────────────────────────────────────────────────────────
 // ─── AUTH & LOGIN ─────────────────────────────────────────────────────────
-const MANAGER_PIN = '1234'; // Change this to your preferred PIN
+// Manager PIN is no longer stored in plaintext in the source.
+// A SHA-256 hash of the PIN is kept in Firestore (config/auth) and compared
+// against a hash of what the user types — the actual PIN never appears in
+// the deployed code. Falls back to a cached hash for offline logins.
+const MANAGER_PIN_SALT = 'diamond-landscapes-2026'; // not secret, just prevents generic rainbow-table lookups
 let pinBuffer = '';
+let _managerPinHash = null; // populated from Firestore (or local cache) once available
+
+async function hashPin(pin) {
+  const enc = new TextEncoder().encode(MANAGER_PIN_SALT + ':' + pin);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Called once Firebase is ready (see gsLoad). Fetches the stored hash;
+// if none exists yet (first-ever run), seeds it with a hash of a default
+// PIN so the app still works, and the owner should change it right away
+// via Drawer → Change Manager PIN.
+async function loadManagerPinHash() {
+  try {
+    if (!window._fbSDK || !_db) return;
+    const snap = await window._fbSDK.getDoc(window._fbSDK.doc(_db, 'config', 'auth'));
+    if (snap.exists() && snap.data().managerPinHash) {
+      _managerPinHash = snap.data().managerPinHash;
+    } else {
+      _managerPinHash = await hashPin('1234'); // default — change immediately after first login
+      window._fbSDK.setDoc(window._fbSDK.doc(_db, 'config', 'auth'), { managerPinHash: _managerPinHash }, { merge: true }).catch(function(){});
+    }
+    localStorage.setItem('dl_pin_hash_cache', _managerPinHash); // offline fallback only
+  } catch (e) {
+    console.warn('Could not load manager PIN hash:', e && e.message);
+    var cached = localStorage.getItem('dl_pin_hash_cache');
+    if (cached) _managerPinHash = cached;
+  }
+}
 
 function openLoginSheet() {
   showLoginWho();
@@ -1796,11 +1829,19 @@ function pinKey(k) {
   else if (pinBuffer.length < 4) { pinBuffer += String(k); }
   updatePinDots();
   if (pinBuffer.length === 4) {
-    setTimeout(() => {
-      if (pinBuffer === MANAGER_PIN) {
+    var entered = pinBuffer;
+    setTimeout(async () => {
+      // Make sure we have a hash to compare against (covers the case where
+      // Firebase was still loading when the login sheet opened)
+      if (!_managerPinHash) {
+        var cached = localStorage.getItem('dl_pin_hash_cache');
+        if (cached) _managerPinHash = cached;
+        else await loadManagerPinHash();
+      }
+      var enteredHash = await hashPin(entered);
+      if (_managerPinHash && enteredHash === _managerPinHash) {
         closeOverlay('login-overlay');
         applyRole('manager');
-        
       } else {
         document.getElementById('pin-error').textContent = '✕ Incorrect PIN — try again';
         pinBuffer = '';
@@ -1814,6 +1855,62 @@ function updatePinDots() {
   for (let i = 1; i <= 4; i++) {
     const el = document.getElementById('pd'+i);
     if (el) el.classList.toggle('filled', i <= pinBuffer.length);
+  }
+}
+
+// ── Change Manager PIN (manager only) ───────────────────────────────────
+function openChangeManagerPin() {
+  var ex = document.getElementById('change-pin-overlay'); if (ex) ex.remove();
+  var wrap = document.createElement('div');
+  wrap.id = 'change-pin-overlay';
+  wrap.className = 'overlay open';
+  wrap.innerHTML = '<div class="sheet">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'
+      + '<div style="font-size:16px;font-weight:800;">🔒 Change Manager PIN</div>'
+      + '<button onclick="document.getElementById(\'change-pin-overlay\').remove()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 12px;color:var(--text);cursor:pointer;">✕</button>'
+    + '</div>'
+    + '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;">PINs must be exactly 4 digits.</div>'
+    + '<div style="margin-bottom:10px;"><label style="font-size:11px;color:var(--text3);font-weight:700;">CURRENT PIN</label>'
+      + '<input id="cpin-current" type="password" inputmode="numeric" maxlength="4" class="inp" style="margin-top:4px;letter-spacing:6px;font-size:18px;text-align:center;" placeholder="••••"/></div>'
+    + '<div style="margin-bottom:10px;"><label style="font-size:11px;color:var(--text3);font-weight:700;">NEW PIN</label>'
+      + '<input id="cpin-new" type="password" inputmode="numeric" maxlength="4" class="inp" style="margin-top:4px;letter-spacing:6px;font-size:18px;text-align:center;" placeholder="••••"/></div>'
+    + '<div style="margin-bottom:16px;"><label style="font-size:11px;color:var(--text3);font-weight:700;">CONFIRM NEW PIN</label>'
+      + '<input id="cpin-confirm" type="password" inputmode="numeric" maxlength="4" class="inp" style="margin-top:4px;letter-spacing:6px;font-size:18px;text-align:center;" placeholder="••••"/></div>'
+    + '<div id="cpin-error" style="font-size:12px;color:var(--red);min-height:16px;margin-bottom:8px;text-align:center;"></div>'
+    + '<button class="btn btn-green" style="width:100%;" onclick="changeManagerPin()">Save New PIN</button>'
+  + '</div>';
+  document.body.appendChild(wrap);
+}
+
+async function changeManagerPin() {
+  var cur = (document.getElementById('cpin-current').value || '').trim();
+  var next = (document.getElementById('cpin-new').value || '').trim();
+  var confirm2 = (document.getElementById('cpin-confirm').value || '').trim();
+  var errEl = document.getElementById('cpin-error');
+
+  if (!/^\d{4}$/.test(next) || !/^\d{4}$/.test(confirm2)) {
+    errEl.textContent = 'New PIN must be exactly 4 digits.'; return;
+  }
+  if (next !== confirm2) {
+    errEl.textContent = 'New PIN and confirmation don\'t match.'; return;
+  }
+  if (!_managerPinHash) {
+    var cached = localStorage.getItem('dl_pin_hash_cache');
+    if (cached) _managerPinHash = cached; else await loadManagerPinHash();
+  }
+  var curHash = await hashPin(cur);
+  if (curHash !== _managerPinHash) {
+    errEl.textContent = 'Current PIN is incorrect.'; return;
+  }
+  var newHash = await hashPin(next);
+  try {
+    await window._fbSDK.setDoc(window._fbSDK.doc(_db, 'config', 'auth'), { managerPinHash: newHash }, { merge: true });
+    _managerPinHash = newHash;
+    localStorage.setItem('dl_pin_hash_cache', newHash);
+    document.getElementById('change-pin-overlay').remove();
+    toast('✓ Manager PIN updated');
+  } catch (e) {
+    errEl.textContent = 'Could not save — check your connection and try again.';
   }
 }
 
@@ -1893,6 +1990,7 @@ function applyRole(r) {
     <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni"><i class="ti ti-calendar-check"></i></span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
+      <button class="nb" onclick="openChangeManagerPin()"><span class="ni"><i class="ti ti-lock"></i></span><span class="nl">Change Manager PIN</span></button>
       <button class="nb" onclick="openLoginSheet()"><span class="ni"><i class="ti ti-logout"></i></span><span class="nl">Switch / Sign Out</span></button>
     </div>`;
     switchTab('dashboard');
@@ -2193,7 +2291,6 @@ function renderRouteDayList(dateISO) {
         + '<span>' + done + '/' + stops + ' completed</span><span>' + pct + '%</span>'
       + '</div>'
       + '<div class="inv-bar"><div class="inv-fill" style="width:' + pct + '%;background:linear-gradient(90deg,var(--green3),var(--lime));"></div></div>'
-      + (r.optimized ? '<div style="font-size:11px;color:var(--teal);margin-top:8px;">✦ Route optimized</div>' : '')
     + '</div>';
   }).join('');
 }
@@ -2374,7 +2471,6 @@ function openRouteDetail(id) {
   html += `</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
       <div style="font-size:14px;font-weight:700;">STOPS (${stops.length})</div>
-      ${state.role==='manager'?`<button class="btn-sm" onclick="optimizeRoute('${r.id}')" style="background:rgba(45,212,191,.15);color:var(--teal);border:1px solid rgba(45,212,191,.3);">✦ Optimize</button>`:''}
     </div>`;
     // Add Stop card — manager only
     if (state.role === 'manager') {
@@ -4338,17 +4434,6 @@ function toggleService(routeId, propId, svc, checked) {
   if (checked) { if(!s.completedServices.includes(svc)) s.completedServices.push(svc); }
   else { s.completedServices = s.completedServices.filter(x=>x!==svc); }
   save();
-}
-
-function optimizeRoute(rid) {
-  const r = state.routes.find(x => x.id === rid);
-  if (!r || !r.stops?.length) return;
-  // Simulate optimization by shuffling with a consistent seed (real app would use Maps API)
-  r.stops = [...r.stops].sort(() => Math.sin(r.id.charCodeAt(0) + r.stops.indexOf(r.stops[0])) - 0.3);
-  r.optimized = true;
-  save();
-  openRouteDetail(rid);
-  toast('✦ Route optimized!');
 }
 
 function deleteRoute(id) {
@@ -7960,6 +8045,7 @@ function gsLoad() {
         .then(function() {
           console.log('Firebase: signed in anonymously');
           window._authReady = true;
+          loadManagerPinHash();
 
           // Version management — fully automatic:
           // 1. Always write current version to Firestore so all devices know latest
@@ -8012,6 +8098,8 @@ function gsLoad() {
         .catch(function(err) {
           console.warn('Firebase anon auth failed:', err.message);
           window._authReady = true;
+          var cachedHash = localStorage.getItem('dl_pin_hash_cache');
+          if (cachedHash) _managerPinHash = cachedHash;
           var CRITICAL = ['crew','routes','flags'];
           var SECONDARY = ['properties','workOrders','inventory','equipment','attendance'];
           CRITICAL.forEach(function(name) { _listenCollection(name); });
@@ -8621,6 +8709,9 @@ function buildDrawerItems(menuItems, activeTab) {
   }).join('');
 
   html += '<div style="height:1px;background:var(--border);margin:8px 4px;"></div>';
+  if (isManager) {
+    html += '<button class="drawer-item" onclick="openChangeManagerPin();closeDrawer();"><span class="d-icon"><i class="ti ti-lock" style="font-size:17px;"></i></span><span class="d-label">Change Manager PIN</span></button>';
+  }
   html += '<button class="drawer-item" onclick="openInstallInstructions();closeDrawer();"><span class="d-icon"><i class="ti ti-device-mobile" style="font-size:17px;"></i></span><span class="d-label">Install App</span></button>';
   html += '<button class="drawer-item" onclick="' + (isManager ? 'openLoginSheet()' : 'signOut()') + ';closeDrawer();"><span class="d-icon"><i class="ti ti-logout" style="font-size:17px;"></i></span><span class="d-label">' + (isManager ? 'Switch / Sign Out' : 'Sign Out') + '</span></button>';
 
