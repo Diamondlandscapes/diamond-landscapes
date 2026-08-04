@@ -1643,8 +1643,19 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v10'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v11'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
+
+// Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
+// plain string comparison breaks once N reaches double digits, e.g. 'v9' > 'v10' as text).
+function isVersionNewer(remote, local) {
+  if (!remote || !local) return false;
+  var rm = /^(\d{4}-\d{2}-\d{2})-v(\d+)$/.exec(remote);
+  var lm = /^(\d{4}-\d{2}-\d{2})-v(\d+)$/.exec(local);
+  if (!rm || !lm) return remote > local; // unexpected format — fall back to old behavior
+  if (rm[1] !== lm[1]) return rm[1] > lm[1]; // different date — ISO dates sort correctly as strings
+  return parseInt(rm[2], 10) > parseInt(lm[2], 10); // same date — compare vN numerically
+}
 
 let state = {
   role: 'manager',
@@ -8052,15 +8063,19 @@ function gsLoad() {
           // 2. Only reload if Firestore has a NEWER version than what's running
           // This means you only need to bump APP_VERSION in the code when deploying —
           // Firestore updates itself, no manual config changes needed.
+          //
+          // NOTE: versions look like 'YYYY-MM-DD-vN'. Comparing them with plain
+          // string '>' breaks once N reaches double digits (e.g. 'v9' sorts
+          // ABOVE 'v10' as a string), which causes every device to think the
+          // other one is "newer" and reload forever. isVersionNewer() below
+          // compares the date and the vN number properly instead.
           fsMod.getDoc(fsMod.doc(_db, 'config', 'app')).then(function(snap) {
             var remoteVersion = snap.exists() ? (snap.data().version || '') : '';
             // Always write our version — we are the latest deployment
             fsMod.setDoc(fsMod.doc(_db, 'config', 'app'), { version: APP_VERSION }, { merge: true });
             // Only reload if remote is strictly newer than us (another device deployed something newer)
             if (remoteVersion && remoteVersion !== APP_VERSION) {
-              // Compare versions — only reload if remote is newer
-              // Version format: YYYY-MM-DD-vN — higher = newer
-              if (remoteVersion > APP_VERSION) {
+              if (isVersionNewer(remoteVersion, APP_VERSION)) {
                 console.log('Newer app version on server:', remoteVersion, '— reloading');
                 if ('caches' in window) {
                   caches.keys().then(function(keys) {
