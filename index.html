@@ -1588,7 +1588,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-02-v53'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v1'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -3447,7 +3447,57 @@ window.sca_submit = async function() {
   var summary = c.services.length + ' service' + (c.services.length!==1?'s':'') + ' logged';
   if (c.newFlags.length) summary += ', ' + c.newFlags.length + ' flag' + (c.newFlags.length!==1?'s':'') + ' created';
   toast('✓ Job complete — ' + summary);
+
+  // Show next property's checklist instructions if it has any
+  setTimeout(function() { showNextStopInstructions(c.routeId, c.propId); }, 600);
 };
+
+function showNextStopInstructions(routeId, justCompletedPropId) {
+  var route = (state.routes||[]).find(function(r){return r.id===routeId;});
+  if (!route) return;
+
+  var stops = route.stops || [];
+  var currentIdx = stops.findIndex(function(s){return s.propId===justCompletedPropId;});
+  if (currentIdx === -1 || currentIdx >= stops.length - 1) return; // no next stop
+
+  // Find the next incomplete stop
+  var nextStop = null;
+  for (var i = currentIdx + 1; i < stops.length; i++) {
+    if (!stops[i].completed) { nextStop = stops[i]; break; }
+  }
+  if (!nextStop) return;
+
+  var nextProp = (state.properties||[]).find(function(p){return p.id===nextStop.propId;});
+  if (!nextProp || !nextProp.checklist || !nextProp.checklist.length) return;
+
+  // Show the next property's instructions as a popup
+  var ex = document.getElementById('next-stop-instructions'); if(ex) ex.remove();
+  var modal = document.createElement('div');
+  modal.id = 'next-stop-instructions';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:5500;background:rgba(0,0,0,.7);display:flex;align-items:flex-end;justify-content:center;';
+
+  var items = nextProp.checklist.map(function(item){
+    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid rgba(250,204,21,.15);">'
+      + '<span style="font-size:18px;flex-shrink:0;">' + (item.requiresPhoto?'📷':'✓') + '</span>'
+      + '<div style="font-size:14px;color:var(--text);line-height:1.5;">' + item.text + '</div>'
+    + '</div>';
+  }).join('');
+
+  modal.innerHTML = '<div style="width:100%;max-width:480px;background:var(--bg2);border-radius:20px 20px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom));border-top:3px solid var(--yellow);">'
+    + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'
+      + '<span style="font-size:22px;">⚠️</span>'
+      + '<div>'
+        + '<div style="font-size:16px;font-weight:800;color:var(--yellow);">Next Stop Instructions</div>'
+        + '<div style="font-size:13px;color:var(--text3);margin-top:2px;">' + nextProp.name + ' — read before you arrive</div>'
+      + '</div>'
+    + '</div>'
+    + '<div style="margin:12px 0;">' + items + '</div>'
+    + '<button onclick="document.getElementById(\'next-stop-instructions\').remove()" class="btn btn-green" style="width:100%;font-size:15px;padding:14px;">Got it ✓</button>'
+  + '</div>';
+
+  modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
 
 function markStopDone(routeId, propId) {
   // Simple reopen toggle — used when crew taps Reopen on a completed stop
