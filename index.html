@@ -20,6 +20,12 @@
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCJcEu25G-mITZOjzQdOq6eG_jSnAsq0PQ&libraries=geocoding" async defer></script>
 <style>
 button,a{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
+/* Global tap feedback for cards */
+.card:active, .card-flat:active, .stop-card:active {
+  background: var(--bg3) !important;
+  transition: background 0.05s;
+}
+.stop-head:active { background: rgba(255,255,255,.04); border-radius: 10px; }
 :root{
   /* Premium warm dark palette */
   --bg:#0d1117; --bg2:#161b22; --bg3:#1c2128; --bg4:#22272e;
@@ -69,7 +75,36 @@ input[type="date"]{cursor:pointer;pointer-events:all;position:relative;z-index:5
 .nb.active .ni{filter:none;}
 .nb.active .nl{color:var(--green);}
 
-/* pulse animation for live indicators */
+/* Stop completion flow improvements */
+.sca-continue-btn:disabled {
+  opacity: .35 !important;
+  cursor: not-allowed !important;
+  filter: grayscale(0.5);
+}
+.sca-service-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 14px;
+  background: var(--bg3);
+  border-radius: 10px;
+  margin-bottom: 6px;
+  border: 2px solid transparent;
+  transition: all .15s;
+  cursor: pointer;
+  min-height: 50px;
+}
+.sca-service-row.selected {
+  background: rgba(63,185,80,.1);
+  border-color: var(--green);
+}
+.sca-service-row:active { opacity: .8; }
+.sca-skip-btn {
+  padding: 8px 18px !important;
+  font-size: 13px !important;
+  min-height: 38px !important;
+  border-radius: 8px !important;
+}
 @keyframes pulse {
   0%,100%{opacity:1;transform:scale(1);}
   50%{opacity:.4;transform:scale(1.3);}
@@ -726,7 +761,7 @@ select.inp{cursor:pointer;}
   bottom: 0;
   left: 0;
   right: 0;
-  height: calc(56px + var(--safe-bottom, 0px));
+  height: calc(64px + var(--safe-bottom, 0px));
   background: var(--bg2);
   border-top: 1px solid var(--border);
   z-index: 100;
@@ -737,7 +772,7 @@ select.inp{cursor:pointer;}
     display: flex;
   }
   #screens {
-    padding-bottom: calc(60px + var(--safe-bottom, 0px)) !important;
+    padding-bottom: calc(68px + var(--safe-bottom, 0px)) !important;
   }
 }
 .cbn-btn {
@@ -746,17 +781,20 @@ select.inp{cursor:pointer;}
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 3px;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 6px 4px;
-  color: var(--text4);
-  transition: color 0.15s;
+  padding: 8px 4px;
+  color: var(--text3);
+  transition: color 0.15s, background 0.1s;
+  border-radius: 0;
+  -webkit-tap-highlight-color: transparent;
 }
+.cbn-btn:active { background: rgba(255,255,255,.05); }
 .cbn-btn.active { color: var(--green); }
-.cbn-icon { font-size: 20px; line-height: 1; }
-.cbn-label { font-size: 9px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
+.cbn-icon { font-size: 22px; line-height: 1; }
+.cbn-label { font-size: 10px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
 
 
 @media print {
@@ -1596,7 +1634,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v4'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v5'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2436,7 +2474,12 @@ function openRouteDetail(id) {
 
 function toggleStop(id) {
   const el = document.getElementById(id);
-  if (el) el.classList.toggle('open');
+  if (!el) return;
+  el.classList.toggle('open');
+  // Rotate chevron for field view stops
+  var idx = id.replace('fs-','');
+  var chevron = document.getElementById('fs-chevron-' + idx);
+  if (chevron) chevron.style.transform = el.classList.contains('open') ? 'rotate(180deg)' : '';
 }
 
 
@@ -3022,16 +3065,16 @@ function renderStopCompletionSheet(c) {
         var isSkipped  = c.skippedPeriodic && c.skippedPeriodic[svc];
         var borderColor = checked ? 'var(--green)' : (isPeriodic && !isSkipped ? 'rgba(250,204,21,.5)' : 'var(--border2)');
         var bgColor     = checked ? 'rgba(74,222,128,.08)' : (isPeriodic && !isSkipped ? 'rgba(250,204,21,.05)' : 'var(--bg3)');
-        html += '<div onclick="sca_toggleService(\'' + svc.replace(/'/g,"\\'") + '\')" style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:' + bgColor + ';border:1px solid ' + borderColor + ';border-radius:10px;margin-bottom:8px;cursor:pointer;">'
-          + '<div style="width:22px;height:22px;border-radius:6px;border:2px solid ' + (checked?'var(--green)':'var(--border2)') + ';background:' + (checked?'var(--green3)':'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;color:#fff;font-weight:800;">' + (checked?'✓':'') + '</div>'
+        html += '<div onclick="sca_toggleService(\'' + svc.replace(/'/g,"\\'") + '\')" class="sca-service-row' + (checked?' selected':'') + '" style="border-color:' + (checked?'var(--green)':(isPeriodic&&!isSkipped?'rgba(250,204,21,.5)':'var(--border2)')) + ';background:' + (checked?'rgba(63,185,80,.08)':(isPeriodic&&!isSkipped?'rgba(250,204,21,.05)':'var(--bg3)')) + ';">'
+          + '<div style="width:24px;height:24px;border-radius:7px;border:2px solid ' + (checked?'var(--green)':'var(--border2)') + ';background:' + (checked?'var(--green3)':'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;color:#fff;font-weight:800;">' + (checked?'✓':'') + '</div>'
           + '<div style="flex:1;">'
-            + '<div style="font-size:14px;font-weight:600;">' + svc + '</div>'
-            + (isPeriodic && !checked && !isSkipped ? '<div style="font-size:10px;color:var(--yellow);margin-top:2px;">⚠ Due this month</div>' : '')
-            + (isSkipped ? '<div style="font-size:10px;color:var(--text4);margin-top:2px;">Skipped — ' + isSkipped + '</div>' : '')
+            + '<div style="font-size:15px;font-weight:600;color:var(--text);">' + svc + '</div>'
+            + (isPeriodic && !checked && !isSkipped ? '<div style="font-size:11px;color:var(--yellow);margin-top:2px;">⚠ Due this month</div>' : '')
+            + (isSkipped ? '<div style="font-size:11px;color:var(--text4);margin-top:2px;">Skipped — ' + isSkipped + '</div>' : '')
           + '</div>'
           + (isPeriodic && !checked && !isSkipped
-            ? '<button onclick="event.stopPropagation();sca_showSkipReason(\'' + svc.replace(/'/g,"\\'") + '\')" style="font-size:10px;padding:4px 8px;background:var(--bg4);border:1px solid var(--border2);border-radius:6px;color:var(--text3);cursor:pointer;white-space:nowrap;">Skip →</button>'
-            : (isSkipped ? '<button onclick="event.stopPropagation();sca_unskipService(\'' + svc.replace(/'/g,"\\'") + '\')" style="font-size:10px;padding:4px 8px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text4);cursor:pointer;">Undo</button>' : ''))
+            ? '<button onclick="event.stopPropagation();sca_showSkipReason(\'' + svc.replace(/'/g,"\\'") + '\')" class="sca-skip-btn" style="background:var(--bg4);border:1px solid var(--border2);color:var(--text3);cursor:pointer;">Skip →</button>'
+            : (isSkipped ? '<button onclick="event.stopPropagation();sca_unskipService(\'' + svc.replace(/'/g,"\\'") + '\')" class="sca-skip-btn" style="background:transparent;border:1px solid var(--border2);color:var(--text4);cursor:pointer;">Undo</button>' : ''))
         + '</div>';
       });
     }
@@ -6203,82 +6246,95 @@ function loadFieldView() {
   const done = stops.filter(s=>s.completed).length;
   el.innerHTML = `
     ${buildDueWOsHTML(crewId)}
-    <div style="background:linear-gradient(135deg,var(--green3),var(--green2));border-radius:14px;padding:14px;margin-bottom:12px;color:#fff;">
-      <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:14px;font-weight:700;opacity:.8;">YOUR ROUTE</div>
-      <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:22px;font-weight:800;">${route.name}</div>
-      <div style="margin-top:4px;font-size:12px;opacity:.7;">📅 ${route.day}</div>
-      <div style="margin-top:4px;font-size:13px;opacity:.85;">${done}/${stops.length} stops done</div>
+    <div style="background:linear-gradient(135deg,var(--green3),var(--green2));border-radius:14px;padding:12px 14px;margin-bottom:10px;color:#fff;">
+      <div style="font-size:11px;font-weight:700;opacity:.7;letter-spacing:1px;text-transform:uppercase;">Your Route Today</div>
+      <div style="font-size:22px;font-weight:800;margin-top:2px;">${route.name}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
+        <div style="font-size:13px;opacity:.85;">${done} of ${stops.length} stops done</div>
+        <div style="background:rgba(255,255,255,.2);border-radius:20px;padding:3px 12px;font-size:12px;font-weight:700;">${stops.length?Math.round(done/stops.length*100):0}%</div>
+      </div>
+      <div style="height:4px;background:rgba(255,255,255,.2);border-radius:4px;margin-top:8px;overflow:hidden;">
+        <div style="height:100%;width:${stops.length?Math.round(done/stops.length*100):0}%;background:#fff;border-radius:4px;transition:width .5s;"></div>
+      </div>
     </div>
     ${stops.map((s,i) => {
       const prop = state.properties.find(p => p.id === s.propId);
-      return `<div class="stop-card" style="margin-bottom:10px;">
-        <div class="stop-head" onclick="toggleStop('fs-${i}')">
+      const openFlags = (state.flags||[]).filter(f=>f.propId===s.propId&&!f.resolved);
+      const hasChecklist = (prop?.checklist||[]).length > 0;
+      const borderColor = s.completed ? 'var(--green)' : openFlags.length ? 'var(--red)' : 'var(--border)';
+      return `<div class="stop-card" style="margin-bottom:8px;border-left:3px solid ${borderColor};border-radius:0 12px 12px 0;overflow:hidden;">
+        <div class="stop-head" onclick="toggleStop('fs-${i}')" style="padding:11px 12px;">
           <div style="display:flex;gap:10px;align-items:center;flex:1;min-width:0;">
-            <div style="width:30px;height:30px;border-radius:50%;
+            <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;
               background:${s.completed?'var(--green3)':'var(--bg4)'};
               border:2px solid ${s.completed?'var(--green)':'var(--border2)'};
-              display:flex;align-items:center;justify-content:center;font-weight:800;color:${s.completed?'#fff':'var(--text3)'};">${i+1}</div>
+              display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:${s.completed?'#fff':'var(--text3)'};">${s.completed?'✓':i+1}</div>
             <div style="flex:1;min-width:0;">
-              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                <div style="font-weight:800;font-size:15px;">${prop?.name||'Property'}</div>
-                ${(state.flags||[]).filter(f=>f.propId===s.propId&&!f.resolved).length?
-                  `<span style="background:rgba(248,81,73,.15);border:1px solid rgba(248,81,73,.3);border-radius:20px;padding:1px 7px;font-size:10px;font-weight:700;color:var(--red);">⚑ ${(state.flags||[]).filter(f=>f.propId===s.propId&&!f.resolved).length}</span>`:''}
+              <div style="display:flex;align-items:center;gap:5px;">
+                <div style="font-weight:700;font-size:15px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${prop?.name||'Property'}</div>
+                ${openFlags.length?`<span style="background:rgba(248,81,73,.15);border-radius:20px;padding:1px 6px;font-size:10px;font-weight:700;color:var(--red);flex-shrink:0;">⚑${openFlags.length}</span>`:''}
+                ${hasChecklist&&!s.completed?`<span style="background:rgba(250,204,21,.12);border-radius:20px;padding:1px 6px;font-size:10px;font-weight:700;color:var(--yellow);flex-shrink:0;">⚠</span>`:''}
               </div>
-              ${prop?.address ? `<div style="display:flex;align-items:center;gap:6px;margin-top:2px;">
-                <span style="font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${prop.address}</span>
-                <a href="https://maps.google.com/?q=${encodeURIComponent(prop.address)}" target="_blank" onclick="event.stopPropagation();" 
-                   style="flex-shrink:0;display:inline-flex;align-items:center;gap:3px;background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.25);border-radius:6px;padding:2px 7px;color:var(--blue);text-decoration:none;font-size:10px;font-weight:700;">
-                  <i class="ti ti-navigation" style="font-size:11px;"></i>Go
+              ${prop?.address ? `<div style="display:flex;align-items:center;gap:5px;margin-top:2px;">
+                <span style="font-size:12px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;">${prop.address}</span>
+                <a href="https://maps.google.com/?q=${encodeURIComponent(prop.address)}" target="_blank" onclick="event.stopPropagation();"
+                   style="flex-shrink:0;display:inline-flex;align-items:center;gap:2px;background:rgba(88,166,255,.15);border:1px solid rgba(88,166,255,.3);border-radius:6px;padding:3px 8px;color:var(--blue);text-decoration:none;font-size:11px;font-weight:700;min-height:26px;">
+                  <i class="ti ti-navigation" style="font-size:12px;"></i>Go
                 </a>
               </div>` : ''}
             </div>
+            <div style="flex-shrink:0;padding-left:6px;">
+              <i class="ti ti-chevron-down" style="font-size:14px;color:var(--text3);transition:transform .2s;" id="fs-chevron-${i}"></i>
+            </div>
           </div>
-          <span class="badge badge-${s.completed?'green':'blue'}" style="flex-shrink:0;">${s.completed?'Done':'Pending'}</span>
         </div>
-        <div class="stop-body" id="fs-${i}" style="padding-top:12px;">
+        <div class="stop-body" id="fs-${i}" style="padding:0 12px 12px;">
+
+          ${!s.completed ? `<button onclick="openStopCompletion('${route.id}','${s.propId}')" 
+            style="width:100%;padding:14px;background:var(--green2);border:none;border-radius:10px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px;-webkit-tap-highlight-color:transparent;">
+            <i class="ti ti-camera" style="font-size:18px;"></i> Complete Job
+          </button>` : `
+          <div style="background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.25);border-radius:10px;padding:10px;margin-bottom:10px;">
+            <div style="font-size:12px;font-weight:700;color:var(--green);">✓ Completed${s.completedAt?' · '+s.completedAt:''}</div>
+            ${s.completedBy?`<div style="font-size:11px;color:var(--text3);">by ${s.completedBy}</div>`:''}
+            ${(s.completedServices||[]).length?`<div style="font-size:11px;color:var(--text3);margin-top:3px;">${s.completedServices.join(' · ')}</div>`:''}
+            ${s.completedPhoto?`<img src="${s.completedPhoto}" referrerpolicy="no-referrer" onclick="openPhoto('${s.completedPhoto}','${prop?.name||''}')" style="width:100%;border-radius:8px;margin-top:8px;cursor:zoom-in;" onerror="this.style.display='none'"/>`:''}
+            <button onclick="markStopDone('${route.id}','${s.propId}')" style="margin-top:8px;width:100%;padding:9px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.25);border-radius:8px;color:var(--red);font-size:13px;font-weight:600;cursor:pointer;">↩ Reopen</button>
+          </div>`}
+
           ${(prop?.checklist||[]).length && !s.completed ? `
-            <div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.3);border-radius:10px;padding:12px;margin-bottom:10px;">
-              <div style="font-size:10px;font-weight:800;color:var(--yellow);letter-spacing:1px;margin-bottom:8px;">⚠ PROPERTY INSTRUCTIONS — READ BEFORE STARTING</div>
-              ${(prop.checklist||[]).map(item=>`
-                <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid rgba(250,204,21,.1);">
-                  <span style="font-size:14px;flex-shrink:0;">${item.requiresPhoto?'📷':'✓'}</span>
-                  <div style="font-size:13px;color:var(--text2);line-height:1.4;">${item.text}</div>
-                </div>`).join('')}
-              <div style="font-size:10px;color:var(--yellow);margin-top:8px;opacity:.7;">You will be required to confirm these when completing the job</div>
+            <div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.25);border-radius:10px;padding:10px;margin-bottom:10px;">
+              <div style="font-size:10px;font-weight:800;color:var(--yellow);letter-spacing:1px;margin-bottom:6px;">⚠ INSTRUCTIONS FOR THIS PROPERTY</div>
+              ${(prop.checklist||[]).map(item=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px solid rgba(250,204,21,.1);">
+                <span style="font-size:13px;flex-shrink:0;">${item.requiresPhoto?'📷':'✓'}</span>
+                <div style="font-size:13px;color:var(--text);line-height:1.4;">${item.text}</div>
+              </div>`).join('')}
             </div>` : ''}
-          ${prop?.notes?`<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.2);border-radius:8px;padding:10px;font-size:12px;color:var(--yellow);margin-bottom:10px;">📝 ${prop.notes}</div>`:''}
-          ${(state.flags||[]).filter(f=>f.propId===s.propId&&!f.resolved).length?`
-            <div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);border-radius:8px;padding:10px;margin-bottom:10px;">
-              <div style="font-size:10px;font-weight:800;color:var(--red);letter-spacing:1px;margin-bottom:6px;">⚑ OPEN FLAGS</div>
-              ${(state.flags||[]).filter(f=>f.propId===s.propId&&!f.resolved).map((fn,fni)=>`
-                <div onclick="openCrewPropFlags('${s.propId}')" style="font-size:12px;color:var(--text2);padding:6px 0;border-bottom:1px solid rgba(248,113,113,.1);cursor:pointer;">
-                  <div style="font-size:10px;color:var(--text4);font-weight:700;margin-bottom:2px;">${fn.service||''} · ${fn.priority||''} — tap for details</div>
-                  <span class="flag-note-span">${fn.note}</span>
-                  <button onclick="translateFlagNote(this,'${fn.note.replace(/'/g,"\\'")}',${fni})" style="background:var(--bg4);border:none;font-size:10px;color:var(--blue);cursor:pointer;margin-left:6px;padding:2px 6px;border-radius:6px;">🇲🇽 ES</button>
+
+          ${openFlags.length?`
+            <button onclick="openCrewPropFlags('${s.propId}')" style="width:100%;padding:11px;background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.2);border-radius:10px;color:var(--red);font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:10px;">
+              <i class="ti ti-flag" style="font-size:15px;"></i> View ${openFlags.length} Open Flag${openFlags.length>1?'s':''} →
+            </button>`:''}
+
+          ${prop?.notes?`<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.2);border-radius:8px;padding:10px;font-size:13px;color:var(--yellow);margin-bottom:10px;line-height:1.4;">📝 ${prop.notes}</div>`:''}
+
+          ${(prop?.services||[]).length ? `
+            <div style="margin-bottom:10px;">
+              <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Services</div>
+              ${(prop.services||[]).map(svc=>`
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:4px;">
+                  <span style="font-size:13px;color:var(--text);">${svc}</span>
+                  <input type="checkbox" ${(s.completedServices||[]).includes(svc)?'checked':''}
+                    onchange="toggleService('${route.id}','${s.propId}','${svc}',this.checked)"
+                    style="width:22px;height:22px;accent-color:var(--green);cursor:pointer;flex-shrink:0;"/>
                 </div>`).join('')}
-            </div>`:''}
-          <div class="sec-title">Tasks</div>
-          ${(prop?.services||[]).map(svc=>`
-            <div class="svc-item">
-              <span style="font-size:13px;">${svc}</span>
-              <input type="checkbox" ${s.completedServices?.includes(svc)?'checked':''}
-                onchange="toggleService('${route.id}','${s.propId}','${svc}',this.checked)"
-                style="width:20px;height:20px;accent-color:var(--green);cursor:pointer;"/>
-            </div>`).join('')}
-          <div style="margin-top:12px;">
-            <div class="sec-title">Report Issue / Flag</div>
-            <button class="btn" onclick="openAddFlag('${s.propId}')" style="font-size:13px;margin-bottom:10px;background:rgba(251,146,60,.15);border:1px solid rgba(251,146,60,.4);color:var(--orange);border-radius:11px;padding:12px;">⚑ Report an Issue</button>
-          </div>
-          ${s.completed
-            ? `<div style="background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.25);border-radius:10px;padding:10px;margin-top:8px;">
-                <div style="font-size:12px;font-weight:700;color:var(--green);">✓ Completed</div>
-                ${s.completedAt?`<div style="font-size:11px;color:var(--text3);margin-top:2px;">${s.completedAt}</div>`:''}
-                ${s.completedBy?`<div style="font-size:11px;color:var(--text3);">by ${s.completedBy}</div>`:''}
-                ${(s.completedServices||[]).length?`<div style="font-size:11px;color:var(--text3);margin-top:4px;">✓ ${s.completedServices.join(', ')}</div>`:''}
-                <button class="btn btn-outline" onclick="markStopDone('${route.id}','${s.propId}')" style="margin-top:8px;font-size:12px;color:var(--red);border-color:var(--red);">↩ Reopen</button>
-              </div>`
-            : `<button class="btn btn-green" onclick="openStopCompletion('${route.id}','${s.propId}')" style="font-size:14px;margin-top:8px;">📷 Complete Job</button>`
-          }
+            </div>` : ''}
+
+          <button onclick="event.stopPropagation();openAddFlag('${s.propId}')" 
+            style="width:100%;padding:11px;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);border-radius:10px;color:var(--orange);font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+            <i class="ti ti-flag-2" style="font-size:15px;"></i> Report an Issue
+          </button>
+
         </div>
       </div>`;
     }).join('')}`;
@@ -9893,8 +9949,8 @@ function renderCwDayContent() {
         + '<div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">'
         + (s.completed ? '<span class="badge badge-green">✓ Done</span>' : '<span class="badge badge-blue">Pending</span>')
         + (s.completed
-          ? '<button onclick="markWeekStopDone(\'' + route.id + '\',\'' + s.propId + '\',new Date(\'' + dateStr + 'T12:00:00\'))" style="font-size:11px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap;">↩ Undo</button>'
-          : '<button onclick="openStopCompletion(\'' + route.id + '\',\'' + s.propId + '\')" style="font-size:11px;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap;">📷 Complete</button>')
+          ? '<button onclick="markWeekStopDone(\'' + route.id + '\',\'' + s.propId + '\',new Date(\'' + dateStr + 'T12:00:00\'))" style="padding:9px 14px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.25);border-radius:8px;color:var(--red);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;min-height:38px;">↩ Reopen</button>'
+          : '<button onclick="openStopCompletion(\'' + route.id + '\',\'' + s.propId + '\')" style="padding:9px 14px;background:var(--green2);border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;min-height:38px;">📷 Complete</button>')
         + '</div>'
         + '</div></div>';
     });
