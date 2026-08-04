@@ -1044,6 +1044,14 @@ select.inp{cursor:pointer;}
         <div id="report-crew-table"></div>
       </div>
 
+      <div class="card" style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div class="sec-title" style="margin-bottom:0;">Stop Time Breakdown</div>
+          <span style="font-size:10px;color:var(--text3);">EST · Lunch 12–1pm excluded</span>
+        </div>
+        <div id="report-stop-times"></div>
+      </div>
+
 
       <div class="card" style="margin-bottom:14px;">
         <div class="sec-title">Outstanding Tasks by Crew Member</div>
@@ -1588,7 +1596,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v1'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v2'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -2378,8 +2386,21 @@ function openRouteDetail(id) {
             ${prop?.notes?`<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.2);border-radius:8px;padding:10px;margin-top:8px;font-size:12px;color:var(--yellow);">📝 ${prop.notes}</div>`:''}
             ${s.completed
               ? `<div style="margin-top:10px;background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25);border-radius:10px;padding:10px;">
-                  <div style="font-size:12px;font-weight:700;color:var(--green);">✓ Completed</div>
-                  ${s.completedAt?`<div style="font-size:11px;color:var(--text3);margin-top:2px;">${s.completedAt}</div>`:''}
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+                    <div style="font-size:12px;font-weight:700;color:var(--green);">✓ Completed</div>
+                    ${(()=>{
+                      // Calculate duration from previous completed stop
+                      var allCompleted = stops.filter(st=>st.completed&&st.completedAtISO).sort((a,b)=>new Date(a.completedAtISO)-new Date(b.completedAtISO));
+                      var myIdx = allCompleted.findIndex(st=>st.propId===s.propId);
+                      var prevISO = myIdx > 0 ? allCompleted[myIdx-1].completedAtISO : null;
+                      var dur = calcStopDuration(prevISO, s.completedAtISO);
+                      var col = durationColor(dur);
+                      return myIdx > 0 && dur !== null
+                        ? `<span style="font-size:11px;font-weight:700;color:${col};background:${col}1a;border:1px solid ${col}40;border-radius:20px;padding:2px 8px;">⏱ ${formatDuration(dur)}</span>`
+                        : '';
+                    })()}
+                  </div>
+                  ${s.completedAt?`<div style="font-size:11px;color:var(--text3);">${s.completedAt}${s.completedAtISO?' · '+formatTimeEST(s.completedAtISO):''}</div>`:''}
                   ${s.completedBy?`<div style="font-size:11px;color:var(--text3);">by ${s.completedBy}</div>`:''}
                   ${(s.completedServices||[]).length?`<div style="font-size:11px;color:var(--text3);margin-top:4px;">✓ ${s.completedServices.join(', ')}</div>`:''}
                   ${s.completedNotes?`<div style="font-size:11px;color:var(--text3);margin-top:4px;font-style:italic;">"${s.completedNotes}"</div>`:''}
@@ -2699,7 +2720,106 @@ function updateRouteStatus(rid, status) {
   if (r) { r.status = status; saveAndSync('routes', r); renderDashboard(); }
 }
 
-// ── Stop Completion Flow ──────────────────────────────────────────────────
+// ── Stop Duration Engine ─────────────────────────────────────────────────
+
+// Convert UTC ISO timestamp to EST/EDT Date object
+function toEST(isoStr) {
+  if (!isoStr) return null;
+  try {
+    var d = new Date(isoStr);
+    if (isNaN(d)) return null;
+    return d; // JavaScript Date handles timezone display via Intl
+  } catch(e) { return null; }
+}
+
+// Format a Date to EST time string e.g. "9:42 AM"
+function formatTimeEST(isoStr) {
+  if (!isoStr) return '';
+  var d = toEST(isoStr);
+  if (!d) return '';
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric', minute: '2-digit', hour12: true,
+    timeZone: 'America/New_York'
+  });
+}
+
+// Get hour+minute in EST as decimal (e.g. 12:30 → 12.5)
+function getESTDecimalHour(isoStr) {
+  if (!isoStr) return null;
+  var d = new Date(isoStr);
+  if (isNaN(d)) return null;
+  var parts = d.toLocaleTimeString('en-US', {
+    hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: 'America/New_York'
+  }).split(':');
+  return parseInt(parts[0]) + parseInt(parts[1]) / 60;
+}
+
+// Calculate lunch overlap (12:00–13:00 EST) in minutes for a time window
+function lunchOverlapMinutes(startISO, endISO) {
+  var s = getESTDecimalHour(startISO);
+  var e = getESTDecimalHour(endISO);
+  if (s === null || e === null) return 0;
+  var LUNCH_START = 12.0, LUNCH_END = 13.0;
+  var overlapStart = Math.max(s, LUNCH_START);
+  var overlapEnd   = Math.min(e, LUNCH_END);
+  if (overlapEnd <= overlapStart) return 0;
+  return Math.round((overlapEnd - overlapStart) * 60);
+}
+
+// Calculate stop duration in minutes between prev and current completion
+// Deducts lunch overlap if window crosses 12-1pm EST
+function calcStopDuration(prevISO, currISO) {
+  if (!prevISO || !currISO) return null;
+  var prev = new Date(prevISO);
+  var curr = new Date(currISO);
+  if (isNaN(prev) || isNaN(curr)) return null;
+  var rawMin = Math.round((curr - prev) / 60000);
+  if (rawMin < 0) return null;
+  var lunch = lunchOverlapMinutes(prevISO, currISO);
+  return Math.max(0, rawMin - lunch);
+}
+
+// Format minutes as "Xh Ym" or "Y min"
+function formatDuration(minutes) {
+  if (minutes === null || minutes === undefined) return '—';
+  if (minutes === 0) return '< 1 min';
+  if (minutes < 60) return minutes + ' min';
+  var h = Math.floor(minutes / 60);
+  var m = minutes % 60;
+  return h + 'h ' + (m > 0 ? m + 'm' : '');
+}
+
+// Get duration color based on minutes
+function durationColor(minutes) {
+  if (minutes === null) return 'var(--text4)';
+  if (minutes <= 20) return 'var(--green)';
+  if (minutes <= 40) return 'var(--yellow)';
+  return 'var(--red)';
+}
+
+// Get all stop durations for a route (sorted by completion time)
+function getRouteDurations(route) {
+  var stops = (route.stops||[]).filter(function(s){
+    return s.completed && s.completedAtISO;
+  }).sort(function(a,b){
+    return new Date(a.completedAtISO) - new Date(b.completedAtISO);
+  });
+
+  return stops.map(function(s, i) {
+    var prevISO = i === 0 ? null : stops[i-1].completedAtISO;
+    var dur = calcStopDuration(prevISO, s.completedAtISO);
+    var prop = (state.properties||[]).find(function(p){return p.id===s.propId;});
+    return {
+      stop: s, prop: prop,
+      duration: dur,
+      completedAt: formatTimeEST(s.completedAtISO),
+      isFirst: i === 0
+    };
+  });
+}
+
+
 // Multi-step: Flag review → Property photo → Services → Notes/Flag → Submit
 function openStopCompletion(routeId, propId) {
   var r    = (state.routes||[]).find(x => x.id === routeId);
@@ -8085,6 +8205,60 @@ function renderReports() {
           +'<div style="font-size:12px;color:var(--text3);margin-top:2px;">👷 '+(assignedCrew?assignedCrew.name:'Unassigned')+' · '+r.day+'</div></div>'
           +'<span class="badge badge-yellow">'+pendingStops.length+' pending</span></div>'
           +stopsHtml+'</div>';
+      }).join('');
+    }
+  }
+
+  // ── Stop Time Breakdown ────────────────────────────────────────────────
+  var stopTimesEl = document.getElementById('report-stop-times');
+  if (stopTimesEl) {
+    var routesWithTimes = filteredRoutes.filter(function(r){
+      return (r.stops||[]).some(function(s){ return s.completed && s.completedAtISO; });
+    });
+
+    if (!routesWithTimes.length) {
+      stopTimesEl.innerHTML = '<div style="font-size:13px;color:var(--text4);text-align:center;padding:10px;">No completed stops with timestamps yet</div>';
+    } else {
+      stopTimesEl.innerHTML = routesWithTimes.map(function(r) {
+        var crewM = crew.find(function(c){return c.id===r.crewId;});
+        var durations = getRouteDurations(r);
+        if (!durations.length) return '';
+
+        var totalMin = durations.reduce(function(sum, d){ return sum + (d.duration||0); }, 0);
+        var avgMin = durations.filter(function(d){return !d.isFirst&&d.duration!==null;}).length
+          ? Math.round(totalMin / durations.filter(function(d){return !d.isFirst&&d.duration!==null;}).length)
+          : null;
+
+        var rows = durations.map(function(d, i) {
+          var col = d.isFirst ? 'var(--text4)' : durationColor(d.duration);
+          return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:4px;">'
+            + '<div style="width:22px;height:22px;border-radius:50%;background:' + (d.stop.completed?'var(--green3)':'var(--bg4)') + ';border:2px solid ' + (d.stop.completed?'var(--green)':'var(--border2)') + ';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;">' + (i+1) + '</div>'
+            + '<div style="flex:1;min-width:0;">'
+              + '<div style="font-size:13px;font-weight:700;">' + (d.prop?d.prop.name:'Unknown') + '</div>'
+              + '<div style="font-size:11px;color:var(--text3);">Done at ' + d.completedAt + '</div>'
+            + '</div>'
+            + '<div style="text-align:right;flex-shrink:0;">'
+              + (d.isFirst
+                ? '<span style="font-size:11px;color:var(--text4);">First stop</span>'
+                : '<span style="font-size:13px;font-weight:700;color:' + col + ';">' + formatDuration(d.duration) + '</span>'
+              )
+            + '</div>'
+          + '</div>';
+        }).join('');
+
+        return '<div style="background:var(--bg2);border-radius:12px;padding:12px 14px;margin-bottom:10px;border:1px solid var(--border);">'
+          + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+            + '<div>'
+              + '<div style="font-weight:800;font-size:14px;">' + r.name + '</div>'
+              + '<div style="font-size:11px;color:var(--text3);">' + (crewM?crewM.name:'Unassigned') + (avgMin?' · avg '+formatDuration(avgMin)+'/stop':'') + '</div>'
+            + '</div>'
+            + '<div style="text-align:right;">'
+              + '<div style="font-size:11px;color:var(--text3);">Total time</div>'
+              + '<div style="font-size:14px;font-weight:700;color:var(--blue);">' + formatDuration(totalMin) + '</div>'
+            + '</div>'
+          + '</div>'
+          + rows
+        + '</div>';
       }).join('');
     }
   }
