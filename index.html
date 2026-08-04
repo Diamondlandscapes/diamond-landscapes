@@ -1596,7 +1596,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v3'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v4'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -12462,6 +12462,24 @@ function readFileAsDataUrl(file, callback) {
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0);
+
+      // Validate canvas isn't all-white (happens with HEIC on some browsers)
+      var sample = ctx.getImageData(
+        Math.floor(canvas.width * 0.3), Math.floor(canvas.height * 0.3),
+        Math.min(10, canvas.width), Math.min(10, canvas.height)
+      );
+      var allWhite = true;
+      for (var i = 0; i < sample.data.length; i += 4) {
+        if (sample.data[i] < 250 || sample.data[i+1] < 250 || sample.data[i+2] < 250) {
+          allWhite = false; break;
+        }
+      }
+      if (allWhite) {
+        // Canvas is blank — HEIC decode failed silently, fall back to FileReader
+        img.onerror();
+        return;
+      }
+
       settle(canvas.toDataURL('image/jpeg', 0.92));
     } catch(e) {
       // Canvas tainted or other draw error — fall back to FileReader
