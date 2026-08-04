@@ -1634,7 +1634,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v5'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v6'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -6261,79 +6261,90 @@ function loadFieldView() {
       const prop = state.properties.find(p => p.id === s.propId);
       const openFlags = (state.flags||[]).filter(f=>f.propId===s.propId&&!f.resolved);
       const hasChecklist = (prop?.checklist||[]).length > 0;
-      const borderColor = s.completed ? 'var(--green)' : openFlags.length ? 'var(--red)' : 'var(--border)';
+      const borderColor = s.completed ? 'var(--green)' : openFlags.length ? 'var(--red)' : hasChecklist ? 'var(--yellow)' : 'var(--border)';
       return `<div class="stop-card" style="margin-bottom:8px;border-left:3px solid ${borderColor};border-radius:0 12px 12px 0;overflow:hidden;">
-        <div class="stop-head" onclick="toggleStop('fs-${i}')" style="padding:11px 12px;">
+
+        <div class="stop-head" onclick="toggleStop('fs-${i}')" style="padding:12px;">
           <div style="display:flex;gap:10px;align-items:center;flex:1;min-width:0;">
             <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;
               background:${s.completed?'var(--green3)':'var(--bg4)'};
               border:2px solid ${s.completed?'var(--green)':'var(--border2)'};
-              display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:${s.completed?'#fff':'var(--text3)'};">${s.completed?'✓':i+1}</div>
+              display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;
+              color:${s.completed?'#fff':'var(--text3)'};">${s.completed?'✓':i+1}</div>
             <div style="flex:1;min-width:0;">
-              <div style="display:flex;align-items:center;gap:5px;">
+              <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
                 <div style="font-weight:700;font-size:15px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${prop?.name||'Property'}</div>
                 ${openFlags.length?`<span style="background:rgba(248,81,73,.15);border-radius:20px;padding:1px 6px;font-size:10px;font-weight:700;color:var(--red);flex-shrink:0;">⚑${openFlags.length}</span>`:''}
                 ${hasChecklist&&!s.completed?`<span style="background:rgba(250,204,21,.12);border-radius:20px;padding:1px 6px;font-size:10px;font-weight:700;color:var(--yellow);flex-shrink:0;">⚠</span>`:''}
               </div>
-              ${prop?.address ? `<div style="display:flex;align-items:center;gap:5px;margin-top:2px;">
-                <span style="font-size:12px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;">${prop.address}</span>
-                <a href="https://maps.google.com/?q=${encodeURIComponent(prop.address)}" target="_blank" onclick="event.stopPropagation();"
-                   style="flex-shrink:0;display:inline-flex;align-items:center;gap:2px;background:rgba(88,166,255,.15);border:1px solid rgba(88,166,255,.3);border-radius:6px;padding:3px 8px;color:var(--blue);text-decoration:none;font-size:11px;font-weight:700;min-height:26px;">
-                  <i class="ti ti-navigation" style="font-size:12px;"></i>Go
-                </a>
-              </div>` : ''}
+              ${s.completed?`<div style="font-size:11px;color:var(--green);margin-top:2px;">✓ Done${s.completedAt?' · '+s.completedAt:''}</div>`:''}
             </div>
-            <div style="flex-shrink:0;padding-left:6px;">
-              <i class="ti ti-chevron-down" style="font-size:14px;color:var(--text3);transition:transform .2s;" id="fs-chevron-${i}"></i>
-            </div>
+            <i class="ti ti-chevron-down" style="font-size:14px;color:var(--text3);transition:transform .2s;flex-shrink:0;" id="fs-chevron-${i}"></i>
           </div>
         </div>
+
         <div class="stop-body" id="fs-${i}" style="padding:0 12px 12px;">
-
-          ${!s.completed ? `<button onclick="openStopCompletion('${route.id}','${s.propId}')" 
-            style="width:100%;padding:14px;background:var(--green2);border:none;border-radius:10px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px;-webkit-tap-highlight-color:transparent;">
-            <i class="ti ti-camera" style="font-size:18px;"></i> Complete Job
-          </button>` : `
-          <div style="background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.25);border-radius:10px;padding:10px;margin-bottom:10px;">
-            <div style="font-size:12px;font-weight:700;color:var(--green);">✓ Completed${s.completedAt?' · '+s.completedAt:''}</div>
-            ${s.completedBy?`<div style="font-size:11px;color:var(--text3);">by ${s.completedBy}</div>`:''}
-            ${(s.completedServices||[]).length?`<div style="font-size:11px;color:var(--text3);margin-top:3px;">${s.completedServices.join(' · ')}</div>`:''}
+          ${s.completed ? `
+          <div style="background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.2);border-radius:10px;padding:12px;margin-bottom:10px;">
+            <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:4px;">✓ Job Complete</div>
+            ${s.completedBy?`<div style="font-size:12px;color:var(--text3);">by ${s.completedBy}</div>`:''}
+            ${(s.completedServices||[]).length?`<div style="font-size:12px;color:var(--text3);margin-top:3px;">${s.completedServices.join(' · ')}</div>`:''}
             ${s.completedPhoto?`<img src="${s.completedPhoto}" referrerpolicy="no-referrer" onclick="openPhoto('${s.completedPhoto}','${prop?.name||''}')" style="width:100%;border-radius:8px;margin-top:8px;cursor:zoom-in;" onerror="this.style.display='none'"/>`:''}
-            <button onclick="markStopDone('${route.id}','${s.propId}')" style="margin-top:8px;width:100%;padding:9px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.25);border-radius:8px;color:var(--red);font-size:13px;font-weight:600;cursor:pointer;">↩ Reopen</button>
-          </div>`}
+          </div>` : `
 
-          ${(prop?.checklist||[]).length && !s.completed ? `
-            <div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.25);border-radius:10px;padding:10px;margin-bottom:10px;">
-              <div style="font-size:10px;font-weight:800;color:var(--yellow);letter-spacing:1px;margin-bottom:6px;">⚠ INSTRUCTIONS FOR THIS PROPERTY</div>
-              ${(prop.checklist||[]).map(item=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px solid rgba(250,204,21,.1);">
-                <span style="font-size:13px;flex-shrink:0;">${item.requiresPhoto?'📷':'✓'}</span>
-                <div style="font-size:13px;color:var(--text);line-height:1.4;">${item.text}</div>
-              </div>`).join('')}
-            </div>` : ''}
+          ${hasChecklist ? `
+          <div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.25);border-radius:10px;padding:12px;margin-bottom:10px;">
+            <div style="font-size:10px;font-weight:800;color:var(--yellow);letter-spacing:1px;margin-bottom:8px;">⚠ PROPERTY INSTRUCTIONS</div>
+            ${(prop.checklist||[]).map(item=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid rgba(250,204,21,.1);">
+              <span style="font-size:14px;flex-shrink:0;color:var(--yellow);">${item.requiresPhoto?'📷':'✓'}</span>
+              <div style="font-size:14px;color:var(--text);line-height:1.5;font-weight:500;">${item.text}</div>
+            </div>`).join('')}
+          </div>` : ''}
 
-          ${openFlags.length?`
-            <button onclick="openCrewPropFlags('${s.propId}')" style="width:100%;padding:11px;background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.2);border-radius:10px;color:var(--red);font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:10px;">
-              <i class="ti ti-flag" style="font-size:15px;"></i> View ${openFlags.length} Open Flag${openFlags.length>1?'s':''} →
-            </button>`:''}
+          ${openFlags.length ? `
+          <button onclick="openCrewPropFlags('${s.propId}')" style="width:100%;padding:12px 14px;background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.2);border-radius:10px;color:var(--red);font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:10px;text-align:left;">
+            <i class="ti ti-flag" style="font-size:18px;flex-shrink:0;"></i>
+            <div style="flex:1;">
+              <div>${openFlags.length} open flag${openFlags.length>1?'s':''} on this property</div>
+              <div style="font-size:11px;font-weight:400;opacity:.7;margin-top:2px;">Tap to view and resolve</div>
+            </div>
+            <i class="ti ti-chevron-right" style="font-size:14px;opacity:.5;flex-shrink:0;"></i>
+          </button>` : ''}
 
-          ${prop?.notes?`<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.2);border-radius:8px;padding:10px;font-size:13px;color:var(--yellow);margin-bottom:10px;line-height:1.4;">📝 ${prop.notes}</div>`:''}
+          ${prop?.notes?`<div style="background:rgba(250,204,21,.06);border:1px solid rgba(250,204,21,.15);border-radius:8px;padding:10px;font-size:13px;color:var(--yellow);margin-bottom:10px;line-height:1.4;">📝 ${prop.notes}</div>`:''}
+
+          ${prop?.address ? `
+          <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg3);border-radius:10px;padding:10px 12px;margin-bottom:10px;gap:10px;">
+            <div style="min-width:0;flex:1;">
+              <div style="font-size:9px;font-weight:800;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">Address</div>
+              <div style="font-size:13px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${prop.address}</div>
+            </div>
+            <a href="https://maps.google.com/?q=${encodeURIComponent(prop.address)}" target="_blank" onclick="event.stopPropagation();"
+               style="flex-shrink:0;display:inline-flex;align-items:center;gap:5px;background:rgba(88,166,255,.15);border:1px solid rgba(88,166,255,.3);border-radius:8px;padding:10px 16px;color:var(--blue);text-decoration:none;font-size:14px;font-weight:700;min-height:42px;">
+              <i class="ti ti-navigation" style="font-size:16px;"></i>Go
+            </a>
+          </div>` : ''}
 
           ${(prop?.services||[]).length ? `
-            <div style="margin-bottom:10px;">
-              <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Services</div>
-              ${(prop.services||[]).map(svc=>`
-                <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:4px;">
-                  <span style="font-size:13px;color:var(--text);">${svc}</span>
-                  <input type="checkbox" ${(s.completedServices||[]).includes(svc)?'checked':''}
-                    onchange="toggleService('${route.id}','${s.propId}','${svc}',this.checked)"
-                    style="width:22px;height:22px;accent-color:var(--green);cursor:pointer;flex-shrink:0;"/>
-                </div>`).join('')}
-            </div>` : ''}
+          <div style="margin-bottom:12px;">
+            <div style="font-size:9px;font-weight:800;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Services</div>
+            ${(prop.services||[]).map(svc=>`
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 12px;background:var(--bg3);border-radius:8px;margin-bottom:4px;">
+              <span style="font-size:14px;color:var(--text);">${svc}</span>
+              <input type="checkbox" ${(s.completedServices||[]).includes(svc)?'checked':''}
+                onchange="toggleService('${route.id}','${s.propId}','${svc}',this.checked)"
+                style="width:22px;height:22px;accent-color:var(--green);cursor:pointer;flex-shrink:0;"/>
+            </div>`).join('')}
+          </div>` : ''}
 
-          <button onclick="event.stopPropagation();openAddFlag('${s.propId}')" 
-            style="width:100%;padding:11px;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);border-radius:10px;color:var(--orange);font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
-            <i class="ti ti-flag-2" style="font-size:15px;"></i> Report an Issue
+          <button onclick="openStopCompletion('${route.id}','${s.propId}')"
+            style="width:100%;padding:16px;background:var(--green2);border:none;border-radius:12px;color:#fff;font-size:16px;font-weight:700;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:8px;">
+            <i class="ti ti-camera" style="font-size:20px;"></i> Complete Job
           </button>
+          <button onclick="event.stopPropagation();openAddFlag('${s.propId}')"
+            style="width:100%;padding:12px;background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);border-radius:10px;color:var(--orange);font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+            <i class="ti ti-flag-2" style="font-size:15px;"></i> Report an Issue
+          </button>`}
 
         </div>
       </div>`;
