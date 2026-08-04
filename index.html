@@ -1643,7 +1643,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v8'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v9'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -9992,22 +9992,16 @@ function openCrewPropSnapshot(propId) {
 
   var html = '<div class="custom-sheet" style="width:100%;max-width:480px;background:var(--bg2);border-radius:20px 20px 0 0;padding:20px 16px calc(20px + var(--safe-bottom));max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">'
 
-    // Header
+    // Header — name only; address/navigate moves further down, below instructions & flags
     + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">'
       + '<div>'
         + '<div style="font-size:18px;font-weight:800;">' + (prop.name||'') + '</div>'
-        + (prop.address ? '<a href="https://maps.google.com/?q=' + encodeURIComponent(prop.address) + '" target="_blank" style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--blue);margin-top:4px;text-decoration:none;" onclick="event.stopPropagation();">'
-          + '<i class="ti ti-map-pin" style="font-size:13px;"></i> ' + prop.address + ' <i class="ti ti-external-link" style="font-size:11px;opacity:.7;"></i>'
-          + '</a>' : '')
         + (prop.phone ? '<div style="font-size:12px;color:var(--text3);margin-top:2px;">📞 ' + prop.phone + '</div>' : '')
       + '</div>'
       + '<button onclick="document.getElementById(\'crew-prop-snapshot\').remove()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 12px;color:var(--text);cursor:pointer;font-size:13px;flex-shrink:0;">✕</button>'
     + '</div>'
-    + (prop.address ? '<a href="https://maps.google.com/?q=' + encodeURIComponent(prop.address) + '" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px;background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.25);border-radius:10px;color:var(--blue);font-size:14px;font-weight:600;text-decoration:none;margin-bottom:12px;">'
-      + '<i class="ti ti-navigation" style="font-size:16px;"></i> Navigate to Property'
-    + '</a>' : '')
 
-    // Checklist items — prominent at top
+    // Checklist items — highest priority, seen immediately on open
     + ((prop.checklist||[]).length
       ? '<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.3);border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
         + '<div style="font-size:10px;font-weight:700;color:var(--yellow);letter-spacing:1px;margin-bottom:8px;">⚠ PROPERTY INSTRUCTIONS</div>'
@@ -10019,6 +10013,28 @@ function openCrewPropSnapshot(propId) {
           }).join('')
       + '</div>'
       : '')
+
+    // Open flags — second priority, right after instructions
+    + (flags.length ? '<div style="margin-bottom:10px;">'
+      + '<div style="font-size:10px;font-weight:700;color:var(--red);letter-spacing:1px;margin-bottom:8px;">⚑ OPEN FLAGS (' + flags.length + ')</div>'
+      + flags.map(function(f) {
+          return '<div style="background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.2);border-radius:10px;padding:10px 14px;margin-bottom:8px;">'
+            + '<div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:3px;">' + (f.service||'Issue') + '</div>'
+            + '<div style="font-size:12px;color:var(--text2);">' + (f.note||'No description') + '</div>'
+            + '<div style="font-size:10px;color:var(--text4);margin-top:4px;">Reported by ' + (f.by||'') + ' · ' + (f.date||'') + '</div>'
+            + (f.photo && f.photo.startsWith('http') ? '<img src="' + f.photo + '" referrerpolicy="no-referrer" style="width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-top:8px;"/>' : '')
+          + '</div>';
+        }).join('')
+    + '</div>' : '')
+
+    // Address / Navigate — now comes after instructions & flags
+    + (prop.address ? '<a href="https://maps.google.com/?q=' + encodeURIComponent(prop.address) + '" target="_blank" style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--blue);margin-bottom:8px;text-decoration:none;" onclick="event.stopPropagation();">'
+        + '<i class="ti ti-map-pin" style="font-size:13px;"></i> ' + prop.address + ' <i class="ti ti-external-link" style="font-size:11px;opacity:.7;"></i>'
+      + '</a>' : '')
+    + (prop.address ? '<a href="https://maps.google.com/?q=' + encodeURIComponent(prop.address) + '" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px;background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.25);border-radius:10px;color:var(--blue);font-size:14px;font-weight:600;text-decoration:none;margin-bottom:12px;">'
+      + '<i class="ti ti-navigation" style="font-size:16px;"></i> Navigate to Property'
+    + '</a>' : '')
+
     + (prop.frequency ? '<div style="background:var(--bg3);border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">'
       + '<div>'
         + '<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;">FREQUENCY</div>'
@@ -10049,18 +10065,7 @@ function openCrewPropSnapshot(propId) {
       + '<div style="font-size:13px;color:var(--text2);line-height:1.5;">' + prop.notes + '</div>'
     + '</div>' : '')
 
-    // Open flags
-    + (flags.length ? '<div style="margin-bottom:4px;">'
-      + '<div style="font-size:10px;font-weight:700;color:var(--red);letter-spacing:1px;margin-bottom:8px;">⚑ OPEN FLAGS (' + flags.length + ')</div>'
-      + flags.map(function(f) {
-          return '<div style="background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.2);border-radius:10px;padding:10px 14px;margin-bottom:8px;">'
-            + '<div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:3px;">' + (f.service||'Issue') + '</div>'
-            + '<div style="font-size:12px;color:var(--text2);">' + (f.note||'No description') + '</div>'
-            + '<div style="font-size:10px;color:var(--text4);margin-top:4px;">Reported by ' + (f.by||'') + ' · ' + (f.date||'') + '</div>'
-            + (f.photo && f.photo.startsWith('http') ? '<img src="' + f.photo + '" referrerpolicy="no-referrer" style="width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-top:8px;"/>' : '')
-          + '</div>';
-        }).join('')
-    + '</div>' : '<div style="font-size:12px;color:var(--text4);text-align:center;padding:4px;">✓ No open flags</div>')
+    + (flags.length ? '' : '<div style="font-size:12px;color:var(--text4);text-align:center;padding:4px;">✓ No open flags</div>')
 
   + '</div>';
 
