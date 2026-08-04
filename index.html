@@ -1596,7 +1596,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v2'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v3'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 let state = {
@@ -8745,7 +8745,7 @@ function openDashFlags() {
                     <div style="font-weight:800;font-size:14px;">${prop?.name||'Unknown Property'}</div>
                     <div style="font-size:12px;color:var(--text3);margin-top:2px;">📍 ${prop?.address||'No address'}</div>
                   </div>
-                  ${getFlagPhoto(f) ? `<img src="${getFlagPhoto(f)}" referrerpolicy="no-referrer" onerror="this.style.display='none'" style="width:70px;height:70px;border-radius:8px;object-fit:cover;margin-left:10px;flex-shrink:0;cursor:zoom-in;border:2px solid var(--border2);" onclick="event.stopPropagation();openPhoto('${getFlagPhoto(f)}','Issue')"/>` : ''}
+                  ${getFlagPhoto(f) ? `<img id="flag-img-${f.id}" src="" referrerpolicy="no-referrer" onerror="this.style.display='none'" style="width:70px;height:70px;border-radius:8px;object-fit:cover;margin-left:10px;flex-shrink:0;cursor:zoom-in;border:2px solid var(--border2);display:none;" onclick="event.stopPropagation();openPhoto(this.src,'Issue')"/>` : ''}
                 </div>
                 <div style="background:var(--bg3);border-radius:8px;padding:10px;font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:8px;">
                   ${f.note}
@@ -8777,7 +8777,20 @@ function openDashFlags() {
     </div>`;
 
   document.getElementById('app').appendChild(panel);
-  setTimeout(function() { patchFirebaseImages(panel); }, 150);
+
+  // Load flag photos as blobs after DOM is ready — bypasses CORS entirely
+  openFlags.forEach(function(f) {
+    var src = getFlagPhoto(f);
+    if (!src) return;
+    var img = document.getElementById('flag-img-' + f.id);
+    if (!img) return;
+    loadFirebasePhoto(src).then(function(blobUrl) {
+      img.src = blobUrl;
+      img.style.display = '';
+    }).catch(function() {
+      img.style.display = 'none';
+    });
+  });
 }
 
 
