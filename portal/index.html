@@ -309,17 +309,48 @@ function freqDaysFor(frequency) {
   return match ? FREQ_DAYS[match] : null;
 }
 
+// Same weekday-pattern math as the main app (e.g. "1st & 3rd Monday") — a
+// flat day-count drifts off the real schedule in any month with 5 of that
+// weekday, so this computes the actual calendar date instead of estimating.
+var WEEKDAY_NUM = {'Sunday':0,'Monday':1,'Tuesday':2,'Wednesday':3,'Thursday':4,'Friday':5,'Saturday':6};
+function nthWeekdayOfMonth(year, month, weekdayNum, n) {
+  var firstOfMonth = new Date(year, month, 1);
+  var offset = (weekdayNum - firstOfMonth.getDay() + 7) % 7;
+  return new Date(year, month, 1 + offset + (n - 1) * 7);
+}
+function nextServiceFromMonthlyPattern(lastServiceDate, weekdayName, occurrences) {
+  var weekdayNum = WEEKDAY_NUM[weekdayName];
+  if (weekdayNum == null || !occurrences || !occurrences.length) return null;
+  var sortedOcc = occurrences.slice().sort(function(a,b){ return a - b; });
+  var last = lastServiceDate instanceof Date ? lastServiceDate : new Date(lastServiceDate);
+  if (isNaN(last.getTime())) last = new Date();
+  var year = last.getFullYear(), month = last.getMonth();
+  for (var i = 0; i < sortedOcc.length; i++) {
+    var candidate = nthWeekdayOfMonth(year, month, weekdayNum, sortedOcc[i]);
+    if (candidate > last) return candidate;
+  }
+  month += 1;
+  if (month > 11) { month = 0; year += 1; }
+  return nthWeekdayOfMonth(year, month, weekdayNum, sortedOcc[0]);
+}
+
 // Next service is always force-recalculated from Last Service + Frequency
 // for display, the same way the manager's Property tab does — never just
 // trusting whatever's stored, since that field only gets refreshed when a
 // manager happens to open that specific property in the main app. Without
 // this, the portal would show whatever stale date was last saved, which is
-// exactly what was happening before this fix.
+// exactly what was happening before this fix. Uses the exact weekday
+// pattern (e.g. "1st & 3rd Monday") when a property has one set, so the
+// portal shows the real scheduled date, not a rough estimate.
 function calculateNextServiceDate(prop) {
-  var days = freqDaysFor(prop.frequency);
-  if (!days) return prop.nextServiceDate || ''; // e.g. "As Needed" — nothing to calculate
   var base = prop.lastServiceDate ? new Date(prop.lastServiceDate) : new Date();
   if (isNaN(base.getTime())) return prop.nextServiceDate || '';
+  if (prop.frequency === '2x Per Month' && prop.monthlyWeekday && prop.monthlyOccurrences && prop.monthlyOccurrences.length) {
+    var patternNext = nextServiceFromMonthlyPattern(base, prop.monthlyWeekday, prop.monthlyOccurrences);
+    if (patternNext) return patternNext.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+  }
+  var days = freqDaysFor(prop.frequency);
+  if (!days) return prop.nextServiceDate || ''; // e.g. "As Needed" — nothing to calculate
   var next = new Date(base.getTime() + days * 24*60*60*1000);
   return next.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
 }
