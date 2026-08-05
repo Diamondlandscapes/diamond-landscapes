@@ -27,12 +27,13 @@
   .logo-icon{ font-size:40px; margin-bottom:8px; }
   .logo-title{ font-size:20px; font-weight:800; letter-spacing:.5px; }
   .logo-sub{ font-size:13px; color:var(--text3); margin-top:4px; }
-  .card{ background:var(--bg2); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:14px; }
+  .card{ background:var(--bg2); border:1px solid var(--border); border-radius:16px; padding:18px; margin-bottom:14px; }
   .inp{
     width:100%; background:var(--bg3); border:1px solid var(--border2); border-radius:10px;
     color:var(--text); font-size:15px; padding:13px 14px; font-family:inherit; outline:none;
   }
   .inp:focus{ border-color:var(--blue); }
+  .inp:disabled{ opacity:.55; }
   textarea.inp{ resize:vertical; min-height:80px; }
   .btn{
     display:flex; align-items:center; justify-content:center; gap:8px;
@@ -62,9 +63,9 @@
   .type-pill.active{ border-color:var(--blue); background:rgba(88,166,255,.12); color:var(--blue); }
   .toast{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--bg4); border:1px solid var(--border2); color:var(--text); padding:12px 20px; border-radius:10px; font-size:13px; font-weight:600; z-index:3000; opacity:0; transition:opacity .3s; pointer-events:none; }
   .toast.show{ opacity:1; }
-  @media (min-width:768px){
-    .wrap{ padding-top:32px; }
-  }
+  .star{ font-size:34px; cursor:pointer; color:var(--border2); transition:color .1s; }
+  .star.on{ color:var(--yellow); }
+  @media (min-width:768px){ .wrap{ padding-top:32px; } }
 </style>
 </head>
 <body>
@@ -88,27 +89,58 @@
 </div>
 
 <div id="main-screen" class="wrap" style="display:none;">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
     <div>
       <div style="font-size:12px;color:var(--text3);font-weight:700;letter-spacing:.5px;">DIAMOND LANDSCAPES</div>
-      <div style="font-size:19px;font-weight:800;margin-top:2px;" id="main-prop-name"></div>
+      <div style="font-size:19px;font-weight:800;margin-top:2px;" id="main-greeting"></div>
     </div>
     <button onclick="portalLogout()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px 12px;color:var(--text3);font-size:12px;font-weight:700;cursor:pointer;">Sign Out</button>
   </div>
 
-  <div class="card">
-    <div style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;margin-bottom:14px;">
-      <i class="ti ti-map-pin"></i><span id="main-prop-address"></span>
-    </div>
-    <div style="display:flex;gap:10px;">
-      <div class="stat"><div class="stat-label">Frequency</div><div class="stat-value" id="main-prop-freq">—</div></div>
-      <div class="stat"><div class="stat-label">Next Service</div><div class="stat-value" id="main-prop-next">—</div></div>
-    </div>
+  <button id="property-switcher-btn" onclick="openPropertySwitcher()" style="display:none;width:100%;align-items:center;justify-content:space-between;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:10px 12px;margin-bottom:14px;color:var(--text);font-size:13px;font-weight:700;cursor:pointer;">
+    <span><i class="ti ti-home" style="margin-right:6px;color:var(--text3);"></i><span id="switcher-addr"></span></span>
+    <span style="color:var(--blue);font-size:11px;" id="switcher-count"></span>
+  </button>
+
+  <div class="card" style="background:linear-gradient(135deg,var(--bg3),var(--bg2));border-color:var(--green3);">
+    <div style="font-size:10px;font-weight:700;letter-spacing:.6px;color:var(--green);text-transform:uppercase;margin-bottom:6px;">Next Service</div>
+    <div style="font-size:20px;font-weight:800;" id="hero-next-date">Not scheduled</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:8px;" id="hero-frequency"></div>
   </div>
 
-  <button class="btn btn-green" style="margin-bottom:18px;" onclick="openNewRequestSheet()">
-    <i class="ti ti-plus"></i> New Request
-  </button>
+  <div id="last-visit-section" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;">YOUR YARD — LAST VISIT</div>
+      <span style="font-size:11px;color:var(--blue);" id="last-visit-date"></span>
+    </div>
+    <img id="last-visit-photo" style="width:100%;border-radius:12px;max-height:220px;object-fit:cover;margin-bottom:16px;"/>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+    <button onclick="openNewRequestSheet('issue')" style="padding:14px 10px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);border-radius:12px;color:var(--red);font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;">
+      <i class="ti ti-flag-2" style="font-size:18px;"></i>Report an issue
+    </button>
+    <button onclick="openNewRequestSheet('estimate')" style="padding:14px 10px;background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.3);border-radius:12px;color:var(--blue);font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;">
+      <i class="ti ti-currency-dollar" style="font-size:18px;"></i>Request estimate
+    </button>
+  </div>
+
+  <div class="card" id="rating-card">
+    <div style="font-size:13px;font-weight:700;margin-bottom:10px;">How was your last visit?</div>
+    <div style="display:flex;gap:6px;justify-content:center;margin-bottom:6px;" id="rating-stars"></div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;">YOUR INFO</div>
+      <span onclick="openEditContactSheet()" style="font-size:11px;color:var(--blue);font-weight:700;cursor:pointer;">Edit <i class="ti ti-pencil" style="font-size:11px;"></i></span>
+    </div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.9;">
+      <div id="info-email"></div>
+      <div id="info-phone"></div>
+      <div id="info-address" style="color:var(--text3);font-size:12px;margin-top:4px;"></div>
+    </div>
+  </div>
 
   <div style="font-size:13px;font-weight:700;color:var(--text3);letter-spacing:.5px;margin-bottom:10px;">YOUR REQUESTS</div>
   <div id="request-history"></div>
@@ -118,7 +150,7 @@
 
 <script type="module">
 import { initializeApp, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, query, where, getDocs, addDoc, doc, setDoc, serverTimestamp }
+import { getFirestore, collection, query, where, getDocs, addDoc, doc, setDoc }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getStorage, ref, uploadString, getDownloadURL }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
@@ -134,19 +166,21 @@ const firebaseConfig = {
   appId:             "1:795500111307:web:39379296ce4d91a509824e"
 };
 
+// TODO: paste your actual Google Business review link here, e.g.
+// 'https://g.page/r/XXXXXXXXXXXXXXX/review'
+const GOOGLE_REVIEW_URL = 'https://share.google/sUCiCSnIQHDkyGrOM';
+
 let fbApp, db, storage;
 try { fbApp = getApp(); } catch(e) { fbApp = initializeApp(firebaseConfig); }
 db = getFirestore(fbApp);
 storage = getStorage(fbApp);
 
-let currentProp = null;
+let myProperties = [];   // every property matching this email
+let currentProp = null;  // the one currently being viewed
 let selectedType = 'issue';
-let pendingPhoto = null; // compressed data URL, ready to upload
+let pendingPhoto = null;
+let selectedRating = 0;
 
-// ── Auth: anonymous sign-in, same pattern as the main app, satisfies
-// Firestore rules requiring request.auth != null. Does NOT grant any
-// customer-specific permissions on its own — access is controlled by the
-// email-match lookup below, same trust tier as the manager PIN.
 signInAnonymously(getAuth(fbApp)).catch(function(e){ console.warn('Auth failed:', e.message); });
 
 window.toast = function(msg) {
@@ -176,10 +210,10 @@ window.portalLogin = async function() {
       btn.disabled = false; btn.textContent = 'Continue';
       return;
     }
-    var propDoc = snap.docs[0];
-    currentProp = Object.assign({ id: propDoc.id }, propDoc.data());
+    myProperties = [];
+    snap.forEach(function(d){ myProperties.push(Object.assign({ id: d.id }, d.data())); });
+    currentProp = myProperties[0];
     localStorage.setItem('dl_portal_email', email);
-    localStorage.setItem('dl_portal_propId', currentProp.id);
     showMainScreen();
   } catch(e) {
     console.error(e);
@@ -190,35 +224,102 @@ window.portalLogin = async function() {
 
 window.portalLogout = function() {
   localStorage.removeItem('dl_portal_email');
-  localStorage.removeItem('dl_portal_propId');
-  currentProp = null;
+  myProperties = []; currentProp = null;
   document.getElementById('main-screen').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('login-email').value = '';
 };
 
-// ── Auto-login if we already have a session on this device ──────────────
 async function tryAutoLogin() {
   var email = localStorage.getItem('dl_portal_email');
-  var propId = localStorage.getItem('dl_portal_propId');
-  if (!email || !propId) return;
+  if (!email) return;
   try {
     var snap = await getDocs(query(collection(db, 'properties'), where('email', '==', email)));
     if (snap.empty) return;
-    var propDoc = snap.docs[0];
-    currentProp = Object.assign({ id: propDoc.id }, propDoc.data());
+    myProperties = [];
+    snap.forEach(function(d){ myProperties.push(Object.assign({ id: d.id }, d.data())); });
+    currentProp = myProperties[0];
     showMainScreen();
   } catch(e) { console.warn('Auto-login failed:', e.message); }
 }
 
+// ── Property switcher (handles customers with multiple properties) ──────
+window.openPropertySwitcher = function() {
+  if (myProperties.length < 2) return;
+  var wrap = document.createElement('div');
+  wrap.className = 'overlay';
+  wrap.id = 'switcher-overlay';
+  wrap.innerHTML = '<div class="sheet">'
+    + '<div style="font-size:16px;font-weight:800;margin-bottom:14px;">Your properties</div>'
+    + myProperties.map(function(p, i) {
+        return '<button onclick="switchProperty(' + i + ')" style="width:100%;text-align:left;background:' + (p.id===currentProp.id?'rgba(88,166,255,.1)':'var(--bg3)') + ';border:1px solid ' + (p.id===currentProp.id?'var(--blue)':'var(--border2)') + ';border-radius:10px;padding:12px 14px;margin-bottom:8px;color:var(--text);font-size:13px;font-weight:700;cursor:pointer;">'
+          + '<i class="ti ti-home" style="margin-right:6px;color:var(--text3);"></i>' + (p.address || p.name)
+        + '</button>';
+      }).join('')
+  + '</div>';
+  wrap.addEventListener('click', function(e){ if (e.target === wrap) wrap.remove(); });
+  document.body.appendChild(wrap);
+};
+
+window.switchProperty = function(idx) {
+  currentProp = myProperties[idx];
+  document.getElementById('switcher-overlay')?.remove();
+  showMainScreen();
+};
+
 function showMainScreen() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('main-screen').style.display = 'block';
-  document.getElementById('main-prop-name').textContent = currentProp.name || 'Your Property';
-  document.getElementById('main-prop-address').textContent = currentProp.address || '';
-  document.getElementById('main-prop-freq').textContent = currentProp.frequency || 'Not set';
-  document.getElementById('main-prop-next').textContent = currentProp.nextServiceDate || 'Not scheduled';
+
+  var firstName = (currentProp.name || '').split(' ')[0] || 'there';
+  document.getElementById('main-greeting').textContent = 'Welcome back, ' + firstName;
+
+  var switcherBtn = document.getElementById('property-switcher-btn');
+  if (myProperties.length > 1) {
+    switcherBtn.style.display = 'flex';
+    document.getElementById('switcher-addr').textContent = currentProp.address || currentProp.name;
+    document.getElementById('switcher-count').innerHTML = myProperties.length + ' properties <i class="ti ti-chevron-down" style="margin-left:2px;"></i>';
+  } else {
+    switcherBtn.style.display = 'none';
+  }
+
+  document.getElementById('hero-next-date').textContent = currentProp.nextServiceDate || 'Not scheduled yet';
+  document.getElementById('hero-frequency').textContent = currentProp.frequency ? (currentProp.frequency + ' service') : '';
+
+  document.getElementById('info-email').textContent = currentProp.email || '';
+  document.getElementById('info-phone').textContent = currentProp.phone || 'No phone on file';
+  document.getElementById('info-address').textContent = currentProp.address || '';
+
+  loadLastVisitPhoto();
   loadRequestHistory();
+  renderRatingStars();
+}
+
+// ── Last visit photo — pulled from the crew's completed-stop photo, not a
+// separate customer-facing system, so it's always real and current. Only
+// reads propId/completed/completedPhoto/completedAtISO off route stops —
+// never touches crew records (those contain phone numbers and login PINs
+// that have no business being in a customer-facing page).
+async function loadLastVisitPhoto() {
+  var section = document.getElementById('last-visit-section');
+  section.style.display = 'none';
+  try {
+    var snap = await getDocs(collection(db, 'routes'));
+    var best = null;
+    snap.forEach(function(d) {
+      var route = d.data();
+      (route.stops || []).forEach(function(s) {
+        if (s.propId === currentProp.id && s.completed && s.completedPhoto && s.completedAtISO) {
+          if (!best || new Date(s.completedAtISO) > new Date(best.completedAtISO)) best = s;
+        }
+      });
+    });
+    if (best) {
+      document.getElementById('last-visit-photo').src = best.completedPhoto;
+      document.getElementById('last-visit-date').textContent = fmtDate(best.completedAtISO);
+      section.style.display = 'block';
+    }
+  } catch(e) { console.warn('Could not load last visit photo:', e.message); }
 }
 
 // ── Request history ───────────────────────────────────────────────────
@@ -230,6 +331,7 @@ async function loadRequestHistory() {
     var snap = await getDocs(q);
     var reqs = [];
     snap.forEach(function(d){ reqs.push(Object.assign({ id: d.id }, d.data())); });
+    reqs = reqs.filter(function(r){ return r.type !== 'feedback'; }); // feedback isn't a "request", keep history focused
     reqs.sort(function(a,b){ return new Date(b.createdAt||0) - new Date(a.createdAt||0); });
     if (!reqs.length) {
       el.innerHTML = '<div style="text-align:center;color:var(--text4);font-size:13px;padding:20px 0;">No requests yet</div>';
@@ -261,9 +363,108 @@ function fmtDate(iso) {
   return d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
 }
 
+// ── Star rating — gated: high ratings go to Google, low ratings stay
+// private so you hear about problems before they become a public review.
+function renderRatingStars() {
+  var el = document.getElementById('rating-stars');
+  el.innerHTML = '';
+  for (var i = 1; i <= 5; i++) {
+    var star = document.createElement('span');
+    star.className = 'star';
+    star.textContent = '★';
+    star.dataset.val = i;
+    star.onclick = function() { handleRatingTap(parseInt(this.dataset.val)); };
+    el.appendChild(star);
+  }
+}
+
+window.handleRatingTap = function(rating) {
+  selectedRating = rating;
+  document.querySelectorAll('#rating-stars .star').forEach(function(s) {
+    s.classList.toggle('on', parseInt(s.dataset.val) <= rating);
+  });
+  setTimeout(function() {
+    if (rating >= 4) showPositiveRatingFollowup(rating);
+    else showPrivateFeedbackForm(rating);
+  }, 200);
+};
+
+function showPositiveRatingFollowup(rating) {
+  var wrap = document.createElement('div');
+  wrap.className = 'overlay'; wrap.id = 'rating-followup-overlay';
+  wrap.innerHTML = '<div class="sheet" style="text-align:center;">'
+    + '<div style="font-size:40px;margin-bottom:10px;">🎉</div>'
+    + '<div style="font-size:17px;font-weight:800;margin-bottom:8px;">Thanks for the ' + rating + ' stars!</div>'
+    + '<div style="font-size:13px;color:var(--text3);margin-bottom:20px;line-height:1.6;">Would you mind sharing that on Google? It really helps us out.</div>'
+    + (GOOGLE_REVIEW_URL
+        ? '<a href="' + GOOGLE_REVIEW_URL + '" target="_blank" class="btn btn-green" style="text-decoration:none;margin-bottom:10px;">Leave a Google review</a>'
+        : '<div style="font-size:12px;color:var(--yellow);margin-bottom:10px;">(Google review link not set up yet)</div>')
+    + '<button class="btn btn-outline" onclick="submitRating(' + rating + ',\'\');document.getElementById(\'rating-followup-overlay\').remove();">Maybe later</button>'
+  + '</div>';
+  document.body.appendChild(wrap);
+}
+
+function showPrivateFeedbackForm(rating) {
+  var wrap = document.createElement('div');
+  wrap.className = 'overlay'; wrap.id = 'feedback-overlay';
+  wrap.innerHTML = '<div class="sheet">'
+    + '<div style="font-size:16px;font-weight:800;margin-bottom:6px;">Sorry to hear that</div>'
+    + '<div style="font-size:13px;color:var(--text3);margin-bottom:14px;">This stays private between us — tell us what happened so we can make it right.</div>'
+    + '<textarea class="inp" id="feedback-note" rows="4" placeholder="What went wrong?" style="margin-bottom:14px;"></textarea>'
+    + '<button class="btn btn-green" onclick="submitRating(' + rating + ', document.getElementById(\'feedback-note\').value);document.getElementById(\'feedback-overlay\').remove();">Send feedback</button>'
+  + '</div>';
+  document.body.appendChild(wrap);
+}
+
+window.submitRating = async function(rating, note) {
+  try {
+    var email = localStorage.getItem('dl_portal_email') || '';
+    await addDoc(collection(db, 'customerRequests'), {
+      propId: currentProp.id, customerEmail: email,
+      type: 'feedback', rating: rating, description: note || '',
+      photo: '', status: rating <= 3 ? 'new' : 'resolved',
+      createdAt: new Date().toISOString()
+    });
+    toast('✓ Thanks for letting us know');
+  } catch(e) { console.error(e); }
+};
+
+// ── Edit contact info — phone only; email stays as-is since it's also the
+// portal login key, changing it needs to go through us to avoid lockouts.
+window.openEditContactSheet = function() {
+  var wrap = document.createElement('div');
+  wrap.className = 'overlay'; wrap.id = 'edit-contact-overlay';
+  wrap.innerHTML = '<div class="sheet">'
+    + '<div style="font-size:16px;font-weight:800;margin-bottom:14px;">Edit your info</div>'
+    + '<div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;margin-bottom:6px;">EMAIL</div>'
+    + '<input class="inp" value="' + (currentProp.email||'') + '" disabled style="margin-bottom:6px;"/>'
+    + '<div style="font-size:11px;color:var(--text4);margin-bottom:14px;">Contact us to change your login email.</div>'
+    + '<div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;margin-bottom:6px;">PHONE</div>'
+    + '<input class="inp" id="edit-phone" type="tel" value="' + (currentProp.phone||'') + '" style="margin-bottom:16px;"/>'
+    + '<button class="btn btn-green" onclick="saveContactInfo()">Save</button>'
+  + '</div>';
+  document.body.appendChild(wrap);
+};
+
+window.saveContactInfo = async function() {
+  var phone = (document.getElementById('edit-phone').value || '').trim();
+  try {
+    await setDoc(doc(db, 'properties', currentProp.id), { phone: phone }, { merge: true });
+    currentProp.phone = phone;
+    var idx = myProperties.findIndex(function(p){ return p.id === currentProp.id; });
+    if (idx > -1) myProperties[idx].phone = phone;
+    document.getElementById('info-phone').textContent = phone || 'No phone on file';
+    document.getElementById('edit-contact-overlay').remove();
+    toast('✓ Saved');
+  } catch(e) {
+    console.error(e);
+    toast('Could not save — try again');
+  }
+};
+
 // ── New Request sheet ─────────────────────────────────────────────────
-window.openNewRequestSheet = function() {
-  selectedType = 'issue';
+window.openNewRequestSheet = function(presetType) {
+  selectedType = presetType || 'issue';
   pendingPhoto = null;
   var wrap = document.createElement('div');
   wrap.id = 'new-req-overlay';
@@ -277,7 +478,7 @@ window.openNewRequestSheet = function() {
 
       + '<div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;margin-bottom:8px;">TYPE OF REQUEST</div>'
       + '<div style="display:flex;gap:8px;margin-bottom:16px;">'
-        + '<div class="type-pill active" id="type-issue" onclick="selectReqType(\'issue\')">🚩 Issue</div>'
+        + '<div class="type-pill" id="type-issue" onclick="selectReqType(\'issue\')">🚩 Issue</div>'
         + '<div class="type-pill" id="type-estimate" onclick="selectReqType(\'estimate\')">💰 Estimate</div>'
         + '<div class="type-pill" id="type-other" onclick="selectReqType(\'other\')">💬 Other</div>'
       + '</div>'
@@ -298,11 +499,11 @@ window.openNewRequestSheet = function() {
     + '</div>';
   wrap.addEventListener('click', function(e){ if (e.target === wrap) wrap.remove(); });
   document.body.appendChild(wrap);
+  selectReqType(selectedType);
 
   document.getElementById('req-photo-input').addEventListener('change', function() {
     var file = this.files[0];
     if (!file) return;
-    var zone = document.getElementById('req-photo-zone');
     var icon = document.getElementById('req-photo-icon');
     var label = document.getElementById('req-photo-label');
     icon.textContent = '⏳';
@@ -346,12 +547,11 @@ window.submitRequest = async function() {
       customerEmail: email,
       type: selectedType,
       description: desc,
-      photo: '', // set after upload
+      photo: '',
       status: 'new',
       createdAt: new Date().toISOString()
     });
 
-    // Upload photo to Storage, then attach the URL to the doc we just made
     var storagePath = 'photos/customerRequests/' + newDoc.id + '_' + Date.now() + '.jpg';
     var sref = ref(storage, storagePath);
     await uploadString(sref, pendingPhoto, 'data_url');
@@ -368,9 +568,7 @@ window.submitRequest = async function() {
   }
 };
 
-// ── Photo helpers — mirrors the safe, validated pipeline used in the main
-// app: FileReader with a blank-canvas check, then a second validated
-// compression pass, so a corrupt/blank HEIC photo never silently ships.
+// ── Photo helpers — same validated single-pass pipeline as the main app.
 function readFileAsDataUrl(file, callback) {
   var reader = new FileReader();
   reader.onload = function(e) { callback(e.target.result); };
@@ -394,7 +592,6 @@ function compressPhoto(dataUrl, maxSize, quality, callback) {
     ctx.fillRect(0, 0, w, h);
     try {
       ctx.drawImage(img, 0, 0, w, h);
-      // Blank-canvas check — same protection as the main app's pipeline
       var sample = ctx.getImageData(Math.floor(w*0.3), Math.floor(h*0.3), Math.min(10,w), Math.min(10,h));
       var allWhite = true;
       for (var i = 0; i < sample.data.length; i += 4) {
