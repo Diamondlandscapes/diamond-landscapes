@@ -98,17 +98,20 @@
 </div>
 
 <div id="main-screen" class="wrap" style="display:none;">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-    <div>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:16px;">
+    <div style="min-width:0;">
       <div style="font-size:12px;color:var(--text3);font-weight:700;letter-spacing:.5px;">DIAMOND LANDSCAPES</div>
-      <div style="font-size:19px;font-weight:800;margin-top:2px;" id="main-greeting"></div>
+      <div style="font-size:19px;font-weight:800;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="main-greeting"></div>
     </div>
-    <button onclick="portalLogout()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px 12px;color:var(--text3);font-size:12px;font-weight:700;cursor:pointer;">Sign Out</button>
+    <button onclick="portalLogout()" style="flex-shrink:0;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px 12px;color:var(--text3);font-size:12px;font-weight:700;cursor:pointer;">Sign Out</button>
   </div>
 
-  <button id="property-switcher-btn" onclick="openPropertySwitcher()" style="display:none;width:100%;align-items:center;justify-content:space-between;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:10px 12px;margin-bottom:14px;color:var(--text);font-size:13px;font-weight:700;cursor:pointer;">
-    <span><i class="ti ti-home" style="margin-right:6px;color:var(--text3);"></i><span id="switcher-addr"></span></span>
-    <span style="color:var(--blue);font-size:11px;" id="switcher-count"></span>
+  <button id="property-switcher-btn" onclick="openPropertySwitcher()" style="display:none;width:100%;align-items:center;justify-content:space-between;gap:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:10px 12px;margin-bottom:14px;color:var(--text);font-size:13px;font-weight:700;cursor:pointer;">
+    <span style="display:flex;align-items:center;min-width:0;overflow:hidden;">
+      <i class="ti ti-home" style="margin-right:6px;color:var(--text3);flex-shrink:0;"></i>
+      <span id="switcher-addr" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+    </span>
+    <span style="color:var(--blue);font-size:11px;flex-shrink:0;white-space:nowrap;" id="switcher-count"></span>
   </button>
 
   <div class="portal-grid">
@@ -120,20 +123,25 @@
       </div>
 
       <div id="last-visit-section" style="display:none;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
           <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;">YOUR YARD — LAST VISIT</div>
-          <span style="font-size:11px;color:var(--blue);" id="last-visit-date"></span>
+          <span style="font-size:11px;color:var(--blue);flex-shrink:0;white-space:nowrap;" id="last-visit-date"></span>
         </div>
         <img id="last-visit-photo" style="width:100%;border-radius:12px;max-height:280px;object-fit:cover;margin-bottom:16px;"/>
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
-        <button onclick="openNewRequestSheet('issue')" style="padding:14px 10px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);border-radius:12px;color:var(--red);font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;">
-          <i class="ti ti-flag-2" style="font-size:18px;"></i>Report an issue
+        <button onclick="openNewRequestSheet('issue')" style="padding:14px 10px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);border-radius:12px;color:var(--red);font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px;cursor:pointer;">
+          <i class="ti ti-flag-2" style="font-size:18px;"></i><span>Report an issue</span>
         </button>
-        <button onclick="openNewRequestSheet('estimate')" style="padding:14px 10px;background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.3);border-radius:12px;color:var(--blue);font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;">
-          <i class="ti ti-currency-dollar" style="font-size:18px;"></i>Request estimate
+        <button onclick="openNewRequestSheet('estimate')" style="padding:14px 10px;background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.3);border-radius:12px;color:var(--blue);font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px;cursor:pointer;">
+          <i class="ti ti-currency-dollar" style="font-size:18px;"></i><span>Request estimate</span>
         </button>
+      </div>
+
+      <div class="card" id="rating-card">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px;">How was your last visit?</div>
+        <div style="display:flex;gap:6px;justify-content:center;margin-bottom:6px;" id="rating-stars"></div>
       </div>
 
       <div style="font-size:13px;font-weight:700;color:var(--text3);letter-spacing:.5px;margin-bottom:10px;">YOUR REQUESTS</div>
@@ -141,11 +149,6 @@
     </div>
 
     <div class="col-side">
-      <div class="card" id="rating-card">
-        <div style="font-size:13px;font-weight:700;margin-bottom:10px;">How was your last visit?</div>
-        <div style="display:flex;gap:6px;justify-content:center;margin-bottom:6px;" id="rating-stars"></div>
-      </div>
-
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
           <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;">YOUR INFO</div>
@@ -365,9 +368,9 @@ async function loadRequestHistory() {
     var typeLabels = { issue:'Issue Report', estimate:'Estimate Request', other:'Other' };
     el.innerHTML = reqs.map(function(r) {
       return '<div class="req-card">'
-        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">'
-          + '<div style="font-weight:700;font-size:13px;">' + (typeIcons[r.type]||'💬') + ' ' + (typeLabels[r.type]||'Request') + '</div>'
-          + '<span class="badge badge-' + (r.status||'new') + '">' + (r.status||'new') + '</span>'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;">'
+          + '<div style="font-weight:700;font-size:13px;min-width:0;">' + (typeIcons[r.type]||'💬') + ' ' + (typeLabels[r.type]||'Request') + '</div>'
+          + '<span class="badge badge-' + (r.status||'new') + '" style="flex-shrink:0;">' + (r.status||'new') + '</span>'
         + '</div>'
         + '<div style="font-size:13px;color:var(--text2);margin-bottom:6px;">' + (r.description||'') + '</div>'
         + (r.photo ? '<img src="' + r.photo + '" style="width:100%;border-radius:8px;max-height:160px;object-fit:cover;margin-bottom:6px;"/>' : '')
