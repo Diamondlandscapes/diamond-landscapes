@@ -70,6 +70,10 @@
     .overlay{ align-items:center; }
     .sheet{ width:480px; border-radius:20px; max-height:85vh; }
   }
+  @media (min-width:900px){
+    .wrap{ max-width:960px; }
+    .portal-grid{ display:grid; grid-template-columns:1fr 320px; gap:20px; align-items:start; }
+  }
 </style>
 </head>
 <body>
@@ -106,48 +110,54 @@
     <span style="color:var(--blue);font-size:11px;" id="switcher-count"></span>
   </button>
 
-  <div class="card" style="background:linear-gradient(135deg,var(--bg3),var(--bg2));border-color:var(--green3);">
-    <div style="font-size:10px;font-weight:700;letter-spacing:.6px;color:var(--green);text-transform:uppercase;margin-bottom:6px;">Next Service</div>
-    <div style="font-size:20px;font-weight:800;" id="hero-next-date">Not scheduled</div>
-    <div style="font-size:12px;color:var(--text2);margin-top:8px;" id="hero-frequency"></div>
-  </div>
+  <div class="portal-grid">
+    <div class="col-main">
+      <div class="card" style="background:linear-gradient(135deg,var(--bg3),var(--bg2));border-color:var(--green3);">
+        <div style="font-size:10px;font-weight:700;letter-spacing:.6px;color:var(--green);text-transform:uppercase;margin-bottom:6px;">Next Service</div>
+        <div style="font-size:20px;font-weight:800;" id="hero-next-date">Not scheduled</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:8px;" id="hero-frequency"></div>
+      </div>
 
-  <div id="last-visit-section" style="display:none;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;">YOUR YARD — LAST VISIT</div>
-      <span style="font-size:11px;color:var(--blue);" id="last-visit-date"></span>
+      <div id="last-visit-section" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;">YOUR YARD — LAST VISIT</div>
+          <span style="font-size:11px;color:var(--blue);" id="last-visit-date"></span>
+        </div>
+        <img id="last-visit-photo" style="width:100%;border-radius:12px;max-height:280px;object-fit:cover;margin-bottom:16px;"/>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+        <button onclick="openNewRequestSheet('issue')" style="padding:14px 10px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);border-radius:12px;color:var(--red);font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;">
+          <i class="ti ti-flag-2" style="font-size:18px;"></i>Report an issue
+        </button>
+        <button onclick="openNewRequestSheet('estimate')" style="padding:14px 10px;background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.3);border-radius:12px;color:var(--blue);font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;">
+          <i class="ti ti-currency-dollar" style="font-size:18px;"></i>Request estimate
+        </button>
+      </div>
+
+      <div style="font-size:13px;font-weight:700;color:var(--text3);letter-spacing:.5px;margin-bottom:10px;">YOUR REQUESTS</div>
+      <div id="request-history"></div>
     </div>
-    <img id="last-visit-photo" style="width:100%;border-radius:12px;max-height:220px;object-fit:cover;margin-bottom:16px;"/>
-  </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
-    <button onclick="openNewRequestSheet('issue')" style="padding:14px 10px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);border-radius:12px;color:var(--red);font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;">
-      <i class="ti ti-flag-2" style="font-size:18px;"></i>Report an issue
-    </button>
-    <button onclick="openNewRequestSheet('estimate')" style="padding:14px 10px;background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.3);border-radius:12px;color:var(--blue);font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;">
-      <i class="ti ti-currency-dollar" style="font-size:18px;"></i>Request estimate
-    </button>
-  </div>
+    <div class="col-side">
+      <div class="card" id="rating-card">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px;">How was your last visit?</div>
+        <div style="display:flex;gap:6px;justify-content:center;margin-bottom:6px;" id="rating-stars"></div>
+      </div>
 
-  <div class="card" id="rating-card">
-    <div style="font-size:13px;font-weight:700;margin-bottom:10px;">How was your last visit?</div>
-    <div style="display:flex;gap:6px;justify-content:center;margin-bottom:6px;" id="rating-stars"></div>
-  </div>
-
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;">YOUR INFO</div>
-      <span onclick="openEditContactSheet()" style="font-size:11px;color:var(--blue);font-weight:700;cursor:pointer;">Edit <i class="ti ti-pencil" style="font-size:11px;"></i></span>
-    </div>
-    <div style="font-size:13px;color:var(--text2);line-height:1.9;">
-      <div id="info-email"></div>
-      <div id="info-phone"></div>
-      <div id="info-address" style="color:var(--text3);font-size:12px;margin-top:4px;"></div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;">YOUR INFO</div>
+          <span onclick="openEditContactSheet()" style="font-size:11px;color:var(--blue);font-weight:700;cursor:pointer;">Edit <i class="ti ti-pencil" style="font-size:11px;"></i></span>
+        </div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.9;">
+          <div id="info-email"></div>
+          <div id="info-phone"></div>
+          <div id="info-address" style="color:var(--text3);font-size:12px;margin-top:4px;"></div>
+        </div>
+      </div>
     </div>
   </div>
-
-  <div style="font-size:13px;font-weight:700;color:var(--text3);letter-spacing:.5px;margin-bottom:10px;">YOUR REQUESTS</div>
-  <div id="request-history"></div>
 </div>
 
 <div id="toast" class="toast"></div>
@@ -194,6 +204,13 @@ window.toast = function(msg) {
   setTimeout(function(){ t.classList.remove('show'); }, 2600);
 };
 
+// Kept in memory only for the current page load — never persisted, so
+// closing/refreshing/reopening this page always requires the email again.
+// This is deliberate: with email-only login (no password), auto-login would
+// mean anyone with access to this device afterward is silently signed in
+// as this customer indefinitely.
+let currentEmail = '';
+
 // ── Login ──────────────────────────────────────────────────────────────
 window.portalLogin = async function() {
   var emailInput = document.getElementById('login-email');
@@ -217,7 +234,7 @@ window.portalLogin = async function() {
     myProperties = [];
     snap.forEach(function(d){ myProperties.push(Object.assign({ id: d.id }, d.data())); });
     currentProp = myProperties[0];
-    localStorage.setItem('dl_portal_email', email);
+    currentEmail = email;
     showMainScreen();
   } catch(e) {
     console.error(e);
@@ -227,25 +244,12 @@ window.portalLogin = async function() {
 };
 
 window.portalLogout = function() {
-  localStorage.removeItem('dl_portal_email');
+  currentEmail = '';
   myProperties = []; currentProp = null;
   document.getElementById('main-screen').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('login-email').value = '';
 };
-
-async function tryAutoLogin() {
-  var email = localStorage.getItem('dl_portal_email');
-  if (!email) return;
-  try {
-    var snap = await getDocs(query(collection(db, 'properties'), where('email', '==', email)));
-    if (snap.empty) return;
-    myProperties = [];
-    snap.forEach(function(d){ myProperties.push(Object.assign({ id: d.id }, d.data())); });
-    currentProp = myProperties[0];
-    showMainScreen();
-  } catch(e) { console.warn('Auto-login failed:', e.message); }
-}
 
 // ── Property switcher (handles customers with multiple properties) ──────
 window.openPropertySwitcher = function() {
@@ -371,6 +375,13 @@ function fmtDate(iso) {
 // private so you hear about problems before they become a public review.
 function renderRatingStars() {
   var el = document.getElementById('rating-stars');
+function renderRatingStars() {
+  var el = document.getElementById('rating-stars');
+  var already = sessionStorage.getItem('dl_rated_' + currentProp.id);
+  if (already) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--text3);">✓ Thanks for rating this visit ' + already + ' star' + (already==='1'?'':'s') + '</div>';
+    return;
+  }
   el.innerHTML = '';
   for (var i = 1; i <= 5; i++) {
     var star = document.createElement('span');
@@ -383,6 +394,7 @@ function renderRatingStars() {
 }
 
 window.handleRatingTap = function(rating) {
+  if (sessionStorage.getItem('dl_rated_' + currentProp.id)) return; // already rated this session — ignore further taps
   selectedRating = rating;
   document.querySelectorAll('#rating-stars .star').forEach(function(s) {
     s.classList.toggle('on', parseInt(s.dataset.val) <= rating);
@@ -401,7 +413,7 @@ function showPositiveRatingFollowup(rating) {
     + '<div style="font-size:17px;font-weight:800;margin-bottom:8px;">Thanks for the ' + rating + ' stars!</div>'
     + '<div style="font-size:13px;color:var(--text3);margin-bottom:20px;line-height:1.6;">Would you mind sharing that on Google? It really helps us out.</div>'
     + (GOOGLE_REVIEW_URL
-        ? '<a href="' + GOOGLE_REVIEW_URL + '" target="_blank" class="btn btn-green" style="text-decoration:none;margin-bottom:10px;">Leave a Google review</a>'
+        ? '<a href="' + GOOGLE_REVIEW_URL + '" target="_blank" class="btn btn-green" style="text-decoration:none;margin-bottom:10px;" onclick="submitRating(' + rating + ',\'\');document.getElementById(\'rating-followup-overlay\').remove();">Leave a Google review</a>'
         : '<div style="font-size:12px;color:var(--yellow);margin-bottom:10px;">(Google review link not set up yet)</div>')
     + '<button class="btn btn-outline" onclick="submitRating(' + rating + ',\'\');document.getElementById(\'rating-followup-overlay\').remove();">Maybe later</button>'
   + '</div>';
@@ -421,12 +433,16 @@ function showPrivateFeedbackForm(rating) {
 }
 
 window.submitRating = async function(rating, note) {
+  // Guard against double-submit — the Google review link and "Maybe later"
+  // could both fire in edge cases (e.g. a fast double-tap on mobile)
+  if (sessionStorage.getItem('dl_rated_' + currentProp.id)) return;
+  sessionStorage.setItem('dl_rated_' + currentProp.id, String(rating));
+  renderRatingStars(); // swap to the thank-you state right away
   try {
-    var email = localStorage.getItem('dl_portal_email') || '';
     await addDoc(collection(db, 'customerRequests'), {
-      propId: currentProp.id, customerEmail: email,
+      propId: currentProp.id, customerEmail: currentEmail,
       type: 'feedback', rating: rating, description: note || '',
-      photo: '', status: rating <= 3 ? 'new' : 'resolved',
+      photo: '', status: 'new', // all ratings start as 'new' — including 5-star — so managers actually see them, not just the low ones
       createdAt: new Date().toISOString()
     });
     toast('✓ Thanks for letting us know');
@@ -545,10 +561,9 @@ window.submitRequest = async function() {
 
   btn.disabled = true; btn.textContent = 'Submitting…';
   try {
-    var email = localStorage.getItem('dl_portal_email') || '';
     var newDoc = await addDoc(collection(db, 'customerRequests'), {
       propId: currentProp.id,
-      customerEmail: email,
+      customerEmail: currentEmail,
       type: selectedType,
       description: desc,
       photo: '',
@@ -610,8 +625,6 @@ function compressPhoto(dataUrl, maxSize, quality, callback) {
   img.onerror = function() { callback(dataUrl); };
   img.src = dataUrl;
 }
-
-tryAutoLogin();
 </script>
 </body>
 </html>
