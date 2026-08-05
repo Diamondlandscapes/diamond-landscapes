@@ -1643,7 +1643,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v13'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v14'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -2543,14 +2543,16 @@ function openRouteDetail(id) {
                   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
                     <div style="font-size:12px;font-weight:700;color:var(--green);">✓ Completed</div>
                     ${(()=>{
-                      // Calculate duration from previous completed stop
+                      // Calculate duration from previous completed stop.
+                      // First stop of the day assumes an 8:00 AM EST start.
                       var allCompleted = stops.filter(st=>st.completed&&st.completedAtISO).sort((a,b)=>new Date(a.completedAtISO)-new Date(b.completedAtISO));
                       var myIdx = allCompleted.findIndex(st=>st.propId===s.propId);
-                      var prevISO = myIdx > 0 ? allCompleted[myIdx-1].completedAtISO : null;
+                      var isFirstOfDay = myIdx === 0;
+                      var prevISO = isFirstOfDay ? estWallTimeISO(s.completedAtISO, ASSUMED_ROUTE_START_HOUR, 0) : allCompleted[myIdx-1].completedAtISO;
                       var dur = calcStopDuration(prevISO, s.completedAtISO);
                       var col = durationColor(dur);
-                      return myIdx > 0 && dur !== null
-                        ? `<span style="font-size:11px;font-weight:700;color:${col};background:${col}1a;border:1px solid ${col}40;border-radius:20px;padding:2px 8px;">⏱ ${formatDuration(dur)}</span>`
+                      return dur !== null
+                        ? `<span style="font-size:11px;font-weight:700;color:${col};background:${col}1a;border:1px solid ${col}40;border-radius:20px;padding:2px 8px;">⏱ ${formatDuration(dur)}${isFirstOfDay?'*':''}</span>`
                         : '';
                     })()}
                   </div>
@@ -2926,6 +2928,35 @@ function lunchOverlapMinutes(startISO, endISO) {
   return Math.round((overlapEnd - overlapStart) * 60);
 }
 
+// Get the UTC offset (in minutes) of an IANA time zone at a given instant.
+// Handles DST automatically (no hardcoded EST/EDT offset).
+function getTZOffsetMinutes(timeZone, date) {
+  var dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: timeZone, hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  var parts = dtf.formatToParts(date).reduce(function(acc, p) { acc[p.type] = p.value; return acc; }, {});
+  var asUTC = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+  return (asUTC - date.getTime()) / 60000;
+}
+
+// Builds an ISO timestamp for a specific wall-clock hour:minute in
+// America/New_York, on the same calendar date (in that zone) as referenceISO.
+// Used to assume an 8:00 AM EST start time for a route's first stop.
+function estWallTimeISO(referenceISO, hour, minute) {
+  var ref = new Date(referenceISO);
+  if (isNaN(ref)) return null;
+  var dateStr = ref.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); // "YYYY-MM-DD"
+  var guess = new Date(dateStr + 'T' + String(hour).padStart(2,'0') + ':' + String(minute).padStart(2,'0') + ':00Z');
+  var offsetMin = getTZOffsetMinutes('America/New_York', guess);
+  return new Date(guess.getTime() - offsetMin * 60000).toISOString();
+}
+
+// Assumed crew arrival time at the first stop of any route, when no earlier
+// timestamp exists to measure from. Change this if the actual start time changes.
+var ASSUMED_ROUTE_START_HOUR = 8; // 8:00 AM EST
+
 // Calculate stop duration in minutes between prev and current completion
 // Deducts lunch overlap if window crosses 12-1pm EST
 function calcStopDuration(prevISO, currISO) {
@@ -2966,7 +2997,12 @@ function getRouteDurations(route) {
   });
 
   return stops.map(function(s, i) {
-    var prevISO = i === 0 ? null : stops[i-1].completedAtISO;
+    // First stop of the day has no prior completion to measure from, so we
+    // assume the crew arrived at ASSUMED_ROUTE_START_HOUR EST and measure
+    // duration from there instead of leaving it blank.
+    var prevISO = i === 0
+      ? estWallTimeISO(s.completedAtISO, ASSUMED_ROUTE_START_HOUR, 0)
+      : stops[i-1].completedAtISO;
     var dur = calcStopDuration(prevISO, s.completedAtISO);
     var prop = (state.properties||[]).find(function(p){return p.id===s.propId;});
     return {
@@ -8563,18 +8599,15 @@ function renderReports() {
           : null;
 
         var rows = durations.map(function(d, i) {
-          var col = d.isFirst ? 'var(--text4)' : durationColor(d.duration);
+          var col = durationColor(d.duration);
           return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:4px;">'
             + '<div style="width:22px;height:22px;border-radius:50%;background:' + (d.stop.completed?'var(--green3)':'var(--bg4)') + ';border:2px solid ' + (d.stop.completed?'var(--green)':'var(--border2)') + ';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;">' + (i+1) + '</div>'
             + '<div style="flex:1;min-width:0;">'
               + '<div style="font-size:13px;font-weight:700;">' + (d.prop?d.prop.name:'Unknown') + '</div>'
-              + '<div style="font-size:11px;color:var(--text3);">Done at ' + d.completedAt + '</div>'
+              + '<div style="font-size:11px;color:var(--text3);">Done at ' + d.completedAt + (d.isFirst ? ' · from 8:00 AM' : '') + '</div>'
             + '</div>'
             + '<div style="text-align:right;flex-shrink:0;">'
-              + (d.isFirst
-                ? '<span style="font-size:11px;color:var(--text4);">First stop</span>'
-                : '<span style="font-size:13px;font-weight:700;color:' + col + ';">' + formatDuration(d.duration) + '</span>'
-              )
+              + '<span style="font-size:13px;font-weight:700;color:' + col + ';">' + formatDuration(d.duration) + (d.isFirst ? '*' : '') + '</span>'
             + '</div>'
           + '</div>';
         }).join('');
@@ -8591,6 +8624,7 @@ function renderReports() {
             + '</div>'
           + '</div>'
           + rows
+          + '<div style="font-size:10px;color:var(--text4);margin-top:6px;padding:0 2px;">* assumes an 8:00 AM EST start</div>'
         + '</div>';
       }).join('');
     }
