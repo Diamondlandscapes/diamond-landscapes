@@ -1703,7 +1703,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v30'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v32'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -5350,10 +5350,10 @@ function openPropDetail(id) {
           </div>
         </div>
         <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">LAST SERVICE DATE</div>
-        <input type="date" class="inp" id="pe-last-${id}" value="${formatDateForInput(p.lastServiceDate)}" style="color-scheme:dark;background:var(--bg4);color:var(--text);border:1px solid var(--green);"/>
+        <input type="date" class="inp" id="pe-last-${id}" value="${formatDateForInput(p.lastServiceDate)}" oninput="recalcNextServiceInEdit('${id}')" style="color-scheme:dark;background:var(--bg4);color:var(--text);border:1px solid var(--green);"/>
         <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">NEXT SERVICE DATE</div>
         <input type="date" class="inp" id="pe-next-${id}" value="${formatDateForInput(p.nextServiceDate)||calculateNextService(p)}" style="color-scheme:dark;background:var(--bg4);color:var(--text);border:1px solid var(--border2);"/>
-        <div style="font-size:11px;color:var(--text4);">&#x1F4A1; Next service auto-calculates when you save.</div>
+        <div style="font-size:11px;color:var(--text4);">&#x1F4A1; Next service recalculates automatically when you change the last service date.</div>
         <button class="btn btn-green" onclick="savePropEdit('${id}')" style="font-size:13px;">Save Changes</button>
         <button class="btn btn-outline" onclick="togglePropEdit('${id}')" style="font-size:13px;">Cancel</button>
 
@@ -10907,6 +10907,24 @@ function formatDateForInput(dateStr) {
   } catch(e) { return ''; }
 }
 
+// Recalculates the Next Service Date field live as soon as Last Service
+// Date changes in the property edit form — previously the field only ever
+// showed whatever was there when the panel opened, and Save would just
+// re-save that stale value since it always looked "filled in" whether or
+// not it actually reflected the new last-service date.
+function recalcNextServiceInEdit(id) {
+  var lastInput = document.getElementById('pe-last-'+id);
+  var nextInput = document.getElementById('pe-next-'+id);
+  var freqSelect = document.getElementById('pe-freq-'+id);
+  if (!lastInput || !nextInput || !lastInput.value) return;
+  var freq = freqSelect ? freqSelect.value : null;
+  var days = freq ? FREQ_DAYS[freq] : null;
+  if (!days) return; // e.g. "As Needed" or no frequency set — nothing to calculate
+  var last = parseLocalDate(lastInput.value);
+  var next = new Date(last.getTime() + days*24*60*60*1000);
+  nextInput.value = formatDateForInput(next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}));
+}
+
 function calculateNextService(prop) {
   if (!prop) return '';
   const days = FREQ_DAYS[prop.frequency];
@@ -14403,6 +14421,7 @@ function onPeFreqChange(id, val) {
   var daysEl   = document.getElementById('pe-days-' + id);
   if (customEl) customEl.style.display = val === 'Custom' ? 'block' : 'none';
   if (daysEl)   daysEl.style.display   = val === '2x Per Week' ? 'block' : 'none';
+  recalcNextServiceInEdit(id);
 }
 
 function cwoSetType(t) { document.getElementById('cwo-type-land').className=t==='land'?'pill active':'pill'; document.getElementById('cwo-type-irr').className=t==='irr'?'pill active':'pill'; }
@@ -14826,10 +14845,13 @@ function renderAttendance() {
       +   'color:#f97316;border:1.5px solid rgba(249,115,22,.3);font-size:14px;font-weight:700;cursor:pointer;">'
       +   '+ Add Day Laborer</button>'
 
-      // Save
+      // Manual resync — edits now save automatically as you make them (status
+      // taps, notes, adding a laborer). This button just re-pushes everything
+      // again, useful if you suspect something didn't sync over a bad connection.
       + '<button onclick="attSaveDay()"'
-      +   ' style="width:100%;margin-top:10px;padding:14px;border-radius:12px;background:var(--green);'
-      +   'color:#fff;border:none;font-size:15px;font-weight:800;cursor:pointer;">✓ Save Attendance</button>';
+      +   ' style="width:100%;margin-top:10px;padding:12px;border-radius:12px;background:var(--bg3);'
+      +   'color:var(--text3);border:1px solid var(--border2);font-size:13px;font-weight:700;cursor:pointer;">↻ Sync Now</button>'
+      + '<div style="text-align:center;font-size:11px;color:var(--text4);margin-top:6px;">Changes save automatically</div>';
   }
 
   // ── Report view (manager only) ──────────────────────────────
@@ -14953,6 +14975,7 @@ function attCycleStatus(btn) {
   btn.style.background = sm.bg;
   btn.style.color = sm.color;
   btn.style.borderColor = sm.border;
+  saveAttendanceRecord(rec); // save immediately — don't wait for a separate Save step that a live re-render could wipe out first
 }
 
 function attEditNote(btn) {
@@ -14963,6 +14986,8 @@ function attEditNote(btn) {
   if (note === null) return;
   rec.note = note.trim();
   btn.textContent = rec.note ? '📝' : '➕';
+  saveAttendanceRecord(rec); // save immediately, same reasoning as attCycleStatus
+  toast('✓ Saved');
 }
 
 function attDeleteTemp(btn) {
@@ -14980,14 +15005,16 @@ function attAddLaborer() {
   var rec = { id:'att_temp_'+Date.now(), date:dateStr, crewId:'temp', name:name, role:'Day Laborer', status:'present', note:'' };
   if (!window._attRoster) window._attRoster = [];
   window._attRoster.push(rec);
+  saveAttendanceRecord(rec); // save immediately — previously this only lived in memory until Save was clicked
   renderAttendance();
+  toast('✓ ' + name + ' added');
 }
 
 function attSaveDay() {
   var roster = window._attRoster || [];
-  if (!roster.length) { toast('No crew to save'); return; }
+  if (!roster.length) { toast('No crew to sync'); return; }
   roster.forEach(function(rec){ saveAttendanceRecord(rec); });
-  toast('Attendance saved ✓');
+  toast('Synced ✓');
   if(typeof gsLoad==='function'&&typeof syncOnline!=='undefined'&&syncOnline){setTimeout(function(){gsLoad().catch(function(){});},800);}
 }
 
