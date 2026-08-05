@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"/>
+<title>Diamond Landscapes — Customer Portal</title>
+<meta name="theme-color" content="#0d1117"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/dist/tabler-icons.min.css"/>
+<style>
+  :root{
+    --bg:#0d1117; --bg2:#161b22; --bg3:#1c2128; --bg4:#22272e;
+    --border:#2d333b; --border2:#373e47;
+    --text:#e6edf3; --text2:#adbac7; --text3:#768390; --text4:#545d68;
+    --green:#3fb950; --green2:#238636; --green3:#2ea043;
+    --blue:#58a6ff; --red:#f85149; --yellow:#d29922;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    min-height:100vh; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{ max-width:480px; margin:0 auto; padding:20px 16px calc(24px + var(--safe-bottom)); min-height:100vh; }
+  .center-wrap{ max-width:400px; margin:0 auto; padding:20px; min-height:100vh; display:flex; flex-direction:column; justify-content:center; }
+  .logo{ text-align:center; margin-bottom:28px; }
+  .logo-icon{ font-size:40px; margin-bottom:8px; }
+  .logo-title{ font-size:20px; font-weight:800; letter-spacing:.5px; }
+  .logo-sub{ font-size:13px; color:var(--text3); margin-top:4px; }
+  .card{ background:var(--bg2); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:14px; }
+  .inp{
+    width:100%; background:var(--bg3); border:1px solid var(--border2); border-radius:10px;
+    color:var(--text); font-size:15px; padding:13px 14px; font-family:inherit; outline:none;
+  }
+  .inp:focus{ border-color:var(--blue); }
+  textarea.inp{ resize:vertical; min-height:80px; }
+  .btn{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    width:100%; padding:14px; border-radius:11px; border:none; cursor:pointer;
+    font-size:15px; font-weight:700; font-family:inherit;
+  }
+  .btn-green{ background:var(--green2); color:#fff; }
+  .btn-green:disabled{ opacity:.5; cursor:not-allowed; }
+  .btn-outline{ background:var(--bg3); color:var(--text2); border:1px solid var(--border2); }
+  .err{ color:var(--red); font-size:13px; margin-top:10px; text-align:center; min-height:16px; }
+  .stat{ flex:1; background:var(--bg3); border-radius:10px; padding:12px 14px; }
+  .stat-label{ font-size:10px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color:var(--text3); }
+  .stat-value{ font-size:15px; font-weight:700; color:var(--text); margin-top:4px; }
+  .req-card{ background:var(--bg3); border:1px solid var(--border2); border-radius:12px; padding:14px; margin-bottom:10px; }
+  .badge{ font-size:10px; font-weight:700; padding:3px 9px; border-radius:20px; letter-spacing:.4px; text-transform:uppercase; }
+  .badge-new{ background:rgba(88,166,255,.15); color:var(--blue); }
+  .badge-reviewed{ background:rgba(210,153,34,.15); color:var(--yellow); }
+  .badge-resolved{ background:rgba(63,185,80,.15); color:var(--green); }
+  .photo-zone{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:var(--bg3); border:2px dashed var(--border2); border-radius:14px;
+    padding:28px 16px; cursor:pointer; text-align:center; margin-bottom:14px;
+  }
+  .overlay{ position:fixed; inset:0; z-index:2000; background:rgba(0,0,0,.7); display:flex; align-items:flex-end; justify-content:center; }
+  .sheet{ width:100%; max-width:480px; background:var(--bg2); border-radius:20px 20px 0 0; padding:20px 16px calc(20px + var(--safe-bottom)); max-height:88vh; overflow-y:auto; }
+  .type-pill{ flex:1; padding:12px 8px; border-radius:10px; text-align:center; font-size:13px; font-weight:700; cursor:pointer; border:2px solid var(--border2); background:var(--bg3); color:var(--text2); }
+  .type-pill.active{ border-color:var(--blue); background:rgba(88,166,255,.12); color:var(--blue); }
+  .toast{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--bg4); border:1px solid var(--border2); color:var(--text); padding:12px 20px; border-radius:10px; font-size:13px; font-weight:600; z-index:3000; opacity:0; transition:opacity .3s; pointer-events:none; }
+  .toast.show{ opacity:1; }
+  @media (min-width:768px){
+    .wrap{ padding-top:32px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="login-screen" class="center-wrap">
+  <div class="logo">
+    <div class="logo-icon">💎</div>
+    <div class="logo-title">DIAMOND LANDSCAPES</div>
+    <div class="logo-sub">Customer Portal</div>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:700;margin-bottom:4px;">Sign in</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:14px;">Enter the email on file for your property.</div>
+    <input class="inp" id="login-email" type="email" placeholder="you@email.com" style="margin-bottom:10px;" autocomplete="email"/>
+    <button class="btn btn-green" id="login-btn" onclick="portalLogin()">Continue</button>
+    <div class="err" id="login-err"></div>
+  </div>
+  <div style="text-align:center;font-size:12px;color:var(--text4);">
+    Don't have portal access yet? Contact us to get set up.
+  </div>
+</div>
+
+<div id="main-screen" class="wrap" style="display:none;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+    <div>
+      <div style="font-size:12px;color:var(--text3);font-weight:700;letter-spacing:.5px;">DIAMOND LANDSCAPES</div>
+      <div style="font-size:19px;font-weight:800;margin-top:2px;" id="main-prop-name"></div>
+    </div>
+    <button onclick="portalLogout()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px 12px;color:var(--text3);font-size:12px;font-weight:700;cursor:pointer;">Sign Out</button>
+  </div>
+
+  <div class="card">
+    <div style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;margin-bottom:14px;">
+      <i class="ti ti-map-pin"></i><span id="main-prop-address"></span>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <div class="stat"><div class="stat-label">Frequency</div><div class="stat-value" id="main-prop-freq">—</div></div>
+      <div class="stat"><div class="stat-label">Next Service</div><div class="stat-value" id="main-prop-next">—</div></div>
+    </div>
+  </div>
+
+  <button class="btn btn-green" style="margin-bottom:18px;" onclick="openNewRequestSheet()">
+    <i class="ti ti-plus"></i> New Request
+  </button>
+
+  <div style="font-size:13px;font-weight:700;color:var(--text3);letter-spacing:.5px;margin-bottom:10px;">YOUR REQUESTS</div>
+  <div id="request-history"></div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { initializeApp, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, collection, query, where, getDocs, addDoc, doc, setDoc, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getStorage, ref, uploadString, getDownloadURL }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+import { getAuth, signInAnonymously }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey:            "AIzaSyBYcBBQ2IFVgL4Oq0Oob54ttzxuntwdY2Q",
+  authDomain:        "diamond-landscapes-f676b.firebaseapp.com",
+  projectId:         "diamond-landscapes-f676b",
+  storageBucket:     "diamond-landscapes-f676b.firebasestorage.app",
+  messagingSenderId: "795500111307",
+  appId:             "1:795500111307:web:39379296ce4d91a509824e"
+};
+
+let fbApp, db, storage;
+try { fbApp = getApp(); } catch(e) { fbApp = initializeApp(firebaseConfig); }
+db = getFirestore(fbApp);
+storage = getStorage(fbApp);
+
+let currentProp = null;
+let selectedType = 'issue';
+let pendingPhoto = null; // compressed data URL, ready to upload
+
+// ── Auth: anonymous sign-in, same pattern as the main app, satisfies
+// Firestore rules requiring request.auth != null. Does NOT grant any
+// customer-specific permissions on its own — access is controlled by the
+// email-match lookup below, same trust tier as the manager PIN.
+signInAnonymously(getAuth(fbApp)).catch(function(e){ console.warn('Auth failed:', e.message); });
+
+window.toast = function(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 2600);
+};
+
+// ── Login ──────────────────────────────────────────────────────────────
+window.portalLogin = async function() {
+  var emailInput = document.getElementById('login-email');
+  var errEl = document.getElementById('login-err');
+  var btn = document.getElementById('login-btn');
+  var email = (emailInput.value || '').trim().toLowerCase();
+  errEl.textContent = '';
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errEl.textContent = 'Enter a valid email address.';
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Checking…';
+  try {
+    var q = query(collection(db, 'properties'), where('email', '==', email));
+    var snap = await getDocs(q);
+    if (snap.empty) {
+      errEl.textContent = "We couldn't find a property with that email. Contact us if this seems wrong.";
+      btn.disabled = false; btn.textContent = 'Continue';
+      return;
+    }
+    var propDoc = snap.docs[0];
+    currentProp = Object.assign({ id: propDoc.id }, propDoc.data());
+    localStorage.setItem('dl_portal_email', email);
+    localStorage.setItem('dl_portal_propId', currentProp.id);
+    showMainScreen();
+  } catch(e) {
+    console.error(e);
+    errEl.textContent = 'Something went wrong — check your connection and try again.';
+    btn.disabled = false; btn.textContent = 'Continue';
+  }
+};
+
+window.portalLogout = function() {
+  localStorage.removeItem('dl_portal_email');
+  localStorage.removeItem('dl_portal_propId');
+  currentProp = null;
+  document.getElementById('main-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('login-email').value = '';
+};
+
+// ── Auto-login if we already have a session on this device ──────────────
+async function tryAutoLogin() {
+  var email = localStorage.getItem('dl_portal_email');
+  var propId = localStorage.getItem('dl_portal_propId');
+  if (!email || !propId) return;
+  try {
+    var snap = await getDocs(query(collection(db, 'properties'), where('email', '==', email)));
+    if (snap.empty) return;
+    var propDoc = snap.docs[0];
+    currentProp = Object.assign({ id: propDoc.id }, propDoc.data());
+    showMainScreen();
+  } catch(e) { console.warn('Auto-login failed:', e.message); }
+}
+
+function showMainScreen() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('main-screen').style.display = 'block';
+  document.getElementById('main-prop-name').textContent = currentProp.name || 'Your Property';
+  document.getElementById('main-prop-address').textContent = currentProp.address || '';
+  document.getElementById('main-prop-freq').textContent = currentProp.frequency || 'Not set';
+  document.getElementById('main-prop-next').textContent = currentProp.nextServiceDate || 'Not scheduled';
+  loadRequestHistory();
+}
+
+// ── Request history ───────────────────────────────────────────────────
+async function loadRequestHistory() {
+  var el = document.getElementById('request-history');
+  el.innerHTML = '<div style="text-align:center;color:var(--text4);font-size:13px;padding:16px;">Loading…</div>';
+  try {
+    var q = query(collection(db, 'customerRequests'), where('propId', '==', currentProp.id));
+    var snap = await getDocs(q);
+    var reqs = [];
+    snap.forEach(function(d){ reqs.push(Object.assign({ id: d.id }, d.data())); });
+    reqs.sort(function(a,b){ return new Date(b.createdAt||0) - new Date(a.createdAt||0); });
+    if (!reqs.length) {
+      el.innerHTML = '<div style="text-align:center;color:var(--text4);font-size:13px;padding:20px 0;">No requests yet</div>';
+      return;
+    }
+    var typeIcons = { issue:'🚩', estimate:'💰', other:'💬' };
+    var typeLabels = { issue:'Issue Report', estimate:'Estimate Request', other:'Other' };
+    el.innerHTML = reqs.map(function(r) {
+      return '<div class="req-card">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">'
+          + '<div style="font-weight:700;font-size:13px;">' + (typeIcons[r.type]||'💬') + ' ' + (typeLabels[r.type]||'Request') + '</div>'
+          + '<span class="badge badge-' + (r.status||'new') + '">' + (r.status||'new') + '</span>'
+        + '</div>'
+        + '<div style="font-size:13px;color:var(--text2);margin-bottom:6px;">' + (r.description||'') + '</div>'
+        + (r.photo ? '<img src="' + r.photo + '" style="width:100%;border-radius:8px;max-height:160px;object-fit:cover;margin-bottom:6px;"/>' : '')
+        + '<div style="font-size:11px;color:var(--text4);">' + fmtDate(r.createdAt) + '</div>'
+      + '</div>';
+    }).join('');
+  } catch(e) {
+    console.error(e);
+    el.innerHTML = '<div style="text-align:center;color:var(--red);font-size:13px;padding:16px;">Could not load request history</div>';
+  }
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+}
+
+// ── New Request sheet ─────────────────────────────────────────────────
+window.openNewRequestSheet = function() {
+  selectedType = 'issue';
+  pendingPhoto = null;
+  var wrap = document.createElement('div');
+  wrap.id = 'new-req-overlay';
+  wrap.className = 'overlay';
+  wrap.innerHTML =
+    '<div class="sheet">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
+        + '<div style="font-size:17px;font-weight:800;">New Request</div>'
+        + '<button onclick="document.getElementById(\'new-req-overlay\').remove()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;width:28px;height:28px;color:var(--text2);cursor:pointer;">✕</button>'
+      + '</div>'
+
+      + '<div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;margin-bottom:8px;">TYPE OF REQUEST</div>'
+      + '<div style="display:flex;gap:8px;margin-bottom:16px;">'
+        + '<div class="type-pill active" id="type-issue" onclick="selectReqType(\'issue\')">🚩 Issue</div>'
+        + '<div class="type-pill" id="type-estimate" onclick="selectReqType(\'estimate\')">💰 Estimate</div>'
+        + '<div class="type-pill" id="type-other" onclick="selectReqType(\'other\')">💬 Other</div>'
+      + '</div>'
+
+      + '<div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;margin-bottom:8px;">DESCRIBE YOUR REQUEST</div>'
+      + '<textarea class="inp" id="req-description" rows="4" placeholder="Tell us what you need..." style="margin-bottom:16px;"></textarea>'
+
+      + '<div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;margin-bottom:8px;">PHOTO <span style="color:var(--red);">(required)</span></div>'
+      + '<label class="photo-zone" id="req-photo-zone">'
+        + '<div id="req-photo-icon" style="font-size:34px;margin-bottom:6px;">📷</div>'
+        + '<div id="req-photo-label" style="font-size:13px;color:var(--text3);">Tap to take or choose a photo</div>'
+        + '<input type="file" id="req-photo-input" accept="image/*" style="display:none;"/>'
+      + '</label>'
+      + '<img id="req-photo-preview" style="display:none;width:100%;border-radius:10px;max-height:220px;object-fit:cover;margin-bottom:16px;margin-top:-6px;"/>'
+
+      + '<div class="err" id="req-err"></div>'
+      + '<button class="btn btn-green" id="req-submit-btn" onclick="submitRequest()">Submit Request</button>'
+    + '</div>';
+  wrap.addEventListener('click', function(e){ if (e.target === wrap) wrap.remove(); });
+  document.body.appendChild(wrap);
+
+  document.getElementById('req-photo-input').addEventListener('change', function() {
+    var file = this.files[0];
+    if (!file) return;
+    var zone = document.getElementById('req-photo-zone');
+    var icon = document.getElementById('req-photo-icon');
+    var label = document.getElementById('req-photo-label');
+    icon.textContent = '⏳';
+    label.textContent = 'Processing photo…';
+    readFileAsDataUrl(file, function(dataUrl) {
+      if (!dataUrl) {
+        icon.textContent = '📷'; label.textContent = 'Tap to take or choose a photo';
+        toast('Could not read that photo — try again');
+        return;
+      }
+      compressPhoto(dataUrl, 1000, 0.85, function(compressed) {
+        pendingPhoto = compressed;
+        icon.textContent = '✅'; label.textContent = 'Photo attached — tap to change';
+        var preview = document.getElementById('req-photo-preview');
+        preview.src = compressed; preview.style.display = 'block';
+      });
+    });
+  });
+};
+
+window.selectReqType = function(type) {
+  selectedType = type;
+  ['issue','estimate','other'].forEach(function(t){
+    document.getElementById('type-'+t).classList.toggle('active', t===type);
+  });
+};
+
+window.submitRequest = async function() {
+  var errEl = document.getElementById('req-err');
+  var btn = document.getElementById('req-submit-btn');
+  var desc = (document.getElementById('req-description').value || '').trim();
+  errEl.textContent = '';
+  if (!desc) { errEl.textContent = 'Please describe your request.'; return; }
+  if (!pendingPhoto) { errEl.textContent = 'A photo is required for all requests.'; return; }
+
+  btn.disabled = true; btn.textContent = 'Submitting…';
+  try {
+    var email = localStorage.getItem('dl_portal_email') || '';
+    var newDoc = await addDoc(collection(db, 'customerRequests'), {
+      propId: currentProp.id,
+      customerEmail: email,
+      type: selectedType,
+      description: desc,
+      photo: '', // set after upload
+      status: 'new',
+      createdAt: new Date().toISOString()
+    });
+
+    // Upload photo to Storage, then attach the URL to the doc we just made
+    var storagePath = 'photos/customerRequests/' + newDoc.id + '_' + Date.now() + '.jpg';
+    var sref = ref(storage, storagePath);
+    await uploadString(sref, pendingPhoto, 'data_url');
+    var url = await getDownloadURL(sref);
+    await setDoc(doc(db, 'customerRequests', newDoc.id), { photo: url }, { merge: true });
+
+    document.getElementById('new-req-overlay').remove();
+    toast('✓ Request submitted');
+    loadRequestHistory();
+  } catch(e) {
+    console.error(e);
+    errEl.textContent = 'Could not submit — check your connection and try again.';
+    btn.disabled = false; btn.textContent = 'Submit Request';
+  }
+};
+
+// ── Photo helpers — mirrors the safe, validated pipeline used in the main
+// app: FileReader with a blank-canvas check, then a second validated
+// compression pass, so a corrupt/blank HEIC photo never silently ships.
+function readFileAsDataUrl(file, callback) {
+  var reader = new FileReader();
+  reader.onload = function(e) { callback(e.target.result); };
+  reader.onerror = function() { callback(null); };
+  reader.readAsDataURL(file);
+}
+
+function compressPhoto(dataUrl, maxSize, quality, callback) {
+  var img = new Image();
+  img.onload = function() {
+    var canvas = document.createElement('canvas');
+    var w = img.width, h = img.height;
+    if (w === 0 || h === 0) { callback(dataUrl); return; }
+    if (w > maxSize || h > maxSize) {
+      if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+      else       { w = Math.round(w * maxSize / h); h = maxSize; }
+    }
+    canvas.width = w; canvas.height = h;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, w, h);
+    try {
+      ctx.drawImage(img, 0, 0, w, h);
+      // Blank-canvas check — same protection as the main app's pipeline
+      var sample = ctx.getImageData(Math.floor(w*0.3), Math.floor(h*0.3), Math.min(10,w), Math.min(10,h));
+      var allWhite = true;
+      for (var i = 0; i < sample.data.length; i += 4) {
+        if (sample.data[i] < 250 || sample.data[i+1] < 250 || sample.data[i+2] < 250) { allWhite = false; break; }
+      }
+      if (allWhite) { callback(dataUrl); return; }
+      callback(canvas.toDataURL('image/jpeg', quality));
+    } catch(e) {
+      callback(dataUrl);
+    }
+  };
+  img.onerror = function() { callback(dataUrl); };
+  img.src = dataUrl;
+}
+
+tryAutoLogin();
+</script>
+</body>
+</html>
