@@ -963,6 +963,17 @@ select.inp{cursor:pointer;}
       </div>
 
 
+      <div class="card" id="dash-sync-card" style="display:none;border:1px solid rgba(210,153,34,.4);">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">⚠️</span>
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--yellow);">Some changes haven't synced yet</div>
+            <div id="dash-sync-detail" style="font-size:12px;color:var(--text3);margin-top:2px;"></div>
+          </div>
+        </div>
+      </div>
+
+
       <div class="card" id="dash-nav-card" style="display:none;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
           <div class="sec-title" style="margin-bottom:0;">Navigate Usage — Today</div>
@@ -1674,7 +1685,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v26'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v28'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -2099,6 +2110,21 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
 
   // Navigate usage compliance (manager only) — flags crew members completing
   // stops without tapping Navigate, so time tracking + drive estimates work.
+  // Pending sync warning — surfaces writes that exhausted retries and are
+  // sitting in the durable queue waiting for connectivity to come back.
+  var syncCard = document.getElementById('dash-sync-card');
+  if (syncCard) {
+    var pendingQueue = [];
+    try { pendingQueue = JSON.parse(localStorage.getItem('dl_pending_writes') || '[]'); } catch(e) {}
+    if (pendingQueue.length) {
+      syncCard.style.display = '';
+      var detail = document.getElementById('dash-sync-detail');
+      if (detail) detail.textContent = pendingQueue.length + ' change' + (pendingQueue.length>1?'s':'') + ' saved on this device but not yet on the server — will retry automatically when back online.';
+    } else {
+      syncCard.style.display = 'none';
+    }
+  }
+
   var navCard = document.getElementById('dash-nav-card');
   if (navCard) navCard.style.display = state.role === 'manager' ? '' : 'none';
   if (state.role === 'manager') {
@@ -4304,6 +4330,8 @@ var UI_ES = {
   'Recently Completed':           'Completadas Recientemente',
   'Due:':                         'Vence:',
   'Complete with Photo':          'Completar con Foto',
+  'Select a community to see its work orders': 'Selecciona una comunidad para ver sus órdenes de trabajo',
+  'All Communities':              'Todas las Comunidades',
 };
 function t(str) {
   if (getCrewLang() !== 'es') return str;
@@ -8377,6 +8405,9 @@ function dismissLoginScreen(role) {
 function signOut() {
   state.loggedInCrewId = null;
   state.role = 'guest';
+  window._crewWOSelectedCommunity = ''; // don't carry over to the next crew member on this device
+  window._crewWOVillage = '';
+  window._crewWOType = '';
   save();
   // show login screen again
   const screen = document.getElementById('login-screen');
@@ -8594,6 +8625,7 @@ function gsLoad() {
           console.log('Firebase: signed in anonymously');
           window._authReady = true;
           loadManagerPinHash();
+          flushPendingWrites();
 
           // Version management — fully automatic:
           // 1. Always write current version to Firestore so all devices know latest
@@ -8672,6 +8704,32 @@ function gsLoad() {
 }
 
 // ── Write one record to Firestore ─────────────────────────────────────────
+// ── Durable sync queue ──────────────────────────────────────────────────
+// gsSave retries a failed write a few times, but if the device is offline
+// (or the tab closes) longer than that, the write used to just be dropped —
+// the local screen looked updated, but Firestore, and every other device,
+// never actually got it. This queues anything that exhausts its retries and
+// tries again once we're back online or the app reloads, so no write is
+// ever silently lost.
+function queuePendingWrite(table, record) {
+  try {
+    var queue = JSON.parse(localStorage.getItem('dl_pending_writes') || '[]');
+    queue = queue.filter(function(q) { return !(q.table === table && q.id === record.id); }); // dedupe, keep latest
+    queue.push({ table: table, id: record.id, record: record, queuedAt: new Date().toISOString() });
+    localStorage.setItem('dl_pending_writes', JSON.stringify(queue));
+  } catch(e) { console.warn('Could not queue pending write:', e); }
+}
+
+function flushPendingWrites() {
+  var queue;
+  try { queue = JSON.parse(localStorage.getItem('dl_pending_writes') || '[]'); } catch(e) { return; }
+  if (!queue.length) return;
+  if (!_fbReady || !_db || !window._authReady) return; // try again next trigger
+  console.log('Flushing ' + queue.length + ' pending write(s)...');
+  localStorage.setItem('dl_pending_writes', '[]'); // clear optimistically; re-queued below on failure
+  queue.forEach(function(item) { gsSave(item.table, item.record); });
+}
+
 function gsSave(table, record, _attempt) {
   if (!_fbReady || !_db) {
     setTimeout(function() { gsSave(table, record, (_attempt||0)+1); }, 2000);
@@ -8707,9 +8765,18 @@ function gsSave(table, record, _attempt) {
       if ((_attempt||0) < 3) {
         setTimeout(function() { gsSave(table, record, (_attempt||0)+1); },
           Math.pow(2, (_attempt||0)+1) * 1000);
+      } else {
+        // Exhausted retries — don't lose this write, queue it durably instead
+        console.warn('gsSave: exhausted retries, queuing for later [' + table + ']:', record.id);
+        queuePendingWrite(table, record);
       }
     });
 }
+
+// Retry queued writes whenever we come back online, and once shortly after
+// the app finishes loading (covers "was offline the whole session" case).
+window.addEventListener('online', flushPendingWrites);
+setTimeout(flushPendingWrites, 5000);
 
 // ── Delete one record from Firestore ──────────────────────────────────────
 function gsDelete(table, id) {
@@ -12413,6 +12480,19 @@ function exportWOReport(community) {
 }
 
 // ── Crew Work Orders ──────────────────────────────────────────────────────────
+function selectCrewWOCommunity(community) {
+  window._crewWOSelectedCommunity = community;
+  window._crewWOVillage = ''; // reset village filter when switching communities
+  window._crewWOType = '';
+  renderCrewWorkOrders();
+}
+function backToCrewWOCommunities() {
+  window._crewWOSelectedCommunity = '';
+  window._crewWOVillage = '';
+  window._crewWOType = '';
+  renderCrewWorkOrders();
+}
+
 function renderCrewWorkOrders() {
   var el = document.getElementById('wo-crew-list');
   if (!el) return;
@@ -12427,7 +12507,7 @@ function renderCrewWorkOrders() {
   allWOs.forEach(function(w){
     if(w.assignedTo===crewId&&w.community&&!myCommunities.includes(w.community)) myCommunities.push(w.community);
   });
-  var myWOs = allWOs.filter(function(w){
+  var myWOsAll = allWOs.filter(function(w){
     if(w.status==='completed'||w.status==='placeholder'||w.status==='archived') return false;
     if(w.assignedTo===crewId) return true;
     if(crew&&w.assignedTo===crew.name) return true;
@@ -12435,17 +12515,54 @@ function renderCrewWorkOrders() {
     if(w.assignedTo==='__team__') return true;
     return false;
   });
-  var doneWOs = allWOs.filter(function(w){
+  var doneWOsAll = allWOs.filter(function(w){
     if(w.status!=='completed') return false;
     if(w.completedBy===(crew?crew.name:'')) return true;
     if(w.assignedTo===crewId) return true;
     if(w.assignedTo==='__team__') return true;
     return false;
   }).slice(-20);
-  if (!myWOs.length && !doneWOs.length) {
+
+  if (!myWOsAll.length && !doneWOsAll.length) {
     el.innerHTML = '<div class="card" style="text-align:center;padding:32px;"><div style="font-size:40px;margin-bottom:12px;">&#x2705;</div><div style="font-weight:700;font-size:15px;">' + t('All caught up!') + '</div><div style="font-size:13px;color:var(--text3);margin-top:6px;">' + t('No work orders assigned to you') + '</div></div>';
     return;
   }
+
+  // ── Community selection gate ──────────────────────────────────────────
+  // Crew picks a community first, then only sees that community's work
+  // orders — instead of one long mixed list across every property/HOA.
+  var selectedCommunity = window._crewWOSelectedCommunity || '';
+  if (!selectedCommunity) {
+    var commCounts = {};
+    myWOsAll.forEach(function(w){
+      var c = w.community || 'No Community Set';
+      if (!commCounts[c]) commCounts[c] = { open: 0, done: 0 };
+      commCounts[c].open++;
+    });
+    doneWOsAll.forEach(function(w){
+      var c = w.community || 'No Community Set';
+      if (!commCounts[c]) commCounts[c] = { open: 0, done: 0 };
+      commCounts[c].done++;
+    });
+    var commNames = Object.keys(commCounts).sort(function(a,b){ return commCounts[b].open - commCounts[a].open; });
+    var html = '<div style="font-size:13px;color:var(--text3);margin-bottom:14px;">' + t('Select a community to see its work orders') + '</div>';
+    html += commNames.map(function(c) {
+      var counts = commCounts[c];
+      return '<button onclick="selectCrewWOCommunity(\'' + c.replace(/'/g,"\\'") + '\')" style="width:100%;text-align:left;background:var(--bg3);border:1px solid var(--border2);border-radius:12px;padding:14px 16px;margin-bottom:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
+        + '<div style="font-weight:700;font-size:14px;color:var(--text);">🏘️ ' + c + '</div>'
+        + '<div style="display:flex;align-items:center;gap:8px;">'
+          + (counts.open ? '<span class="badge badge-red">' + counts.open + ' ' + t('Open') + '</span>' : '')
+          + '<i class="ti ti-chevron-right" style="font-size:16px;color:var(--text3);"></i>'
+        + '</div>'
+      + '</button>';
+    }).join('');
+    el.innerHTML = html;
+    return;
+  }
+
+  var myWOs  = myWOsAll.filter(function(w){ return (w.community || 'No Community Set') === selectedCommunity; });
+  var doneWOs = doneWOsAll.filter(function(w){ return (w.community || 'No Community Set') === selectedCommunity; });
+
   var vf = window._crewWOVillage || '';
   var tf = window._crewWOType || '';
   var villages = [];
@@ -12456,7 +12573,10 @@ function renderCrewWorkOrders() {
     .filter(function(w){ return !tf || w.type===tf; });
   var filteredDoneWOs = doneWOs
     .filter(function(w){ return !tf || w.type===tf; });
-  var html = '';
+  var html = '<button onclick="backToCrewWOCommunities()" style="background:none;border:none;color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;padding:0;margin-bottom:12px;display:flex;align-items:center;gap:5px;">'
+    + '<i class="ti ti-chevron-left" style="font-size:15px;"></i> ' + t('All Communities')
+  + '</button>'
+  + '<div style="font-size:16px;font-weight:800;margin-bottom:12px;">🏘️ ' + selectedCommunity + '</div>';
 
   // Type filter pills — always visible
   html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">';
