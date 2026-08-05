@@ -1703,7 +1703,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v32'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v34'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -3939,7 +3939,7 @@ window.sca_submit = async function() {
   prop.lastServiceDate  = today;
   prop.lastServiceBy    = crewName;
   // Update next service date
-  var freqDays = window.FREQ_DAYS && FREQ_DAYS[prop.frequency];
+  var freqDays = freqDaysFor(prop.frequency);
   if (freqDays) {
     var next = new Date(Date.now() + freqDays*24*60*60*1000);
     prop.nextServiceDate = next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
@@ -5287,6 +5287,20 @@ function openPropDetail(id) {
 
   const freqOptions = ['Weekly','2x Per Week','Bi-Weekly','Monthly','2x Per Month','Quarterly','As Needed','Custom'];
 
+  // Next service is always force-recalculated from Last Service + Frequency
+  // for display, rather than trusting whatever's stored — a stored value
+  // can go stale (e.g. after a manual edit elsewhere) with nothing to
+  // reconcile it. If it's out of sync, self-heal it once, silently.
+  var calcNextInput = calculateNextService(p); // yyyy-mm-dd or ''
+  var nextDisplay = 'Not scheduled';
+  if (calcNextInput) {
+    var calcDisplay = parseLocalDate(calcNextInput).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    nextDisplay = calcDisplay;
+    if (p.nextServiceDate !== calcDisplay) { p.nextServiceDate = calcDisplay; saveAndSync('properties', p); }
+  } else if (p.nextServiceDate) {
+    nextDisplay = p.nextServiceDate; // e.g. "As Needed" frequency — nothing to calculate, keep whatever's stored
+  }
+
   let html = `
 
     <div class="card" style="margin-bottom:12px;">
@@ -5307,6 +5321,8 @@ function openPropDetail(id) {
                <div style="font-size:13px;font-weight:700;color:var(--green);margin-top:2px;">${p.frequency||p.customFreq||'Not set'}</div></div>
           <div><div style="font-size:11px;color:var(--text3);letter-spacing:.5px;">LAST SERVICE</div>
                <div style="font-size:13px;font-weight:700;margin-top:2px;">${p.lastServiceDate||'Never'}</div></div>
+          <div><div style="font-size:11px;color:var(--text3);letter-spacing:.5px;">NEXT SERVICE</div>
+               <div id="prop-next-display-${id}" ${state.role==='manager'?`onclick="showNextServiceEditor('${id}')"`:''} style="font-size:13px;font-weight:700;margin-top:2px;color:var(--blue);${state.role==='manager'?'cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px;':''}">${nextDisplay}${state.role==='manager'?' <i class="ti ti-pencil" style="font-size:10px;opacity:.6;"></i>':''}</div></div>
         </div>
         ${p.notes?`<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.2);border-radius:8px;padding:10px;font-size:12px;color:var(--yellow);">📝 ${p.notes}</div>`:''}
       </div>
@@ -5350,10 +5366,8 @@ function openPropDetail(id) {
           </div>
         </div>
         <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">LAST SERVICE DATE</div>
-        <input type="date" class="inp" id="pe-last-${id}" value="${formatDateForInput(p.lastServiceDate)}" oninput="recalcNextServiceInEdit('${id}')" style="color-scheme:dark;background:var(--bg4);color:var(--text);border:1px solid var(--green);"/>
-        <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">NEXT SERVICE DATE</div>
-        <input type="date" class="inp" id="pe-next-${id}" value="${formatDateForInput(p.nextServiceDate)||calculateNextService(p)}" style="color-scheme:dark;background:var(--bg4);color:var(--text);border:1px solid var(--border2);"/>
-        <div style="font-size:11px;color:var(--text4);">&#x1F4A1; Next service recalculates automatically when you change the last service date.</div>
+        <input type="date" class="inp" id="pe-last-${id}" value="${formatDateForInput(p.lastServiceDate)}" style="color-scheme:dark;background:var(--bg4);color:var(--text);border:1px solid var(--green);"/>
+        <div style="font-size:11px;color:var(--text4);">&#x1F4A1; Next service date is calculated automatically from this and your frequency — tap it directly on the Property Info tab if you ever need to override it.</div>
         <button class="btn btn-green" onclick="savePropEdit('${id}')" style="font-size:13px;">Save Changes</button>
         <button class="btn btn-outline" onclick="togglePropEdit('${id}')" style="font-size:13px;">Cancel</button>
 
@@ -5501,22 +5515,19 @@ function savePropEdit(id) {
     p.serviceDays = [];
   }
 
-  // service dates
+  // Last service date — Next Service is deliberately NOT read from a
+  // parallel edit field anymore (that's what caused stale values to get
+  // silently re-saved). It's always force-recalculated here from whatever
+  // Last Service Date + Frequency end up being after this save. Manual
+  // overrides happen only via the tap-to-edit on the Property Info view tab.
   const lastRaw = document.getElementById('pe-last-'+id)?.value;
-  const nextRaw = document.getElementById('pe-next-'+id)?.value;
   if (lastRaw) {
     p.lastServiceDate = parseLocalDate(lastRaw).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-    // auto-calc next from frequency if next not manually set
-    if (!nextRaw && p.frequency) {
-      const days = FREQ_DAYS[p.frequency];
-      if (days) {
-        const next = new Date(parseLocalDate(lastRaw).getTime() + days*24*60*60*1000);
-        p.nextServiceDate = next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-      }
-    }
   }
-  if (nextRaw) {
-    p.nextServiceDate = parseLocalDate(nextRaw).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const freqDays = freqDaysFor(p.frequency);
+  if (p.lastServiceDate && freqDays) {
+    const next = new Date(new Date(p.lastServiceDate).getTime() + freqDays*24*60*60*1000);
+    p.nextServiceDate = next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   }
 
   saveAndSync('properties', p);
@@ -9829,7 +9840,7 @@ function setSchedDay(d) {
 
 function isPropertyDue(p) {
   if (!p.frequency || p.frequency === 'As Needed' || p.frequency === 'Custom') return false;
-  const days = FREQ_DAYS[p.frequency];
+  const days = freqDaysFor(p.frequency);
   if (!days) return false;
   if (!p.lastServiceDate) return true; // never serviced = due
   const last = new Date(p.lastServiceDate);
@@ -10907,27 +10918,52 @@ function formatDateForInput(dateStr) {
   } catch(e) { return ''; }
 }
 
-// Recalculates the Next Service Date field live as soon as Last Service
-// Date changes in the property edit form — previously the field only ever
-// showed whatever was there when the panel opened, and Save would just
-// re-save that stale value since it always looked "filled in" whether or
-// not it actually reflected the new last-service date.
-function recalcNextServiceInEdit(id) {
-  var lastInput = document.getElementById('pe-last-'+id);
-  var nextInput = document.getElementById('pe-next-'+id);
-  var freqSelect = document.getElementById('pe-freq-'+id);
-  if (!lastInput || !nextInput || !lastInput.value) return;
-  var freq = freqSelect ? freqSelect.value : null;
-  var days = freq ? FREQ_DAYS[freq] : null;
-  if (!days) return; // e.g. "As Needed" or no frequency set — nothing to calculate
-  var last = parseLocalDate(lastInput.value);
-  var next = new Date(last.getTime() + days*24*60*60*1000);
-  nextInput.value = formatDateForInput(next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}));
+// Tap-to-edit Next Service Date directly from the property info view — no
+// need to enter Edit mode first. Overriding here is a deliberate one-off
+// (e.g. pushing a date back for weather); the next time an actual service
+// is logged, or Last Service Date changes, auto-calculation takes back over.
+function showNextServiceEditor(id) {
+  var p = state.properties.find(function(x){ return x.id === id; });
+  var el = document.getElementById('prop-next-display-' + id);
+  if (!el || !p) return;
+  var currentVal = formatDateForInput(p.nextServiceDate) || calculateNextService(p);
+  var input = document.createElement('input');
+  input.type = 'date';
+  input.id = 'prop-next-display-' + id;
+  input.className = 'inp';
+  input.value = currentVal;
+  input.style.cssText = 'color-scheme:dark;font-size:13px;padding:5px 8px;margin-top:2px;width:auto;';
+  input.onchange = function() { saveNextServiceOverride(id, this.value); };
+  el.replaceWith(input);
+  input.focus();
+  if (input.showPicker) { try { input.showPicker(); } catch(e) {} }
+}
+
+function saveNextServiceOverride(id, value) {
+  var p = state.properties.find(function(x){ return x.id === id; });
+  if (!p || !value) { openPropDetail(id); return; }
+  p.nextServiceDate = parseLocalDate(value).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  saveAndSync('properties', p);
+  openPropDetail(id);
+  renderProperties();
+  toast('✓ Next service date updated');
+}
+
+// Looks up FREQ_DAYS tolerant of case/whitespace differences in stored data
+// (e.g. older records saved with slightly different casing) — a silent
+// lookup failure here is exactly what would let a stale next-service date
+// survive the self-heal check below without anyone noticing.
+function freqDaysFor(frequency) {
+  if (!frequency) return null;
+  if (FREQ_DAYS[frequency] != null) return FREQ_DAYS[frequency];
+  var norm = String(frequency).trim().toLowerCase();
+  var match = Object.keys(FREQ_DAYS).find(function(k){ return k.toLowerCase() === norm; });
+  return match ? FREQ_DAYS[match] : null;
 }
 
 function calculateNextService(prop) {
   if (!prop) return '';
-  const days = FREQ_DAYS[prop.frequency];
+  const days = freqDaysFor(prop.frequency);
   if (!days) return '';
   const base = prop.lastServiceDate ? new Date(prop.lastServiceDate) : new Date();
   if (isNaN(base.getTime())) return '';
@@ -11856,7 +11892,7 @@ function addCommunityWO() {
     };
     state.workOrders = state.workOrders || [];
     state.workOrders.push(placeholder);
-    save();
+    saveAndSync('workOrders', placeholder); // was save()-only — never reached Firestore, so it vanished on the next live sync
   }
   document.querySelectorAll('.overlay.open').forEach(function(o){o.remove();});
   openCommunityWO(name);
@@ -14421,7 +14457,6 @@ function onPeFreqChange(id, val) {
   var daysEl   = document.getElementById('pe-days-' + id);
   if (customEl) customEl.style.display = val === 'Custom' ? 'block' : 'none';
   if (daysEl)   daysEl.style.display   = val === '2x Per Week' ? 'block' : 'none';
-  recalcNextServiceInEdit(id);
 }
 
 function cwoSetType(t) { document.getElementById('cwo-type-land').className=t==='land'?'pill active':'pill'; document.getElementById('cwo-type-irr').className=t==='irr'?'pill active':'pill'; }
