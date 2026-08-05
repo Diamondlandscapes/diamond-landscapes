@@ -963,6 +963,15 @@ select.inp{cursor:pointer;}
       </div>
 
 
+      <div class="card" id="dash-creq-card" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div class="sec-title" style="margin-bottom:0;">💬 New Customer Requests</div>
+          <button class="btn-sm" onclick="switchTab('customerrequests')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">View All →</button>
+        </div>
+        <div id="dash-creq-alerts"></div>
+      </div>
+
+
       <div class="card" id="dash-sync-card" style="display:none;border:1px solid rgba(210,153,34,.4);">
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:18px;">⚠️</span>
@@ -1061,6 +1070,14 @@ select.inp{cursor:pointer;}
         </div>
       </div>
       <div id="propmap-canvas" style="width:100%;height:calc(100vh - 180px);min-height:400px;border-radius:14px;overflow:hidden;border:1px solid var(--border);"></div>
+    </div>
+
+    <div id="screen-customerrequests" class="screen">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-size:20px;font-weight:800;">Customer Requests</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;" id="creq-filter-pills"></div>
+      <div id="creq-list"></div>
     </div>
 
 
@@ -1382,6 +1399,7 @@ select.inp{cursor:pointer;}
         <input class="inp" id="np-name" placeholder="Customer name"/>
         <input class="inp" id="np-address" placeholder="Address"/>
         <input class="inp" id="np-phone" placeholder="Phone (optional)" type="tel"/>
+        <input class="inp" id="np-email" placeholder="Email (optional — enables customer portal access)" type="email"/>
         <div style="font-size:12px;color:var(--text3);font-weight:700;letter-spacing:1px;">SERVICES</div>
         <div id="np-services" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
         <div style="font-size:12px;color:var(--text3);font-weight:700;letter-spacing:1px;">SERVICE FREQUENCY</div>
@@ -1685,7 +1703,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v29'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v30'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -1709,6 +1727,7 @@ let state = {
   equipment: [],
   workOrders: [],
   attendance: [],
+  customerRequests: [],
   routeWeeks: {},
   eqCategory: 'All',
   routeDay: 'Monday',
@@ -1803,7 +1822,8 @@ function switchTab(tab) {
     properties: renderProperties, propmap: renderPropertyMap, crew: renderCrew, inventory: renderInventory,
     equipment: renderEquipment, reports: renderReports,
     schedule: renderSchedule, 'crew-week': renderCrewWeek, field: renderFieldView,
-    workorders: renderWorkOrders, 'wo-crew': renderCrewWorkOrders, attendance: renderAttendance };
+    workorders: renderWorkOrders, 'wo-crew': renderCrewWorkOrders, attendance: renderAttendance,
+    customerrequests: renderCustomerRequests };
   renders[tab]?.();
 }
 
@@ -2040,6 +2060,7 @@ function applyRole(r) {
     <button class="nb" onclick="switchTab('routes')" data-tab="routes"><span class="ni"><i class="ti ti-route"></i></span><span class="nl">Routes</span></button>
     <button class="nb" onclick="switchTab('schedule')" data-tab="schedule"><span class="ni"><i class="ti ti-calendar-week"></i></span><span class="nl">Schedule</span></button>
     <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni"><i class="ti ti-clipboard-list"></i></span><span class="nl">Work Orders</span></button>
+    <button class="nb" onclick="switchTab('customerrequests')" data-tab="customerrequests"><span class="ni"><i class="ti ti-message-circle-2"></i></span><span class="nl">Customer Requests</span><span class="n-count" id="nav-creq-count"></span></button>
     <div class="nav-group-label" style="margin-top:10px;">Data</div>
     <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni"><i class="ti ti-home"></i></span><span class="nl">Properties</span><span class="n-count" id="nav-prop-count"></span></button>
     <button class="nb" onclick="switchTab('propmap')" data-tab="propmap"><span class="ni"><i class="ti ti-map-pin"></i></span><span class="nl">Property Map</span></button>
@@ -2129,6 +2150,28 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
       if (detail) detail.textContent = pendingQueue.length + ' change' + (pendingQueue.length>1?'s':'') + ' saved on this device but not yet on the server — will retry automatically when back online.';
     } else {
       syncCard.style.display = 'none';
+    }
+  }
+
+  // New customer request alerts
+  var creqCard = document.getElementById('dash-creq-card');
+  if (creqCard) {
+    var newReqs = (state.customerRequests||[]).filter(function(r){ return r.status==='new'; });
+    if (newReqs.length) {
+      creqCard.style.display = '';
+      var creqEl = document.getElementById('dash-creq-alerts');
+      if (creqEl) {
+        var typeIcons = { issue:'🚩', estimate:'💰', other:'💬' };
+        creqEl.innerHTML = newReqs.slice(0,5).map(function(r) {
+          var prop = (state.properties||[]).find(function(p){ return p.id === r.propId; });
+          return '<div class="card-flat" style="margin-bottom:6px;cursor:pointer;" onclick="switchTab(\'customerrequests\')">'
+            + '<div style="font-weight:700;font-size:13px;">' + (typeIcons[r.type]||'💬') + ' ' + (prop?prop.name:'Unknown') + '</div>'
+            + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">' + (r.description||'').slice(0,80) + '</div>'
+          + '</div>';
+        }).join('') + (newReqs.length > 5 ? '<div style="font-size:11px;color:var(--text4);text-align:center;margin-top:4px;">+' + (newReqs.length-5) + ' more</div>' : '');
+      }
+    } else {
+      creqCard.style.display = 'none';
     }
   }
 
@@ -5277,6 +5320,7 @@ function openPropDetail(id) {
         <input class="inp" id="pe-name-${id}" value="${p.name||''}" placeholder="Customer name"/>
         <input class="inp" id="pe-address-${id}" value="${p.address||''}" placeholder="Address"/>
         <input class="inp" id="pe-phone-${id}" value="${p.phone||''}" placeholder="Phone" type="tel"/>
+        <input class="inp" id="pe-email-${id}" value="${p.email||''}" placeholder="Email (enables customer portal access)" type="email"/>
         <textarea class="inp" id="pe-notes-${id}" rows="2" placeholder="Notes (gate code, dog, etc.)">${p.notes||''}</textarea>
         <div>
           <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;">MONTHLY RATE ($)</div>
@@ -5444,6 +5488,7 @@ function savePropEdit(id) {
   p.name       = document.getElementById('pe-name-'+id)?.value.trim()    || p.name;
   p.address    = document.getElementById('pe-address-'+id)?.value.trim() || '';
   p.phone      = document.getElementById('pe-phone-'+id)?.value.trim()   || '';
+  p.email      = (document.getElementById('pe-email-'+id)?.value || '').trim().toLowerCase();
   p.notes      = document.getElementById('pe-notes-'+id)?.value          || '';
   p.monthlyRate= parseFloat(document.getElementById('pe-rate-'+id)?.value) || 0;
   p.frequency  = document.getElementById('pe-freq-'+id)?.value           || '';
@@ -6195,12 +6240,25 @@ function submitMgrResolve(flagId, propId) {
 function openAddProperty() {
   // build service checkboxes
   document.getElementById('np-services').innerHTML = SERVICES.map(s =>
-    `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 10px;background:var(--bg4);border-radius:8px;border:1px solid var(--border2);">
-      <input type="checkbox" value="${s}" style="width:16px;height:16px;accent-color:var(--green);cursor:pointer;"/>
+    `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 10px;background:var(--bg4);border-radius:8px;border:1px solid var(--border2);transition:background .15s,border-color .15s;">
+      <input type="checkbox" value="${s}" style="width:16px;height:16px;accent-color:var(--green);cursor:pointer;" onchange="updateServiceCheckLabel(this)"/>
       <span style="font-size:12px;font-weight:600;">${s}</span>
     </label>`
   ).join('');
   openOverlay('add-prop-overlay');
+}
+
+// Toggles the visible highlight on a service checkbox's label — checkboxes
+// alone gave no visual feedback that a service had actually been selected.
+function updateServiceCheckLabel(input) {
+  var label = input.parentElement;
+  if (input.checked) {
+    label.style.background = 'rgba(63,185,80,.14)';
+    label.style.borderColor = 'var(--green)';
+  } else {
+    label.style.background = 'var(--bg4)';
+    label.style.borderColor = 'var(--border2)';
+  }
 }
 
 function saveProperty() {
@@ -6210,6 +6268,7 @@ function saveProperty() {
   const services = [...document.querySelectorAll('#np-services input:checked')].map(i => i.value);
   const newProp = { id: uid(), name, address,
     phone: document.getElementById('np-phone').value,
+    email: (document.getElementById('np-email').value || '').trim().toLowerCase(),
     notes: document.getElementById('np-notes').value, services };
   state.properties.push(newProp);
   saveAndSync('properties', newProp); closeOverlay('add-prop-overlay');
@@ -8435,6 +8494,7 @@ function signOut() {
     <button class="nb" onclick="switchTab('equipment')" data-tab="equipment"><span class="ni">🔧</span><span class="nl">Equipment</span></button>
     <button class="nb" onclick="switchTab('reports')" data-tab="reports"><span class="ni">📊</span><span class="nl">Reports</span></button>
     <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
+    <button class="nb" onclick="switchTab('customerrequests')" data-tab="customerrequests"><span class="ni">💬</span><span class="nl">Customer Requests</span></button>
     <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni">📅</span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
@@ -8676,7 +8736,7 @@ function gsLoad() {
 
           // Start live listeners — critical first, then defer secondary
           var CRITICAL = ['crew','routes','flags'];
-          var SECONDARY = ['properties','workOrders','inventory','equipment','attendance'];
+          var SECONDARY = ['properties','workOrders','inventory','equipment','attendance','customerRequests'];
           CRITICAL.forEach(function(name) { _listenCollection(name); });
           // Defer secondary collections by 800ms so UI loads fast
           setTimeout(function() {
@@ -8692,7 +8752,7 @@ function gsLoad() {
           var cachedHash = localStorage.getItem('dl_pin_hash_cache');
           if (cachedHash) _managerPinHash = cachedHash;
           var CRITICAL = ['crew','routes','flags'];
-          var SECONDARY = ['properties','workOrders','inventory','equipment','attendance'];
+          var SECONDARY = ['properties','workOrders','inventory','equipment','attendance','customerRequests'];
           CRITICAL.forEach(function(name) { _listenCollection(name); });
           setTimeout(function() {
             SECONDARY.forEach(function(name) { _listenCollection(name); });
@@ -9296,6 +9356,7 @@ const MANAGER_MENU = [
   { tab:'reports',   icon:'📊', label:'Reports' },
   { tab:'schedule',  icon:'📅', label:'Schedule' },
   { tab:'workorders', icon:'📋', label:'Work Orders' },
+  { tab:'customerrequests', icon:'💬', label:'Customer Requests' },
   { tab:'attendance',  icon:'📅', label:'Attendance' },
 ];
 const CREW_MENU = [
@@ -9333,6 +9394,7 @@ function buildDrawerItems(menuItems, activeTab) {
   const iconMap = {
     'dashboard':  'ti-layout-dashboard', 'routes':     'ti-route',
     'schedule':   'ti-calendar-week',    'workorders': 'ti-clipboard-list',
+    'customerrequests': 'ti-message-circle-2',
     'properties': 'ti-home',             'propmap':    'ti-map-pin',
     'crew':       'ti-users',
     'inventory':  'ti-package',          'equipment':  'ti-tool',
@@ -9354,7 +9416,7 @@ function buildDrawerItems(menuItems, activeTab) {
     // so the mobile drawer and desktop nav look consistent, not like two different apps.
     var groups = [
       { label: 'Overview',  tabs: ['dashboard'] },
-      { label: 'Operations',tabs: ['routes','schedule','workorders'] },
+      { label: 'Operations',tabs: ['routes','schedule','workorders','customerrequests'] },
       { label: 'Data',      tabs: ['properties','propmap','crew','inventory','equipment'] },
       { label: 'Reporting', tabs: ['reports','attendance'] },
     ];
@@ -11309,6 +11371,79 @@ function moveStop(routeId, propId, dir) {
 const WO_TYPES = { landscape: '🌿 Landscaping', irrigation: '💧 Irrigation' };
 
 // ── Manager: main Work Orders screen ─────────────────────────────────────────
+// ─── CUSTOMER REQUESTS (manager) ─────────────────────────────────────────
+// Requests submitted by clients through the customer portal (separate page,
+// portal/index.html). This is the manager-side review/action screen.
+var _creqFilter = 'new'; // 'new' | 'reviewed' | 'resolved' | 'all'
+
+function renderCustomerRequests() {
+  var pillsEl = document.getElementById('creq-filter-pills');
+  var listEl  = document.getElementById('creq-list');
+  if (!listEl) return;
+
+  var all = state.customerRequests || [];
+  var counts = {
+    new: all.filter(function(r){return r.status==='new';}).length,
+    reviewed: all.filter(function(r){return r.status==='reviewed';}).length,
+    resolved: all.filter(function(r){return r.status==='resolved';}).length,
+  };
+
+  if (pillsEl) {
+    var pills = [
+      {key:'new', label:'New', count:counts.new},
+      {key:'reviewed', label:'Reviewed', count:counts.reviewed},
+      {key:'resolved', label:'Resolved', count:counts.resolved},
+      {key:'all', label:'All', count:all.length},
+    ];
+    pillsEl.innerHTML = pills.map(function(p){
+      return '<button class="pill' + (_creqFilter===p.key?' active':'') + '" onclick="_creqFilter=\'' + p.key + '\';renderCustomerRequests()">' + p.label + ' (' + p.count + ')</button>';
+    }).join('');
+  }
+
+  var filtered = _creqFilter==='all' ? all.slice() : all.filter(function(r){return r.status===_creqFilter;});
+  filtered.sort(function(a,b){ return new Date(b.createdAt||0) - new Date(a.createdAt||0); });
+
+  if (!filtered.length) {
+    listEl.innerHTML = '<div class="card" style="text-align:center;padding:32px;color:var(--text4);font-size:13px;">No ' + (_creqFilter==='all'?'':_creqFilter+' ') + 'requests</div>';
+    return;
+  }
+
+  var typeIcons = { issue:'🚩', estimate:'💰', other:'💬' };
+  var typeLabels = { issue:'Issue Report', estimate:'Estimate Request', other:'Other' };
+
+  listEl.innerHTML = filtered.map(function(r) {
+    var prop = (state.properties||[]).find(function(p){ return p.id === r.propId; });
+    var statusColor = r.status==='new' ? 'red' : (r.status==='reviewed' ? 'yellow' : 'green');
+    return '<div class="card" style="margin-bottom:10px;border-left:3px solid var(--' + statusColor + ');">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
+        + '<div>'
+          + '<div style="font-weight:800;font-size:14px;">' + (typeIcons[r.type]||'💬') + ' ' + (typeLabels[r.type]||'Request') + '</div>'
+          + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">' + (prop?prop.name:'Unknown property') + (prop&&prop.address?' · '+prop.address:'') + '</div>'
+        + '</div>'
+        + '<span class="badge badge-' + statusColor + '">' + r.status.toUpperCase() + '</span>'
+      + '</div>'
+      + '<div style="font-size:13px;color:var(--text2);margin-bottom:8px;line-height:1.5;">' + (r.description||'') + '</div>'
+      + (r.photo ? '<img src="' + r.photo + '" referrerpolicy="no-referrer" style="width:100%;border-radius:8px;max-height:220px;object-fit:cover;margin-bottom:8px;cursor:zoom-in;" onclick="openPhoto(\'' + r.photo + '\',\'Customer Request\')"/>' : '')
+      + '<div style="font-size:11px;color:var(--text4);margin-bottom:10px;">' + (r.customerEmail||'') + ' · ' + fmtWODate(r.createdAt||'') + '</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+        + (r.status==='new' ? '<button class="btn-sm" onclick="markCreqStatus(\''+r.id+'\',\'reviewed\')" style="background:rgba(210,153,34,.15);color:var(--yellow);border:1px solid rgba(210,153,34,.3);">Mark Reviewed</button>' : '')
+        + (r.status!=='resolved' ? '<button class="btn-sm btn-green" onclick="markCreqStatus(\''+r.id+'\',\'resolved\')">✓ Mark Resolved</button>' : '<button class="btn-sm" onclick="markCreqStatus(\''+r.id+'\',\'new\')" style="background:var(--bg4);color:var(--text3);border:1px solid var(--border2);">↩ Reopen</button>')
+        + (prop ? '<button class="btn-sm" onclick="switchTab(\'properties\');setTimeout(function(){var s=document.getElementById(\'prop-search\');if(s){s.value=\''+(prop.name||'').replace(/'/g,"\\'")+'\';renderProperties();}},50);" style="background:rgba(96,165,250,.12);color:var(--blue);border:1px solid rgba(96,165,250,.3);">View Property</button>' : '')
+      + '</div>'
+    + '</div>';
+  }).join('');
+}
+
+function markCreqStatus(id, status) {
+  var r = (state.customerRequests||[]).find(function(x){ return x.id === id; });
+  if (!r) return;
+  r.status = status;
+  r[status + 'At'] = new Date().toISOString();
+  saveAndSync('customerRequests', r);
+  renderCustomerRequests();
+  renderDashboard();
+}
+
 function renderWorkOrders() {
   const el = document.getElementById('wo-community-list');
   if (!el) return;
