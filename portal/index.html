@@ -294,6 +294,36 @@ window.switchProperty = function(idx) {
   showMainScreen();
 };
 
+// Same frequency-to-days mapping as the main app, and the same tolerant
+// lookup (case/whitespace differences in stored data shouldn't silently
+// break the calculation).
+const FREQ_DAYS = {
+  'Weekly': 7, '2x Per Week': 3, 'Bi-Weekly': 14,
+  'Monthly': 30, '2x Per Month': 15, 'Quarterly': 90, 'As Needed': null
+};
+function freqDaysFor(frequency) {
+  if (!frequency) return null;
+  if (FREQ_DAYS[frequency] != null) return FREQ_DAYS[frequency];
+  var norm = String(frequency).trim().toLowerCase();
+  var match = Object.keys(FREQ_DAYS).find(function(k){ return k.toLowerCase() === norm; });
+  return match ? FREQ_DAYS[match] : null;
+}
+
+// Next service is always force-recalculated from Last Service + Frequency
+// for display, the same way the manager's Property tab does — never just
+// trusting whatever's stored, since that field only gets refreshed when a
+// manager happens to open that specific property in the main app. Without
+// this, the portal would show whatever stale date was last saved, which is
+// exactly what was happening before this fix.
+function calculateNextServiceDate(prop) {
+  var days = freqDaysFor(prop.frequency);
+  if (!days) return prop.nextServiceDate || ''; // e.g. "As Needed" — nothing to calculate
+  var base = prop.lastServiceDate ? new Date(prop.lastServiceDate) : new Date();
+  if (isNaN(base.getTime())) return prop.nextServiceDate || '';
+  var next = new Date(base.getTime() + days * 24*60*60*1000);
+  return next.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+}
+
 function showMainScreen() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('main-screen').style.display = 'block';
@@ -310,8 +340,17 @@ function showMainScreen() {
     switcherBtn.style.display = 'none';
   }
 
-  document.getElementById('hero-next-date').textContent = currentProp.nextServiceDate || 'Not scheduled yet';
+  var freshNextDate = calculateNextServiceDate(currentProp);
+  document.getElementById('hero-next-date').textContent = freshNextDate || 'Not scheduled yet';
   document.getElementById('hero-frequency').textContent = currentProp.frequency ? (currentProp.frequency + ' service') : '';
+
+  // Self-heal, same as the main app: if what we just calculated differs from
+  // what's stored, quietly correct it in Firestore so it's right everywhere
+  // (including the manager's Property tab) without anyone having to open it.
+  if (freshNextDate && freshNextDate !== currentProp.nextServiceDate) {
+    currentProp.nextServiceDate = freshNextDate;
+    setDoc(doc(db, 'properties', currentProp.id), { nextServiceDate: freshNextDate }, { merge: true }).catch(function(e){ console.warn('Could not self-heal next service date:', e.message); });
+  }
 
   document.getElementById('info-email').textContent = currentProp.email || '';
   document.getElementById('info-phone').textContent = currentProp.phone || 'No phone on file';
