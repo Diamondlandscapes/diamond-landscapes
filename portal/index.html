@@ -65,7 +65,11 @@
   .toast.show{ opacity:1; }
   .star{ font-size:34px; cursor:pointer; color:var(--border2); transition:color .1s; }
   .star.on{ color:var(--yellow); }
-  @media (min-width:768px){ .wrap{ padding-top:32px; } }
+  @media (min-width:768px){
+    .wrap{ padding-top:32px; }
+    .overlay{ align-items:center; }
+    .sheet{ width:480px; border-radius:20px; max-height:85vh; }
+  }
 </style>
 </head>
 <body>
