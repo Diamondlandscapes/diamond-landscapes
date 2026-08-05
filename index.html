@@ -681,6 +681,12 @@ select.inp{cursor:pointer;}
   transition: color .15s;
 }
 .drawer-item.active .d-label { color: var(--green); }
+.drawer-group-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.6px;
+  color: var(--text3); text-transform: uppercase;
+  opacity: .55; padding: 14px 14px 4px;
+}
+.drawer-group-label:first-child { padding-top: 4px; }
 .drawer-item .d-badge {
   margin-left: auto;
   background: var(--red);
@@ -1663,7 +1669,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v22'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v23'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -9193,19 +9199,40 @@ function buildDrawerItems(menuItems, activeTab) {
   const iconMap = {
     'dashboard':  'ti-layout-dashboard', 'routes':     'ti-route',
     'schedule':   'ti-calendar-week',    'workorders': 'ti-clipboard-list',
-    'properties': 'ti-home',             'crew':       'ti-users',
+    'properties': 'ti-home',             'propmap':    'ti-map-pin',
+    'crew':       'ti-users',
     'inventory':  'ti-package',          'equipment':  'ti-tool',
     'reports':    'ti-chart-bar',        'attendance': 'ti-calendar-check',
     'field':      'ti-clipboard-list',   'crew-week':  'ti-calendar-week',
     'wo-crew':    'ti-clipboard-check'
   };
 
-  let html = menuItems.map(m => {
+  function itemBtn(m) {
     var icon = iconMap[m.tab] || 'ti-circle';
     return '<button class="drawer-item ' + (m.tab === activeTab ? 'active' : '') + '" onclick="drawerNav(\'' + m.tab + '\')">' +
       '<span class="d-icon"><i class="ti ' + icon + '" style="font-size:17px;"></i></span>' +
       '<span class="d-label">' + m.label + '</span></button>';
-  }).join('');
+  }
+
+  let html;
+  if (isManager) {
+    // Same grouping as the desktop sidebar (Overview / Operations / Data / Reporting)
+    // so the mobile drawer and desktop nav look consistent, not like two different apps.
+    var groups = [
+      { label: 'Overview',  tabs: ['dashboard'] },
+      { label: 'Operations',tabs: ['routes','schedule','workorders'] },
+      { label: 'Data',      tabs: ['properties','propmap','crew','inventory','equipment'] },
+      { label: 'Reporting', tabs: ['reports','attendance'] },
+    ];
+    var byTab = {}; menuItems.forEach(function(m){ byTab[m.tab] = m; });
+    html = groups.map(function(g) {
+      var items = g.tabs.map(function(t){ return byTab[t]; }).filter(Boolean);
+      if (!items.length) return '';
+      return '<div class="drawer-group-label">' + g.label + '</div>' + items.map(itemBtn).join('');
+    }).join('');
+  } else {
+    html = menuItems.map(itemBtn).join('');
+  }
 
   html += '<div style="height:1px;background:var(--border);margin:8px 4px;"></div>';
   if (isManager) {
