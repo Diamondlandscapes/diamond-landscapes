@@ -1703,7 +1703,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v35'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v36'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -2633,6 +2633,7 @@ function openRouteDetail(id) {
   html += `</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
       <div style="font-size:14px;font-weight:700;">STOPS (${stops.length})</div>
+      ${state.role==='manager' && stops.length ? `<button class="btn-sm" onclick="openBulkMonthlyPattern('${r.id}')" style="background:rgba(163,230,53,.12);color:var(--lime);border:1px solid rgba(163,230,53,.3);">📅 Set Monthly Pattern</button>` : ''}
     </div>`;
     // Add Stop card — manager only
     if (state.role === 'manager') {
@@ -5368,6 +5369,20 @@ function openPropDetail(id) {
             }).join('')}
           </div>
         </div>
+        <div id="pe-monthly-${id}" style="display:${p.frequency==='2x Per Month'?'block':'none'};margin-bottom:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:10px;">
+          <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">MONTHLY PATTERN <span style="font-weight:400;color:var(--text4);">(optional — leave off to just estimate every ~15 days)</span></div>
+          <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <select class="inp" id="pe-monthly-weekday-${id}" style="flex:1;">
+              <option value="">— No set day —</option>
+              ${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(d=>`<option value="${d}" ${p.monthlyWeekday===d?'selected':''}>${d}</option>`).join('')}
+            </select>
+            <select class="inp" id="pe-monthly-occ-${id}" style="flex:1;">
+              <option value="1,3" ${!p.monthlyOccurrences||(p.monthlyOccurrences.join(',')==='1,3')?'selected':''}>1st &amp; 3rd</option>
+              <option value="2,4" ${p.monthlyOccurrences&&p.monthlyOccurrences.join(',')==='2,4'?'selected':''}>2nd &amp; 4th</option>
+            </select>
+          </div>
+          <div style="font-size:11px;color:var(--text4);">e.g. "Monday, 1st &amp; 3rd" = serviced the 1st and 3rd Monday of every month — handles 5-Monday months correctly instead of drifting off a flat day-count.</div>
+        </div>
         <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">LAST SERVICE DATE</div>
         <input type="date" class="inp" id="pe-last-${id}" value="${formatDateForInput(p.lastServiceDate)}" style="color-scheme:dark;background:var(--bg4);color:var(--text);border:1px solid var(--green);"/>
         <div style="font-size:11px;color:var(--text4);">&#x1F4A1; Next service date is calculated automatically from this and your frequency — tap it directly on the Property Info tab if you ever need to override it.</div>
@@ -5518,19 +5533,33 @@ function savePropEdit(id) {
     p.serviceDays = [];
   }
 
+  // Monthly weekday pattern (e.g. "1st & 3rd Monday") — only applies to 2x
+  // Per Month, and only when a day is actually chosen; cleared otherwise so
+  // switching frequency away doesn't leave a stale pattern quietly affecting
+  // the calculation later.
+  if (p.frequency === '2x Per Month') {
+    const monthlyWeekday = document.getElementById('pe-monthly-weekday-'+id)?.value || '';
+    const monthlyOccRaw  = document.getElementById('pe-monthly-occ-'+id)?.value || '';
+    p.monthlyWeekday = monthlyWeekday || '';
+    p.monthlyOccurrences = monthlyWeekday && monthlyOccRaw ? monthlyOccRaw.split(',').map(Number) : [];
+  } else {
+    p.monthlyWeekday = '';
+    p.monthlyOccurrences = [];
+  }
+
   // Last service date — Next Service is deliberately NOT read from a
   // parallel edit field anymore (that's what caused stale values to get
   // silently re-saved). It's always force-recalculated here from whatever
-  // Last Service Date + Frequency end up being after this save. Manual
-  // overrides happen only via the tap-to-edit on the Property Info view tab.
+  // Last Service Date + Frequency (+ monthly pattern, if set) end up being
+  // after this save. Manual overrides happen only via the tap-to-edit on
+  // the Property Info view tab.
   const lastRaw = document.getElementById('pe-last-'+id)?.value;
   if (lastRaw) {
     p.lastServiceDate = parseLocalDate(lastRaw).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   }
-  const freqDays = freqDaysFor(p.frequency);
-  if (p.lastServiceDate && freqDays) {
-    const next = new Date(new Date(p.lastServiceDate).getTime() + freqDays*24*60*60*1000);
-    p.nextServiceDate = next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const calcNext = calculateNextService(p); // yyyy-mm-dd, or '' — handles both the weekday pattern and the flat-day fallback
+  if (calcNext) {
+    p.nextServiceDate = parseLocalDate(calcNext).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   }
 
   saveAndSync('properties', p);
@@ -10952,6 +10981,41 @@ function saveNextServiceOverride(id, value) {
   toast('✓ Next service date updated');
 }
 
+// ── Weekday-pattern scheduling (e.g. "1st & 3rd Monday") ──────────────────
+// A flat day-count (e.g. "every 15 days") drifts off a real weekday pattern
+// whenever a month has 5 of that weekday — the gap between the 3rd and the
+// following month's 1st occurrence isn't always 15 days. This computes the
+// actual calendar date instead of estimating from an interval.
+var WEEKDAY_NUM = {'Sunday':0,'Monday':1,'Tuesday':2,'Wednesday':3,'Thursday':4,'Friday':5,'Saturday':6};
+
+// The date of the nth (1-4) occurrence of a weekday in a given month.
+// Every weekday occurs at least 4 times in every month, so n 1-4 is always safe.
+function nthWeekdayOfMonth(year, month, weekdayNum, n) {
+  var firstOfMonth = new Date(year, month, 1);
+  var offset = (weekdayNum - firstOfMonth.getDay() + 7) % 7;
+  return new Date(year, month, 1 + offset + (n - 1) * 7);
+}
+
+// Given a last-service date and a pattern like Monday + [1,3], finds the
+// next real calendar date matching that pattern — checking the rest of the
+// current month first, then rolling into the next month if none remain.
+function nextServiceFromMonthlyPattern(lastServiceDate, weekdayName, occurrences) {
+  var weekdayNum = WEEKDAY_NUM[weekdayName];
+  if (weekdayNum == null || !occurrences || !occurrences.length) return null;
+  var sortedOcc = occurrences.slice().sort(function(a,b){ return a - b; });
+  var last = lastServiceDate instanceof Date ? lastServiceDate : new Date(lastServiceDate);
+  if (isNaN(last.getTime())) last = new Date();
+  var year = last.getFullYear(), month = last.getMonth();
+
+  for (var i = 0; i < sortedOcc.length; i++) {
+    var candidate = nthWeekdayOfMonth(year, month, weekdayNum, sortedOcc[i]);
+    if (candidate > last) return candidate;
+  }
+  month += 1;
+  if (month > 11) { month = 0; year += 1; }
+  return nthWeekdayOfMonth(year, month, weekdayNum, sortedOcc[0]);
+}
+
 // Looks up FREQ_DAYS tolerant of case/whitespace differences in stored data
 // (e.g. older records saved with slightly different casing) — a silent
 // lookup failure here is exactly what would let a stale next-service date
@@ -10964,14 +11028,118 @@ function freqDaysFor(frequency) {
   return match ? FREQ_DAYS[match] : null;
 }
 
+// ── Bulk monthly-pattern assignment (from Route detail) ─────────────────
+// Lets a manager assign "1st & 3rd" or "2nd & 4th [weekday]" to several
+// properties on a route at once, instead of one-by-one in each property's
+// edit form. Weekday auto-fills from the route's own day since that's
+// already established — the manager is really just confirming the week
+// pattern, not re-entering everything.
+function openBulkMonthlyPattern(routeId) {
+  var r = state.routes.find(function(x){ return x.id === routeId; });
+  if (!r) return;
+  var stops = (r.stops || []).map(function(s) {
+    return { s: s, prop: (state.properties||[]).find(function(p){ return p.id === s.propId; }) };
+  }).filter(function(x){ return x.prop; });
+
+  var monthlyStops = stops.filter(function(x){ return x.prop.frequency === '2x Per Month'; });
+  var otherStops = stops.filter(function(x){ return x.prop.frequency !== '2x Per Month'; });
+
+  var ex = document.getElementById('bulk-monthly-sheet'); if (ex) ex.remove();
+  var sheet = document.createElement('div');
+  sheet.id = 'bulk-monthly-sheet';
+  sheet.className = 'custom-sheet-backdrop';
+  sheet.style.cssText = 'position:fixed;inset:0;z-index:5500;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
+  sheet.addEventListener('click', function(e){ if (e.target === sheet) sheet.remove(); });
+
+  var html = '<div class="custom-sheet" style="width:100%;max-width:480px;background:var(--bg2);border:1px solid var(--border);border-radius:20px 20px 0 0;padding:20px 16px calc(20px + var(--safe-bottom));max-height:85vh;overflow-y:auto;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+      + '<div style="font-size:16px;font-weight:800;">📅 Set Monthly Pattern</div>'
+      + '<button onclick="document.getElementById(\'bulk-monthly-sheet\').remove()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;width:28px;height:28px;color:var(--text2);cursor:pointer;">✕</button>'
+    + '</div>'
+    + '<div style="font-size:12px;color:var(--text3);margin-bottom:16px;">For properties on <strong>' + r.name + '</strong> billed "2x Per Month" — assigns which two weeks they\'re actually serviced, so next-service dates stay accurate even in 5-' + (r.day||'week') + ' months.</div>';
+
+  html += '<div style="display:flex;gap:8px;margin-bottom:16px;">'
+    + '<div style="flex:1;">'
+      + '<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">WEEKDAY</div>'
+      + '<select class="inp" id="bulk-monthly-weekday">'
+        + ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(function(d){
+            return '<option value="' + d + '"' + (r.day===d?' selected':'') + '>' + d + '</option>';
+          }).join('')
+      + '</select>'
+    + '</div>'
+    + '<div style="flex:1;">'
+      + '<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">OCCURRENCES</div>'
+      + '<select class="inp" id="bulk-monthly-occ">'
+        + '<option value="1,3">1st &amp; 3rd</option>'
+        + '<option value="2,4">2nd &amp; 4th</option>'
+      + '</select>'
+    + '</div>'
+  + '</div>';
+
+  if (monthlyStops.length) {
+    html += '<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:8px;">APPLY TO (2x Per Month properties on this route)</div>';
+    monthlyStops.forEach(function(x) {
+      var p = x.prop;
+      var checked = true;
+      html += '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;margin-bottom:6px;cursor:pointer;">'
+        + '<input type="checkbox" class="bulk-monthly-prop" value="' + p.id + '" ' + (checked?'checked':'') + ' style="width:18px;height:18px;accent-color:var(--green);flex-shrink:0;"/>'
+        + '<div style="min-width:0;">'
+          + '<div style="font-size:13px;font-weight:700;">' + p.name + (p.monthlyWeekday ? ' <span style="font-size:10px;font-weight:400;color:var(--text4);">(currently: ' + p.monthlyWeekday + ' ' + (p.monthlyOccurrences||[]).join('/') + ')</span>' : '') + '</div>'
+          + '<div style="font-size:11px;color:var(--text3);">' + (p.address||'') + '</div>'
+        + '</div>'
+      + '</label>';
+    });
+  } else {
+    html += '<div style="font-size:12px;color:var(--text4);text-align:center;padding:16px 0;">No "2x Per Month" properties on this route.</div>';
+  }
+
+  if (otherStops.length) {
+    html += '<div style="font-size:11px;color:var(--text4);margin-top:10px;">' + otherStops.length + ' other stop' + (otherStops.length>1?'s':'') + ' on this route (not billed 2x Per Month) not shown — this pattern only applies to that frequency.</div>';
+  }
+
+  html += '<button class="btn btn-green" style="width:100%;margin-top:16px;" onclick="applyBulkMonthlyPattern(\'' + routeId + '\')" ' + (!monthlyStops.length?'disabled style="opacity:.4;"':'') + '>Apply to Selected</button>';
+  html += '</div>';
+
+  sheet.innerHTML = html;
+  document.body.appendChild(sheet);
+}
+
+function applyBulkMonthlyPattern(routeId) {
+  var weekday = document.getElementById('bulk-monthly-weekday').value;
+  var occ = document.getElementById('bulk-monthly-occ').value.split(',').map(Number);
+  var checked = Array.from(document.querySelectorAll('.bulk-monthly-prop:checked')).map(function(el){ return el.value; });
+  if (!checked.length) { toast('Select at least one property'); return; }
+
+  checked.forEach(function(propId) {
+    var p = (state.properties||[]).find(function(x){ return x.id === propId; });
+    if (!p) return;
+    p.monthlyWeekday = weekday;
+    p.monthlyOccurrences = occ;
+    var calcNext = calculateNextService(p);
+    if (calcNext) p.nextServiceDate = parseLocalDate(calcNext).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    saveAndSync('properties', p);
+  });
+
+  document.getElementById('bulk-monthly-sheet')?.remove();
+  renderProperties();
+  toast('✓ Pattern applied to ' + checked.length + ' propert' + (checked.length>1?'ies':'y'));
+}
+
 function calculateNextService(prop) {
   if (!prop) return '';
+  var base = prop.lastServiceDate ? new Date(prop.lastServiceDate) : new Date();
+  if (isNaN(base.getTime())) return '';
+  // Precise weekday-pattern math when configured (e.g. "1st & 3rd Monday") —
+  // only used when a property actually has this set; everything else keeps
+  // using the flat day-count estimate exactly as before.
+  if (prop.frequency === '2x Per Month' && prop.monthlyWeekday && prop.monthlyOccurrences && prop.monthlyOccurrences.length) {
+    var next = nextServiceFromMonthlyPattern(base, prop.monthlyWeekday, prop.monthlyOccurrences);
+    if (next) return formatDateForInput(next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}));
+  }
   const days = freqDaysFor(prop.frequency);
   if (!days) return '';
-  const base = prop.lastServiceDate ? new Date(prop.lastServiceDate) : new Date();
-  if (isNaN(base.getTime())) return '';
-  const next = new Date(base.getTime() + days * 24*60*60*1000);
-  return formatDateForInput(next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}));
+  const flatNext = new Date(base.getTime() + days * 24*60*60*1000);
+  return formatDateForInput(flatNext.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}));
 }
 
 function updateStopServiceDate(routeId, propId, type, value) {
@@ -14470,10 +14638,12 @@ function togglePeDay(id, btn, day) {
 }
 
 function onPeFreqChange(id, val) {
-  var customEl = document.getElementById('pe-custom-' + id);
-  var daysEl   = document.getElementById('pe-days-' + id);
-  if (customEl) customEl.style.display = val === 'Custom' ? 'block' : 'none';
-  if (daysEl)   daysEl.style.display   = val === '2x Per Week' ? 'block' : 'none';
+  var customEl  = document.getElementById('pe-custom-' + id);
+  var daysEl    = document.getElementById('pe-days-' + id);
+  var monthlyEl = document.getElementById('pe-monthly-' + id);
+  if (customEl)  customEl.style.display  = val === 'Custom' ? 'block' : 'none';
+  if (daysEl)    daysEl.style.display    = val === '2x Per Week' ? 'block' : 'none';
+  if (monthlyEl) monthlyEl.style.display = val === '2x Per Month' ? 'block' : 'none';
 }
 
 function cwoSetType(t) { document.getElementById('cwo-type-land').className=t==='land'?'pill active':'pill'; document.getElementById('cwo-type-irr').className=t==='irr'?'pill active':'pill'; }
