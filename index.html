@@ -1685,7 +1685,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v28'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v29'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -1770,6 +1770,13 @@ function toast(msg='✓ Saved') {
 
 // ─── TABS ─────────────────────────────────────────────────────────────────
 function switchTab(tab) {
+  // Leaving Work Orders resets the community selection, so coming back
+  // always starts at "pick a community" instead of remembering the last one.
+  if (state.currentTab === 'wo-crew' && tab !== 'wo-crew') {
+    window._crewWOSelectedCommunity = '';
+    window._crewWOVillage = '';
+    window._crewWOType = '';
+  }
   state.currentTab = tab;
   // Clear any existing crew status refresh
   if (window._crewStatusInterval) { clearInterval(window._crewStatusInterval); window._crewStatusInterval = null; }
