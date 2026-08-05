@@ -1652,7 +1652,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v20'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v21'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -5437,7 +5437,7 @@ function openAddFlag(propId) {
         <label class="photo-zone" for="flag-photo-input">
           <div style="font-size:28px;margin-bottom:6px;">📷</div>
           <div style="font-size:13px;color:var(--text3);">Tap to take/choose photo</div>
-          <input type="file" id="flag-photo-input" accept="image/*" style="display:none;" onchange="previewFlagPhoto(this)"/>
+          <input type="file" id="flag-photo-input" accept="image/*" style="display:none;"/>
         </label>
         <img id="flag-photo-preview" style="display:none;width:100%;border-radius:10px;margin-top:8px;max-height:200px;object-fit:cover;"/>
       </div>
@@ -5448,58 +5448,30 @@ function openAddFlag(propId) {
   </div>`;
   document.body.appendChild(sheet);
 
-  // Wire photo input AFTER DOM is ready - same pattern as WO completion
+  // Wire photo input AFTER DOM is ready - same single-pass pattern as
+  // completion photos (readFileAsDataUrl -> compressPhoto -> done, no
+  // re-compression later). Preview only appears once compression finishes,
+  // so there's no race where Submit could fire before the photo is ready.
   var flagPhotoInput = document.getElementById('flag-photo-input');
   if (flagPhotoInput) {
     flagPhotoInput.onchange = function() {
       var file = this.files[0];
       if (!file) return;
+      var preview = document.getElementById('flag-photo-preview');
+      var zone = document.getElementById('flag-photo-zone');
+      if (zone) zone.innerHTML = '<div style="font-size:12px;color:var(--text3);">⏳ Processing photo…</div>';
       readFileAsDataUrl(file, function(dataUrl) {
-        if (!dataUrl) { toast('Could not read photo'); return; }
-        // Show preview immediately at screen size
-        var preview = document.getElementById('flag-photo-preview');
-        var zone = document.getElementById('flag-photo-zone');
-        if (preview) { preview.src = dataUrl; preview.style.display = 'block'; }
-        if (zone) { zone.style.display = 'none'; }
-        // Store compressed version for saving (but keep high quality)
+        if (!dataUrl) { toast('Could not read photo'); if (zone) zone.innerHTML = '<div style="font-size:28px;margin-bottom:6px;">📷</div><div style="font-size:13px;color:var(--text3);">Tap to take/choose photo</div>'; return; }
         compressPhoto(dataUrl, 800, 0.82, function(compressed) {
-          if (preview) preview.dataset.compressed = compressed;
+          if (preview) { preview.src = compressed; preview.style.display = 'block'; preview.dataset.compressed = compressed; }
+          if (zone) { zone.style.display = 'none'; }
         });
       });
     };
   }
 }
 
-function previewFlagPhoto(input) {
-  var file = input.files && input.files[0];
-  if (!file) return;
 
-  // Show raw image immediately so user sees it right away
-  var url = URL.createObjectURL(file);
-  var img = document.getElementById('flag-photo-preview');
-  if (img) {
-    img.src = url;
-    img.style.display = 'block';
-    img.onload = function() { URL.revokeObjectURL(url); };
-  }
-  var zone = document.getElementById('flag-photo-zone');
-  if (zone) {
-    zone.innerHTML = '<div style="font-size:12px;color:var(--green);font-weight:700;">✓ Photo attached</div>' +
-      '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Tap to retake</div>';
-  }
-
-  // Compress in background and store on img as data URL for saving
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    compressPhoto(e.target.result, 400, 0.5, function(compressed) {
-      var img2 = document.getElementById('flag-photo-preview');
-      if (img2) {
-        img2.dataset.compressed = compressed; // store for saveFlag to use
-      }
-    });
-  };
-  reader.readAsDataURL(file);
-}
 
 
 
@@ -5571,9 +5543,15 @@ function saveFlag() {
   var note = document.getElementById('flag-note').value.trim();
   if (!note) { toast('Add a description'); return; }
   var previewEl = document.getElementById('flag-photo-preview');
-  var rawPhoto = (previewEl && previewEl.style.display !== 'none')
-    ? (previewEl.dataset.compressed || (previewEl.src && previewEl.src.startsWith('data:') ? previewEl.src : ''))
-    : '';
+  var photoSelected = previewEl && previewEl.style.display !== 'none';
+  // Photo capture is single-pass now (compressed at selection time) — if a
+  // photo was picked but compression hasn't finished yet, don't submit with
+  // incomplete data; ask the crew member to wait a beat instead.
+  if (photoSelected && !previewEl.dataset.compressed) {
+    toast('⏳ Still processing photo — try again in a second');
+    return;
+  }
+  var rawPhoto = photoSelected ? (previewEl.dataset.compressed || '') : '';
   var hasPhoto = rawPhoto.length > 0;
   var newFlag = {
     id: uid(), propId: flagTargetPropId,
@@ -5596,47 +5574,48 @@ function saveFlag() {
     return;
   }
 
-  // Has photo - compress then upload to Firebase Storage
-  compressPhoto(rawPhoto, 1000, 0.88, function(compressed) {
-    // 1. Keep a local copy for immediate display while upload runs
-    saveFlagPhoto(newFlag.id, compressed);
-    newFlag.photo = compressed; // local only initially
+  // Photo was already compressed once at selection time — no need to
+  // re-compress here (each extra canvas decode/redraw is another chance
+  // for a blank-HEIC-decode to slip through, however unlikely now).
+  var compressed = rawPhoto;
+  // 1. Keep a local copy for immediate display while upload runs
+  saveFlagPhoto(newFlag.id, compressed);
+  newFlag.photo = compressed; // local only initially
 
-    // 2. Save flag to state and close sheet immediately (no photo in Firestore yet)
-    state.flags.push(newFlag);
-    save();
-    gsSave('flags', Object.assign({}, newFlag, { photo: '' })); // empty until upload completes
+  // 2. Save flag to state and close sheet immediately (no photo in Firestore yet)
+  state.flags.push(newFlag);
+  save();
+  gsSave('flags', Object.assign({}, newFlag, { photo: '' })); // empty until upload completes
 
-    // 3. Close sheet and show UI right away
-    document.getElementById('flag-sheet')?.remove();
-    showFlagConfirmation(newFlag);
-    renderDashboard();
-    renderProperties();
+  // 3. Close sheet and show UI right away
+  document.getElementById('flag-sheet')?.remove();
+  showFlagConfirmation(newFlag);
+  renderDashboard();
+  renderProperties();
 
-    // 4. Upload to Firebase Storage — permanent URL, visible on all devices
-    var storagePath = 'photos/flags/' + newFlag.id + '_' + Date.now() + '.jpg';
-    uploadPhotoToStorage(compressed, storagePath,
-      function(storageUrl) {
-        newFlag.photo = storageUrl;
-        try {
-          var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
-          photos['flag_' + newFlag.id] = storageUrl;
-          localStorage.setItem('dlphotos', JSON.stringify(photos));
-        } catch(e) {}
-        save();
-        gsSave('flags', newFlag);
-        renderDashboard();
-        renderProperties();
-        toast('✓ Photo synced to all devices');
-      },
-      function(err) {
-        console.warn('Flag photo upload failed — will retry on next view:', err);
-        toast('Photo saved. Will sync when connection improves.');
-        // Schedule retry in 30 seconds
-        setTimeout(function() { retryFlagPhotoUpload(newFlag.id, compressed, storagePath); }, 30000);
-      }
-    );
-  });
+  // 4. Upload to Firebase Storage — permanent URL, visible on all devices
+  var storagePath = 'photos/flags/' + newFlag.id + '_' + Date.now() + '.jpg';
+  uploadPhotoToStorage(compressed, storagePath,
+    function(storageUrl) {
+      newFlag.photo = storageUrl;
+      try {
+        var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+        photos['flag_' + newFlag.id] = storageUrl;
+        localStorage.setItem('dlphotos', JSON.stringify(photos));
+      } catch(e) {}
+      save();
+      gsSave('flags', newFlag);
+      renderDashboard();
+      renderProperties();
+      toast('✓ Photo synced to all devices');
+    },
+    function(err) {
+      console.warn('Flag photo upload failed — will retry on next view:', err);
+      toast('Photo saved. Will sync when connection improves.');
+      // Schedule retry in 30 seconds
+      setTimeout(function() { retryFlagPhotoUpload(newFlag.id, compressed, storagePath); }, 30000);
+    }
+  );
 }
 
 
