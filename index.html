@@ -1703,7 +1703,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v34'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v35'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -2161,12 +2161,15 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
       creqCard.style.display = '';
       var creqEl = document.getElementById('dash-creq-alerts');
       if (creqEl) {
-        var typeIcons = { issue:'🚩', estimate:'💰', other:'💬' };
+        var typeIcons = { issue:'🚩', estimate:'💰', other:'💬', feedback:'⭐' };
         creqEl.innerHTML = newReqs.slice(0,5).map(function(r) {
           var prop = (state.properties||[]).find(function(p){ return p.id === r.propId; });
+          var subtitle = r.type === 'feedback'
+            ? (r.rating||0) + '/5 rating' + (r.description ? ' — ' + r.description.slice(0,60) : '')
+            : (r.description||'').slice(0,80);
           return '<div class="card-flat" style="margin-bottom:6px;cursor:pointer;" onclick="switchTab(\'customerrequests\')">'
             + '<div style="font-weight:700;font-size:13px;">' + (typeIcons[r.type]||'💬') + ' ' + (prop?prop.name:'Unknown') + '</div>'
-            + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">' + (r.description||'').slice(0,80) + '</div>'
+            + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">' + subtitle + '</div>'
           + '</div>';
         }).join('') + (newReqs.length > 5 ? '<div style="font-size:11px;color:var(--text4);text-align:center;margin-top:4px;">+' + (newReqs.length-5) + ' more</div>' : '');
       }
@@ -11462,21 +11465,35 @@ function renderCustomerRequests() {
     return;
   }
 
-  var typeIcons = { issue:'🚩', estimate:'💰', other:'💬' };
+  var typeIcons = { issue:'🚩', estimate:'💰', other:'💬', feedback:'⭐' };
   var typeLabels = { issue:'Issue Report', estimate:'Estimate Request', other:'Other' };
+
+  function starsHtml(n) {
+    n = parseInt(n) || 0;
+    var out = '';
+    for (var i = 1; i <= 5; i++) out += (i <= n ? '★' : '☆');
+    return out;
+  }
 
   listEl.innerHTML = filtered.map(function(r) {
     var prop = (state.properties||[]).find(function(p){ return p.id === r.propId; });
     var statusColor = r.status==='new' ? 'red' : (r.status==='reviewed' ? 'yellow' : 'green');
+    var isFeedback = r.type === 'feedback';
+    var titleHtml = isFeedback
+      ? '<span style="color:var(--yellow);letter-spacing:1px;">' + starsHtml(r.rating) + '</span> <span style="font-size:12px;color:var(--text3);font-weight:600;">(' + (r.rating||0) + '/5 rating)</span>'
+      : (typeIcons[r.type]||'💬') + ' ' + (typeLabels[r.type]||'Request');
+    var bodyText = r.description && r.description.trim()
+      ? r.description
+      : (isFeedback ? '<span style="color:var(--text4);font-style:italic;">No additional comments left.</span>' : '');
     return '<div class="card" style="margin-bottom:10px;border-left:3px solid var(--' + statusColor + ');">'
       + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
         + '<div>'
-          + '<div style="font-weight:800;font-size:14px;">' + (typeIcons[r.type]||'💬') + ' ' + (typeLabels[r.type]||'Request') + '</div>'
+          + '<div style="font-weight:800;font-size:14px;">' + titleHtml + '</div>'
           + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">' + (prop?prop.name:'Unknown property') + (prop&&prop.address?' · '+prop.address:'') + '</div>'
         + '</div>'
         + '<span class="badge badge-' + statusColor + '">' + r.status.toUpperCase() + '</span>'
       + '</div>'
-      + '<div style="font-size:13px;color:var(--text2);margin-bottom:8px;line-height:1.5;">' + (r.description||'') + '</div>'
+      + (bodyText ? '<div style="font-size:13px;color:var(--text2);margin-bottom:8px;line-height:1.5;">' + bodyText + '</div>' : '')
       + (r.photo ? '<img src="' + r.photo + '" referrerpolicy="no-referrer" style="width:100%;border-radius:8px;max-height:220px;object-fit:cover;margin-bottom:8px;cursor:zoom-in;" onclick="openPhoto(\'' + r.photo + '\',\'Customer Request\')"/>' : '')
       + '<div style="font-size:11px;color:var(--text4);margin-bottom:10px;">' + (r.customerEmail||'') + ' · ' + fmtWODate(r.createdAt||'') + '</div>'
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
