@@ -1652,7 +1652,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v18'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v20'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -2643,6 +2643,7 @@ function openRouteDetail(id) {
   html += canEdit ? `<div style="margin-top:12px;"><button class="btn btn-red" onclick="deleteRoute('${r.id}')" style="font-size:13px;">Delete Route</button></div>` : '';
   document.getElementById('rp-body').innerHTML = html;
   document.getElementById('route-panel').classList.add('open');
+  setTimeout(function() { patchFirebaseImages(document.getElementById('rp-body')); }, 150);
   // Show map button for managers
   var mapBtn = document.getElementById('rp-map-btn');
   if (mapBtn) mapBtn.style.display = state.role === 'manager' ? '' : 'none';
@@ -3557,6 +3558,7 @@ function renderStopCompletionSheet(c) {
   html += '</div></div>';
   sheet.innerHTML = html;
   document.body.appendChild(sheet);
+  setTimeout(function() { patchFirebaseImages(sheet); }, 150);
 
   // Wire checklist photo inputs
   if (c.step === 'checklist') {
@@ -4601,6 +4603,7 @@ function openDashStopsList(completedOnly) {
   html += '</div>';
   sheet.innerHTML = html;
   document.body.appendChild(sheet);
+  setTimeout(function() { patchFirebaseImages(sheet); }, 150);
 }
 
 function openDispatchBoard() {
@@ -6815,6 +6818,7 @@ function loadFieldView() {
         </div>
       </div>`;
     }).join('')}`;
+  setTimeout(function() { patchFirebaseImages(el); }, 150);
 }
 
 
@@ -9803,6 +9807,7 @@ function openReportFlag(flagId) {
     </div>`;
 
   document.getElementById('app').appendChild(panel);
+  setTimeout(function() { patchFirebaseImages(panel); }, 150);
 }
 
 function assignFlagToRoute(flagId) {
@@ -10554,6 +10559,7 @@ function openCrewPropSnapshot(propId, routeId) {
   // Tap backdrop to close
   sheet.addEventListener('click', function(e) { if(e.target===sheet) sheet.remove(); });
   document.body.appendChild(sheet);
+  setTimeout(function() { patchFirebaseImages(sheet); }, 150);
 }
 
 // ─── SERVICE DATE HELPERS ─────────────────────────────────────────────────
@@ -12984,10 +12990,38 @@ function compressPhoto(dataUrl, maxSize, quality, callback) {
     // White background for transparency handling
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, w, h);
-    ctx.drawImage(img, 0, 0, w, h);
-    // Always output as JPEG regardless of input format (handles HEIC, PNG, WebP etc)
-    var result = canvas.toDataURL('image/jpeg', quality);
-    callback(result);
+    try {
+      ctx.drawImage(img, 0, 0, w, h);
+
+      // Validate this draw actually produced real pixel data — this exact
+      // step (a second canvas decode of an already-processed image) is where
+      // a blank-HEIC-decode can silently reoccur even after readFileAsDataUrl
+      // already validated the input. If it's blank, don't save a corrupt
+      // all-white JPEG — fall back to the pre-compression input instead.
+      var sample = ctx.getImageData(
+        Math.floor(w * 0.3), Math.floor(h * 0.3),
+        Math.min(10, w), Math.min(10, h)
+      );
+      var allWhite = true;
+      for (var i = 0; i < sample.data.length; i += 4) {
+        if (sample.data[i] < 250 || sample.data[i+1] < 250 || sample.data[i+2] < 250) {
+          allWhite = false; break;
+        }
+      }
+      if (allWhite) {
+        console.warn('compressPhoto: blank canvas detected, using uncompressed input instead');
+        callback(dataUrl);
+        return;
+      }
+
+      // Always output as JPEG regardless of input format (handles HEIC, PNG, WebP etc)
+      var result = canvas.toDataURL('image/jpeg', quality);
+      callback(result);
+    } catch(e) {
+      // Canvas tainted or other draw error — fall back to uncompressed input
+      console.warn('compressPhoto: draw failed, using uncompressed input instead', e);
+      callback(dataUrl);
+    }
   };
   img.onerror = function() {
     console.warn('Image load failed, trying blob URL approach');
