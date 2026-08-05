@@ -1643,7 +1643,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v12'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v13'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -4040,6 +4040,38 @@ var UI_ES = {
   'open flag':                    'bandera abierta',
   'open flags':                   'banderas abiertas',
   'tap to view':                  'toca para ver',
+  // My Jobs (field view)
+  'Please sign in first':         'Por favor inicia sesión primero',
+  'No route assigned for today':  'No hay ruta asignada para hoy',
+  'Your Route Today':             'Tu Ruta de Hoy',
+  'of':                           'de',
+  'stops done':                   'paradas completadas',
+  'on this property':             'en esta propiedad',
+  'Tap to view and resolve':      'Toca para ver y resolver',
+  'Address':                      'Dirección',
+  'Go':                           'Ir',
+  'Services':                     'Servicios',
+  'Report an Issue':              'Reportar un Problema',
+  '✓ Job Complete':               '✓ Trabajo Completado',
+  'by':                           'por',
+  'WORK ORDERS DUE':              'ÓRDENES DE TRABAJO PENDIENTES',
+  'DUE':                          'VENCE',
+  // Crew Work Orders tab
+  'All caught up!':               '¡Todo al día!',
+  'No work orders assigned to you': 'No tienes órdenes de trabajo asignadas',
+  'All':                          'Todas',
+  'Landscape':                    'Jardinería',
+  'Irrigation':                   'Riego',
+  'All Villages':                 'Todas las Villas',
+  'Assigned to Me':               'Asignadas a Mí',
+  'Village':                      'Villa',
+  'In Progress':                  'En Progreso',
+  'Open':                         'Abierto',
+  'Team':                         'Equipo',
+  'No open WOs for Village':      'No hay órdenes abiertas para la Villa',
+  'Recently Completed':           'Completadas Recientemente',
+  'Due:':                         'Vence:',
+  'Complete with Photo':          'Completar con Foto',
 };
 function t(str) {
   if (getCrewLang() !== 'es') return str;
@@ -6409,7 +6441,7 @@ function buildDueWOsHTML(crewId) {
           <div style="font-size:11px;color:var(--text2);margin-top:3px;">${w.requestType||''}</div>
         </div>
         <div style="text-align:right;flex-shrink:0;">
-          <div style="font-size:10px;font-weight:800;color:var(--orange);">⏰ DUE</div>
+          <div style="font-size:10px;font-weight:800;color:var(--orange);">⏰ ${t('DUE')}</div>
           <div style="font-size:10px;color:var(--text3);">${w.dueDate}</div>
         </div>
       </div>
@@ -6417,7 +6449,7 @@ function buildDueWOsHTML(crewId) {
   ).join('');
 
   return `<div style="background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.3);border-radius:14px;padding:14px;margin-bottom:12px;">
-    <div style="font-size:11px;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:10px;">📋 WORK ORDERS DUE</div>
+    <div style="font-size:11px;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:10px;">📋 ${t('WORK ORDERS DUE')}</div>
     ${rows}
   </div>`;
 }
@@ -6436,7 +6468,7 @@ function loadFieldView() {
   if (avatarEl) avatarEl.textContent = crew?.name?.trim()[0]?.toUpperCase() || '?';
 
   const el = document.getElementById('field-stops');
-  if (!crewId) { el.innerHTML = '<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">Please sign in first</div>'; return; }
+  if (!crewId) { el.innerHTML = '<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">' + t('Please sign in first') + '</div>'; return; }
 
   // build day pills — show days that have routes for this crew
   const today    = new Date().toLocaleDateString('en-US',{weekday:'long'});
@@ -6453,7 +6485,7 @@ function loadFieldView() {
     const dueWOsHtml = buildDueWOsHTML(crewId);
     el.innerHTML = dueWOsHtml +
       `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;padding:20px;">
-        No route assigned for today
+        ${t('No route assigned for today')}
       </div>`;
     return;
   }
@@ -6474,10 +6506,10 @@ function loadFieldView() {
   el.innerHTML = `
     ${buildDueWOsHTML(crewId)}
     <div style="background:linear-gradient(135deg,var(--green3),var(--green2));border-radius:14px;padding:12px 14px;margin-bottom:10px;color:#fff;">
-      <div style="font-size:11px;font-weight:700;opacity:.7;letter-spacing:1px;text-transform:uppercase;">Your Route Today</div>
+      <div style="font-size:11px;font-weight:700;opacity:.7;letter-spacing:1px;text-transform:uppercase;">${t('Your Route Today')}</div>
       <div style="font-size:22px;font-weight:800;margin-top:2px;">${route.name}</div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
-        <div style="font-size:13px;opacity:.85;">${done} of ${stops.length} stops done</div>
+        <div style="font-size:13px;opacity:.85;">${done} ${t('of')} ${stops.length} ${t('stops done')}</div>
         <div style="background:rgba(255,255,255,.2);border-radius:20px;padding:3px 12px;font-size:12px;font-weight:700;">${stops.length?Math.round(done/stops.length*100):0}%</div>
       </div>
       <div style="height:4px;background:rgba(255,255,255,.2);border-radius:4px;margin-top:8px;overflow:hidden;">
@@ -6504,7 +6536,7 @@ function loadFieldView() {
                 ${openFlags.length?`<span style="background:rgba(248,81,73,.15);border-radius:20px;padding:1px 6px;font-size:10px;font-weight:700;color:var(--red);flex-shrink:0;">⚑${openFlags.length}</span>`:''}
                 ${hasChecklist&&!s.completed?`<span style="background:rgba(250,204,21,.12);border-radius:20px;padding:1px 6px;font-size:10px;font-weight:700;color:var(--yellow);flex-shrink:0;">⚠</span>`:''}
               </div>
-              ${s.completed?`<div style="font-size:11px;color:var(--green);margin-top:2px;">✓ Done${s.completedAt?' · '+s.completedAt:''}</div>`:''}
+              ${s.completed?`<div style="font-size:11px;color:var(--green);margin-top:2px;">✓ ${t('Done')}${s.completedAt?' · '+s.completedAt:''}</div>`:''}
             </div>
             <i class="ti ti-chevron-down" style="font-size:14px;color:var(--text3);transition:transform .2s;flex-shrink:0;" id="fs-chevron-${i}"></i>
           </div>
@@ -6513,18 +6545,18 @@ function loadFieldView() {
         <div class="stop-body" id="fs-${i}" style="padding:0 12px 12px;">
           ${s.completed ? `
           <div style="background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.2);border-radius:10px;padding:12px;margin-bottom:10px;">
-            <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:4px;">✓ Job Complete</div>
-            ${s.completedBy?`<div style="font-size:12px;color:var(--text3);">by ${s.completedBy}</div>`:''}
+            <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:4px;">${t('✓ Job Complete')}</div>
+            ${s.completedBy?`<div style="font-size:12px;color:var(--text3);">${t('by')} ${s.completedBy}</div>`:''}
             ${(s.completedServices||[]).length?`<div style="font-size:12px;color:var(--text3);margin-top:3px;">${s.completedServices.join(' · ')}</div>`:''}
             ${s.completedPhoto?`<img src="${s.completedPhoto}" referrerpolicy="no-referrer" onclick="openPhoto('${s.completedPhoto}','${prop?.name||''}')" style="width:100%;border-radius:8px;margin-top:8px;cursor:zoom-in;" onerror="this.style.display='none'"/>`:''}
           </div>` : `
 
           ${hasChecklist ? `
           <div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.25);border-radius:10px;padding:12px;margin-bottom:10px;">
-            <div style="font-size:10px;font-weight:800;color:var(--yellow);letter-spacing:1px;margin-bottom:8px;">⚠ PROPERTY INSTRUCTIONS</div>
+            <div style="font-size:10px;font-weight:800;color:var(--yellow);letter-spacing:1px;margin-bottom:8px;">⚠ ${t('PROPERTY INSTRUCTIONS')}</div>
             ${(prop.checklist||[]).map(item=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid rgba(250,204,21,.1);">
               <span style="font-size:14px;flex-shrink:0;color:var(--yellow);">${item.requiresPhoto?'📷':'✓'}</span>
-              <div style="font-size:14px;color:var(--text);line-height:1.5;font-weight:500;">${item.text}</div>
+              <div style="font-size:14px;color:var(--text);line-height:1.5;font-weight:500;">${tf(item.text)}</div>
             </div>`).join('')}
           </div>` : ''}
 
@@ -6532,29 +6564,29 @@ function loadFieldView() {
           <button onclick="openCrewPropFlags('${s.propId}')" style="width:100%;padding:12px 14px;background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.2);border-radius:10px;color:var(--red);font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:10px;text-align:left;">
             <i class="ti ti-flag" style="font-size:18px;flex-shrink:0;"></i>
             <div style="flex:1;">
-              <div>${openFlags.length} open flag${openFlags.length>1?'s':''} on this property</div>
-              <div style="font-size:11px;font-weight:400;opacity:.7;margin-top:2px;">Tap to view and resolve</div>
+              <div>${openFlags.length} ${t(openFlags.length>1?'open flags':'open flag')} ${t('on this property')}</div>
+              <div style="font-size:11px;font-weight:400;opacity:.7;margin-top:2px;">${t('Tap to view and resolve')}</div>
             </div>
             <i class="ti ti-chevron-right" style="font-size:14px;opacity:.5;flex-shrink:0;"></i>
           </button>` : ''}
 
-          ${prop?.notes?`<div style="background:rgba(250,204,21,.06);border:1px solid rgba(250,204,21,.15);border-radius:8px;padding:10px;font-size:13px;color:var(--yellow);margin-bottom:10px;line-height:1.4;">📝 ${prop.notes}</div>`:''}
+          ${prop?.notes?`<div style="background:rgba(250,204,21,.06);border:1px solid rgba(250,204,21,.15);border-radius:8px;padding:10px;font-size:13px;color:var(--yellow);margin-bottom:10px;line-height:1.4;">📝 ${tf(prop.notes)}</div>`:''}
 
           ${prop?.address ? `
           <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg3);border-radius:10px;padding:10px 12px;margin-bottom:10px;gap:10px;">
             <div style="min-width:0;flex:1;">
-              <div style="font-size:9px;font-weight:800;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">Address</div>
+              <div style="font-size:9px;font-weight:800;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">${t('Address')}</div>
               <div style="font-size:13px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${prop.address}</div>
             </div>
             <a href="https://maps.google.com/?q=${encodeURIComponent(prop.address)}" target="_blank" onclick="event.stopPropagation();"
                style="flex-shrink:0;display:inline-flex;align-items:center;gap:5px;background:rgba(88,166,255,.15);border:1px solid rgba(88,166,255,.3);border-radius:8px;padding:10px 16px;color:var(--blue);text-decoration:none;font-size:14px;font-weight:700;min-height:42px;">
-              <i class="ti ti-navigation" style="font-size:16px;"></i>Go
+              <i class="ti ti-navigation" style="font-size:16px;"></i>${t('Go')}
             </a>
           </div>` : ''}
 
           ${(prop?.services||[]).length ? `
           <div style="margin-bottom:12px;">
-            <div style="font-size:9px;font-weight:800;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Services</div>
+            <div style="font-size:9px;font-weight:800;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">${t('Services')}</div>
             ${(prop.services||[]).map(svc=>`
             <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 12px;background:var(--bg3);border-radius:8px;margin-bottom:4px;">
               <span style="font-size:14px;color:var(--text);">${svc}</span>
@@ -6566,11 +6598,11 @@ function loadFieldView() {
 
           <button onclick="openStopCompletion('${route.id}','${s.propId}')"
             style="width:100%;padding:16px;background:var(--green2);border:none;border-radius:12px;color:#fff;font-size:16px;font-weight:700;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:8px;">
-            <i class="ti ti-camera" style="font-size:20px;"></i> Complete Job
+            <i class="ti ti-camera" style="font-size:20px;"></i> ${t('Complete Job')}
           </button>
           <button onclick="event.stopPropagation();openAddFlag('${s.propId}')"
             style="width:100%;padding:12px;background:rgba(240,136,62,.08);border:1px solid rgba(240,136,62,.25);border-radius:10px;color:var(--orange);font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
-            <i class="ti ti-flag-2" style="font-size:15px;"></i> Report an Issue
+            <i class="ti ti-flag-2" style="font-size:15px;"></i> ${t('Report an Issue')}
           </button>`}
 
         </div>
@@ -11991,7 +12023,7 @@ function renderCrewWorkOrders() {
     return false;
   }).slice(-20);
   if (!myWOs.length && !doneWOs.length) {
-    el.innerHTML = '<div class="card" style="text-align:center;padding:32px;"><div style="font-size:40px;margin-bottom:12px;">&#x2705;</div><div style="font-weight:700;font-size:15px;">All caught up!</div><div style="font-size:13px;color:var(--text3);margin-top:6px;">No work orders assigned to you</div></div>';
+    el.innerHTML = '<div class="card" style="text-align:center;padding:32px;"><div style="font-size:40px;margin-bottom:12px;">&#x2705;</div><div style="font-weight:700;font-size:15px;">' + t('All caught up!') + '</div><div style="font-size:13px;color:var(--text3);margin-top:6px;">' + t('No work orders assigned to you') + '</div></div>';
     return;
   }
   var vf = window._crewWOVillage || '';
@@ -12008,17 +12040,17 @@ function renderCrewWorkOrders() {
 
   // Type filter pills — always visible
   html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">';
-  html += '<button class="pill'+(tf===''?' active':'')+'" onclick="window._crewWOType=\'\';renderCrewWorkOrders()">All ('+myWOs.length+')</button>';
+  html += '<button class="pill'+(tf===''?' active':'')+'" onclick="window._crewWOType=\'\';renderCrewWorkOrders()">' + t('All') + ' ('+myWOs.length+')</button>';
   var landCount = myWOs.filter(function(w){return w.type!=='irrigation';}).length;
   var irrCount  = myWOs.filter(function(w){return w.type==='irrigation';}).length;
-  if (landCount) html += '<button class="pill'+(tf==='landscape'?' active':'')+'" onclick="window._crewWOType=\'landscape\';renderCrewWorkOrders()">🌿 Landscape ('+landCount+')</button>';
-  if (irrCount)  html += '<button class="pill'+(tf==='irrigation'?' active':'')+'" onclick="window._crewWOType=\'irrigation\';renderCrewWorkOrders()">💧 Irrigation ('+irrCount+')</button>';
+  if (landCount) html += '<button class="pill'+(tf==='landscape'?' active':'')+'" onclick="window._crewWOType=\'landscape\';renderCrewWorkOrders()">🌿 ' + t('Landscape') + ' ('+landCount+')</button>';
+  if (irrCount)  html += '<button class="pill'+(tf==='irrigation'?' active':'')+'" onclick="window._crewWOType=\'irrigation\';renderCrewWorkOrders()">💧 ' + t('Irrigation') + ' ('+irrCount+')</button>';
   html += '</div>';
 
   // Village filter pills — only show if multiple villages
   if (villages.length > 1) {
     html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">';
-    html += '<button class="pill'+(!vf?' active':'')+'" onclick="window._crewWOVillage=\'\';renderCrewWorkOrders()">All Villages</button>';
+    html += '<button class="pill'+(!vf?' active':'')+'" onclick="window._crewWOVillage=\'\';renderCrewWorkOrders()">' + t('All Villages') + '</button>';
     villages.forEach(function(v){
       var cnt=myWOs.filter(function(w){return (w.village||'').toString().trim()===v;}).length;
       html += '<button class="pill'+(vf===v?' active':'')+'" onclick="window._crewWOVillage=\''+v+'\';renderCrewWorkOrders()">V'+v+' ('+cnt+')</button>';
@@ -12026,7 +12058,7 @@ function renderCrewWorkOrders() {
     html += '</div>';
   }
   if (filteredWOs.length) {
-    html += '<div class="sec-title">Assigned to Me ('+filteredWOs.length+(vf?' &middot; Village '+vf:'')+(tf?' &middot; '+(tf==='irrigation'?'💧 Irrigation':'🌿 Landscape'):'')+')</div>';
+    html += '<div class="sec-title">' + t('Assigned to Me') + ' ('+filteredWOs.length+(vf?' &middot; ' + t('Village') + ' '+vf:'')+(tf?' &middot; '+(tf==='irrigation'?'💧 '+t('Irrigation'):'🌿 '+t('Landscape')):'')+')</div>';
     filteredWOs.forEach(function(w){
       var typeIcon=w.type==='irrigation'?'&#x1F4A7;':'&#x1F33F;';
       var statusColor=w.status==='in_progress'?'yellow':'red';
@@ -12039,27 +12071,27 @@ function renderCrewWorkOrders() {
         +(w.village?' <span style="background:rgba(96,165,250,.15);color:var(--blue);font-weight:700;font-size:11px;padding:1px 6px;border-radius:6px;">V'+w.village+'</span>':'')
         +'</div></div>'
         +'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">'
-        +'<span class="badge badge-'+statusColor+'">'+(w.status==='in_progress'?'In Progress':'Open')+'</span>'
-        +(isTeam?'<span style="font-size:10px;color:var(--blue);font-weight:700;">&#x1F465; Team</span>':'')
+        +'<span class="badge badge-'+statusColor+'">'+(w.status==='in_progress'?t('In Progress'):t('Open'))+'</span>'
+        +(isTeam?'<span style="font-size:10px;color:var(--blue);font-weight:700;">&#x1F465; '+t('Team')+'</span>':'')
         +'</div></div>'
         +'<div style="font-size:12px;color:var(--text2);"><strong>'+(w.requestType||'')+'</strong>'+(w.details?': '+w.details.slice(0,80)+(w.details.length>80?'&hellip;':''):'')+'</div>'
         +(w.community?'<div style="font-size:11px;color:var(--text4);margin-top:3px;">'+w.community+'</div>':'')
-        +(w.dueDate?'<div style="font-size:11px;color:var(--red);margin-top:4px;font-weight:700;">&#x23F0; Due: '+w.dueDate+'</div>':'')
-        +'<div style="margin-top:10px;"><button class="btn btn-green" style="font-size:12px;padding:8px 14px;" onclick="event.stopPropagation();openCrewWOComplete(\''+w.id+'\')">&#x1F4F7; Complete with Photo</button></div>'
+        +(w.dueDate?'<div style="font-size:11px;color:var(--red);margin-top:4px;font-weight:700;">&#x23F0; '+t('Due:')+' '+w.dueDate+'</div>':'')
+        +'<div style="margin-top:10px;"><button class="btn btn-green" style="font-size:12px;padding:8px 14px;" onclick="event.stopPropagation();openCrewWOComplete(\''+w.id+'\')">&#x1F4F7; '+t('Complete with Photo')+'</button></div>'
         +'</div>';
     });
   } else if (vf) {
-    html+='<div style="text-align:center;color:var(--text4);padding:20px;font-size:13px;">No open WOs for Village '+vf+'</div>';
+    html+='<div style="text-align:center;color:var(--text4);padding:20px;font-size:13px;">' + t('No open WOs for Village') + ' '+vf+'</div>';
   }
   if (filteredDoneWOs.length) {
-    html+='<div class="sec-title" style="margin-top:16px;">Recently Completed</div>';
+    html+='<div class="sec-title" style="margin-top:16px;">' + t('Recently Completed') + '</div>';
     filteredDoneWOs.forEach(function(w){
       var typeIcon=w.type==='irrigation'?'&#x1F4A7;':'&#x1F33F;';
       html+='<div class="card-flat" style="margin-bottom:8px;border-left:3px solid var(--green);cursor:pointer;" onclick="openCrewWODetail(\''+w.id+'\')">'
         +'<div style="display:flex;justify-content:space-between;align-items:center;">'
         +'<div><div style="font-weight:700;font-size:13px;">'+typeIcon+' #'+(w.woNumber||'')+' &middot; '+(w.ownerName||'')+(w.village?' <span style="color:var(--blue);font-size:11px;">V'+w.village+'</span>':'')+'</div>'
         +'<div style="font-size:11px;color:var(--text3);">'+(w.completedBy?'&#x2713; '+w.completedBy+' &middot; ':'')+fmtWODate( w.completedOn||w.dateCompleted||'')+'</div></div>'
-        +'<span class="badge badge-green">&#x2713; Done</span></div>'
+        +'<span class="badge badge-green">&#x2713; ' + t('Done') + '</span></div>'
         +(typeof getWOPhoto==='function'&&getWOPhoto(w)?'<img src="'+getWOPhoto(w)+'" style="width:100%;border-radius:8px;max-height:120px;object-fit:cover;margin-top:8px;"/>':'')
         +'</div>';
     });
@@ -12141,7 +12173,7 @@ function openCrewPropFlags(propId) {
   sheet.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;';
   document.body.appendChild(sheet);
 
-  var _spanish = false;
+  var _spanish = getCrewLang() === 'es';
 
   function render() {
     var rows = flags.map(function(f) {
@@ -12188,6 +12220,7 @@ function openCrewPropFlags(propId) {
 
   window._crewFlagsToggleSpanish = function() {
     _spanish = !_spanish;
+    setCrewLang(_spanish ? 'es' : 'en');
     render();
   };
 
