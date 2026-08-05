@@ -79,19 +79,20 @@
 <body>
 
 <div id="login-screen" class="center-wrap">
-  <div class="logo">
-    <div class="logo-icon">💎</div>
-    <div class="logo-title">DIAMOND LANDSCAPES</div>
-    <div class="logo-sub">Customer Portal</div>
+  <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:40px;">
+    <div style="width:64px;height:64px;background:rgba(63,185,80,.12);border-radius:18px;display:flex;align-items:center;justify-content:center;margin-bottom:16px;border:1px solid rgba(63,185,80,.2);">
+      <i class="ti ti-leaf" style="font-size:32px;color:#3fb950;"></i>
+    </div>
+    <div style="font-size:22px;font-weight:700;color:#e6edf3;letter-spacing:-.3px;">Diamond Landscapes</div>
+    <div style="font-size:12px;color:#545d68;margin-top:4px;letter-spacing:.5px;text-transform:uppercase;">Customer Portal</div>
   </div>
-  <div class="card">
-    <div style="font-size:14px;font-weight:700;margin-bottom:4px;">Sign in</div>
-    <div style="font-size:12px;color:var(--text3);margin-bottom:14px;">Enter the email on file for your property.</div>
+  <div style="width:100%;">
+    <div style="font-size:12px;color:var(--text3);margin-bottom:14px;text-align:center;">Enter the email on file for your property to sign in.</div>
     <input class="inp" id="login-email" type="email" placeholder="you@email.com" style="margin-bottom:10px;" autocomplete="email"/>
     <button class="btn btn-green" id="login-btn" onclick="portalLogin()">Continue</button>
     <div class="err" id="login-err"></div>
   </div>
-  <div style="text-align:center;font-size:12px;color:var(--text4);">
+  <div style="text-align:center;font-size:12px;color:var(--text4);margin-top:16px;">
     Don't have portal access yet? Contact us to get set up.
   </div>
 </div>
@@ -185,9 +186,15 @@ const firebaseConfig = {
 const GOOGLE_REVIEW_URL = 'https://share.google/sUCiCSnIQHDkyGrOM';
 
 let fbApp, db, storage;
-try { fbApp = getApp(); } catch(e) { fbApp = initializeApp(firebaseConfig); }
-db = getFirestore(fbApp);
-storage = getStorage(fbApp);
+try {
+  try { fbApp = getApp(); } catch(e) { fbApp = initializeApp(firebaseConfig); }
+  db = getFirestore(fbApp);
+  storage = getStorage(fbApp);
+} catch(e) {
+  console.error('Firebase init failed:', e);
+  document.getElementById('login-screen').innerHTML =
+    '<div style="text-align:center;color:var(--red);font-size:13px;padding:20px;">Could not connect. Please refresh the page — if this keeps happening, contact us.</div>';
+}
 
 let myProperties = [];   // every property matching this email
 let currentProp = null;  // the one currently being viewed
@@ -195,7 +202,16 @@ let selectedType = 'issue';
 let pendingPhoto = null;
 let selectedRating = 0;
 
-signInAnonymously(getAuth(fbApp)).catch(function(e){ console.warn('Auth failed:', e.message); });
+// Wrapped defensively — if auth setup ever throws synchronously (not just
+// rejects), it must NOT be allowed to halt the rest of this module. Every
+// window.* button handler below is defined after this point; an uncaught
+// error here previously meant the entire script stopped executing right
+// here, silently, and every button in the app would do nothing at all.
+try {
+  signInAnonymously(getAuth(fbApp)).catch(function(e){ console.warn('Auth failed:', e.message); });
+} catch(e) {
+  console.error('Auth setup threw synchronously:', e);
+}
 
 window.toast = function(msg) {
   var t = document.getElementById('toast');
@@ -373,8 +389,6 @@ function fmtDate(iso) {
 
 // ── Star rating — gated: high ratings go to Google, low ratings stay
 // private so you hear about problems before they become a public review.
-function renderRatingStars() {
-  var el = document.getElementById('rating-stars');
 function renderRatingStars() {
   var el = document.getElementById('rating-stars');
   var already = sessionStorage.getItem('dl_rated_' + currentProp.id);
