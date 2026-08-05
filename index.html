@@ -956,6 +956,15 @@ select.inp{cursor:pointer;}
       </div>
 
 
+      <div class="card" id="dash-nav-card" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div class="sec-title" style="margin-bottom:0;">Navigate Usage — Today</div>
+          <span style="font-size:10px;color:var(--text3);">Manager Only</span>
+        </div>
+        <div id="dash-nav-alerts"></div>
+      </div>
+
+
       <div class="card">
         <div class="sec-title">Equipment Due for Service</div>
         <div id="dash-eq-alerts"></div>
@@ -1643,7 +1652,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v14'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v18'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -2063,6 +2072,46 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
         <span class="badge badge-${r.status==='Done'?'green':r.status==='In Progress'?'yellow':'blue'}">${r.status||'Scheduled'}</span>
       </div>`;
     }).join('');
+  }
+
+  // Navigate usage compliance (manager only) — flags crew members completing
+  // stops without tapping Navigate, so time tracking + drive estimates work.
+  var navCard = document.getElementById('dash-nav-card');
+  if (navCard) navCard.style.display = state.role === 'manager' ? '' : 'none';
+  if (state.role === 'manager') {
+    var navEl = document.getElementById('dash-nav-alerts');
+    if (navEl) {
+      var byCrewMissing = {}; // crewId -> {name, missing, total}
+      todayRoutes.forEach(function(r) {
+        var crewMember = state.crew.find(function(c){ return c.id === r.crewId; });
+        var crewName = crewMember ? crewMember.name : 'Unassigned';
+        (r.stops||[]).forEach(function(s) {
+          if (!s.completed) return; // only count stops actually finished today
+          if (!byCrewMissing[crewName]) byCrewMissing[crewName] = { missing: 0, total: 0 };
+          byCrewMissing[crewName].total++;
+          if (!s.navigateTappedAtISO) byCrewMissing[crewName].missing++;
+        });
+      });
+      var offenders = Object.keys(byCrewMissing)
+        .map(function(name){ return { name: name, missing: byCrewMissing[name].missing, total: byCrewMissing[name].total }; })
+        .filter(function(x){ return x.missing > 0; })
+        .sort(function(a,b){ return b.missing - a.missing; });
+
+      var anyCompletedToday = Object.keys(byCrewMissing).some(function(name){ return byCrewMissing[name].total > 0; });
+
+      if (!anyCompletedToday) {
+        navEl.innerHTML = '<div style="font-size:13px;color:var(--text4);text-align:center;padding:8px 0;">No completed stops yet today</div>';
+      } else if (!offenders.length) {
+        navEl.innerHTML = '<div style="font-size:13px;color:var(--text4);text-align:center;padding:8px 0;">Everyone used Navigate today ✓</div>';
+      } else {
+        navEl.innerHTML = offenders.map(function(o) {
+          return '<div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;">'
+            + '<div><div style="font-weight:700;font-size:13px;">' + o.name + '</div>'
+            + '<div style="font-size:11px;color:var(--yellow);">⚠ ' + o.missing + ' of ' + o.total + ' stops without Navigate</div></div>'
+          + '</div>';
+        }).join('');
+      }
+    }
   }
 
   // flags
@@ -2544,18 +2593,37 @@ function openRouteDetail(id) {
                     <div style="font-size:12px;font-weight:700;color:var(--green);">✓ Completed</div>
                     ${(()=>{
                       // Calculate duration from previous completed stop.
-                      // First stop of the day assumes an 8:00 AM EST start.
+                      // First stop of the day prefers the real "left the shop"
+                      // timestamp (logged when Navigate was tapped); falls back
+                      // to an assumed 8:00 AM EST start if that's not available.
                       var allCompleted = stops.filter(st=>st.completed&&st.completedAtISO).sort((a,b)=>new Date(a.completedAtISO)-new Date(b.completedAtISO));
                       var myIdx = allCompleted.findIndex(st=>st.propId===s.propId);
                       var isFirstOfDay = myIdx === 0;
-                      var prevISO = isFirstOfDay ? estWallTimeISO(s.completedAtISO, ASSUMED_ROUTE_START_HOUR, 0) : allCompleted[myIdx-1].completedAtISO;
+                      var usedAssumed = false;
+                      var prevISO;
+                      if (isFirstOfDay) {
+                        if (s.navigateTappedAtISO) { prevISO = s.navigateTappedAtISO; }
+                        else { prevISO = estWallTimeISO(s.completedAtISO, ASSUMED_ROUTE_START_HOUR, 0); usedAssumed = true; }
+                      } else {
+                        prevISO = allCompleted[myIdx-1].completedAtISO;
+                      }
                       var dur = calcStopDuration(prevISO, s.completedAtISO);
                       var col = durationColor(dur);
+                      window._lastStopBreakdown = getStopTimeBreakdown(allCompleted, myIdx); // stashed for the line below
                       return dur !== null
-                        ? `<span style="font-size:11px;font-weight:700;color:${col};background:${col}1a;border:1px solid ${col}40;border-radius:20px;padding:2px 8px;">⏱ ${formatDuration(dur)}${isFirstOfDay?'*':''}</span>`
+                        ? `<span style="font-size:11px;font-weight:700;color:${col};background:${col}1a;border:1px solid ${col}40;border-radius:20px;padding:2px 8px;">⏱ ${formatDuration(dur)}${usedAssumed?'*':''}</span>`
                         : '';
                     })()}
                   </div>
+                  ${(()=>{
+                    var b = window._lastStopBreakdown; window._lastStopBreakdown = null;
+                    if (!b) return '';
+                    var parts = [];
+                    if (b.wrapUpMin !== null && b.wrapUpMin > 0) parts.push('⏸ ' + formatDuration(b.wrapUpMin) + ' wrap-up');
+                    parts.push('🚗 ' + formatDuration(b.driveMin) + ' drive');
+                    if (b.workMin !== null) parts.push('🔧 ' + formatDuration(b.workMin) + ' work');
+                    return `<div style="font-size:10px;color:var(--text4);margin-bottom:4px;">${parts.join(' · ')}</div>`;
+                  })()}
                   ${s.completedAt?`<div style="font-size:11px;color:var(--text3);">${s.completedAt}${s.completedAtISO?' · '+formatTimeEST(s.completedAtISO):''}</div>`:''}
                   ${s.completedBy?`<div style="font-size:11px;color:var(--text3);">by ${s.completedBy}</div>`:''}
                   ${(s.completedServices||[]).length?`<div style="font-size:11px;color:var(--text3);margin-top:4px;">✓ ${s.completedServices.join(', ')}</div>`:''}
@@ -2953,9 +3021,85 @@ function estWallTimeISO(referenceISO, hour, minute) {
   return new Date(guess.getTime() - offsetMin * 60000).toISOString();
 }
 
-// Assumed crew arrival time at the first stop of any route, when no earlier
-// timestamp exists to measure from. Change this if the actual start time changes.
+// Assumed crew arrival time at the first stop of any route, used ONLY as a
+// fallback when we don't have a real "left the shop" timestamp for that day
+// (see logStopNavigateTapped below, which captures the real one when available).
 var ASSUMED_ROUTE_START_HOUR = 8; // 8:00 AM EST
+
+// Shop / yard address — the starting point for the first stop of each route.
+var SHOP_ADDRESS = '14810 Hagen Ranch Rd, Delray Beach, FL';
+
+// Estimates driving minutes between two addresses using Google's Directions
+// API, with live traffic where available. Calls back with a number of
+// minutes, or null if no estimate could be obtained (API not ready, no
+// route found, offline, etc). Never throws — always calls back.
+function estimateDriveMinutes(originAddress, destAddress, callback) {
+  try {
+    if (typeof google === 'undefined' || !google.maps || !originAddress || !destAddress) { callback(null); return; }
+    var svc = new google.maps.DirectionsService();
+    svc.route({
+      origin: originAddress,
+      destination: destAddress,
+      travelMode: google.maps.TravelMode.DRIVING,
+      drivingOptions: { departureTime: new Date(), trafficModel: 'bestguess' }
+    }, function(result, status) {
+      try {
+        if (status !== 'OK' || !result || !result.routes || !result.routes[0] || !result.routes[0].legs || !result.routes[0].legs[0]) {
+          callback(null); return;
+        }
+        var leg = result.routes[0].legs[0];
+        var seconds = leg.duration_in_traffic ? leg.duration_in_traffic.value : leg.duration.value;
+        callback(Math.round(seconds / 60));
+      } catch(e) { callback(null); }
+    });
+  } catch(e) { callback(null); }
+}
+
+// Logs the moment a crew member taps "Navigate/Go" for a stop — this is the
+// real "departure" timestamp for that leg of the day (leaving the shop for
+// stop 1, or leaving the previous property for stop 2+). Non-blocking: never
+// prevents the actual navigation from opening, just records when it happened.
+// Also kicks off a best-effort Directions API drive-time estimate so we can
+// later split each stop's total time into drive time vs. actual work time.
+function logStopNavigateTapped(routeId, propId) {
+  try {
+    var r = (state.routes||[]).find(function(x){ return x.id === routeId; });
+    if (!r) return;
+    var stops = r.stops || [];
+    var idx = stops.findIndex(function(x){ return x.propId === propId; });
+    if (idx === -1) return;
+    var s = stops[idx];
+    var nowISO = new Date().toISOString();
+    s.navigateTappedAtISO = nowISO;
+    saveAndSync('routes', r);
+
+    // Best-effort drive-time estimate — origin is the shop for stop 1,
+    // or the previous stop's address for every stop after that.
+    var destProp = (state.properties||[]).find(function(p){ return p.id === propId; });
+    if (!destProp || !destProp.address) return;
+    var originAddress;
+    if (idx === 0) {
+      originAddress = SHOP_ADDRESS;
+    } else {
+      var prevProp = (state.properties||[]).find(function(p){ return p.id === stops[idx-1].propId; });
+      originAddress = prevProp ? prevProp.address : null;
+    }
+    if (!originAddress) return;
+
+    estimateDriveMinutes(originAddress, destProp.address, function(minutes) {
+      if (minutes === null) return;
+      // Re-fetch fresh in case state moved on while the API call was in flight;
+      // bail if a newer Navigate tap has since superseded this one.
+      var r2 = (state.routes||[]).find(function(x){ return x.id === routeId; });
+      if (!r2) return;
+      var s2 = (r2.stops||[]).find(function(x){ return x.propId === propId; });
+      if (!s2 || s2.navigateTappedAtISO !== nowISO) return;
+      s2.estimatedDriveMinutes = minutes;
+      s2.estimatedArrivalAtISO = new Date(new Date(nowISO).getTime() + minutes * 60000).toISOString();
+      saveAndSync('routes', r2);
+    });
+  } catch(e) { /* never block navigation over this */ }
+}
 
 // Calculate stop duration in minutes between prev and current completion
 // Deducts lunch overlap if window crosses 12-1pm EST
@@ -2988,6 +3132,20 @@ function durationColor(minutes) {
   return 'var(--red)';
 }
 
+// Splits a stop's time into wrap-up (finishing previous job to tapping
+// Navigate), estimated drive (from Directions API), and actual work time
+// (estimated arrival to completion). Returns null if we don't have enough
+// real data for this stop (no Navigate tap logged, or the drive estimate
+// never came back — e.g. offline, or Directions API not yet enabled).
+function getStopTimeBreakdown(stops, i) {
+  var s = stops[i];
+  if (!s.navigateTappedAtISO || s.estimatedDriveMinutes == null || !s.estimatedArrivalAtISO) return null;
+  var prevCompletedISO = i > 0 ? stops[i-1].completedAtISO : null;
+  var wrapUpMin = prevCompletedISO ? calcStopDuration(prevCompletedISO, s.navigateTappedAtISO) : null;
+  var workMin = calcStopDuration(s.estimatedArrivalAtISO, s.completedAtISO);
+  return { wrapUpMin: wrapUpMin, driveMin: s.estimatedDriveMinutes, workMin: workMin };
+}
+
 // Get all stop durations for a route (sorted by completion time)
 function getRouteDurations(route) {
   var stops = (route.stops||[]).filter(function(s){
@@ -2997,19 +3155,32 @@ function getRouteDurations(route) {
   });
 
   return stops.map(function(s, i) {
-    // First stop of the day has no prior completion to measure from, so we
-    // assume the crew arrived at ASSUMED_ROUTE_START_HOUR EST and measure
-    // duration from there instead of leaving it blank.
-    var prevISO = i === 0
-      ? estWallTimeISO(s.completedAtISO, ASSUMED_ROUTE_START_HOUR, 0)
-      : stops[i-1].completedAtISO;
+    // First stop of the day: prefer the REAL "left the shop" timestamp
+    // captured when the crew tapped Navigate (logStopNavigateTapped). Only
+    // fall back to the flat 8:00 AM assumption if that data isn't available
+    // (e.g. they didn't use the in-app Navigate button that day).
+    var prevISO, usedAssumedStart = false, leftShopAt = null;
+    if (i === 0) {
+      if (s.navigateTappedAtISO) {
+        prevISO = s.navigateTappedAtISO;
+        leftShopAt = formatTimeEST(s.navigateTappedAtISO);
+      } else {
+        prevISO = estWallTimeISO(s.completedAtISO, ASSUMED_ROUTE_START_HOUR, 0);
+        usedAssumedStart = true;
+      }
+    } else {
+      prevISO = stops[i-1].completedAtISO;
+    }
     var dur = calcStopDuration(prevISO, s.completedAtISO);
     var prop = (state.properties||[]).find(function(p){return p.id===s.propId;});
     return {
       stop: s, prop: prop,
       duration: dur,
       completedAt: formatTimeEST(s.completedAtISO),
-      isFirst: i === 0
+      isFirst: i === 0,
+      assumedStart: usedAssumedStart,
+      leftShopAt: leftShopAt,
+      breakdown: getStopTimeBreakdown(stops, i)
     };
   });
 }
@@ -6614,7 +6785,7 @@ function loadFieldView() {
               <div style="font-size:9px;font-weight:800;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">${t('Address')}</div>
               <div style="font-size:13px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${prop.address}</div>
             </div>
-            <a href="https://maps.google.com/?q=${encodeURIComponent(prop.address)}" target="_blank" onclick="event.stopPropagation();"
+            <a href="https://maps.google.com/?q=${encodeURIComponent(prop.address)}" target="_blank" onclick="event.stopPropagation();logStopNavigateTapped('${route.id}','${s.propId}');"
                style="flex-shrink:0;display:inline-flex;align-items:center;gap:5px;background:rgba(88,166,255,.15);border:1px solid rgba(88,166,255,.3);border-radius:8px;padding:10px 16px;color:var(--blue);text-decoration:none;font-size:14px;font-weight:700;min-height:42px;">
               <i class="ti ti-navigation" style="font-size:16px;"></i>${t('Go')}
             </a>
@@ -8597,17 +8768,31 @@ function renderReports() {
         var avgMin = durations.filter(function(d){return !d.isFirst&&d.duration!==null;}).length
           ? Math.round(totalMin / durations.filter(function(d){return !d.isFirst&&d.duration!==null;}).length)
           : null;
+        var anyAssumedStart = durations.some(function(d){ return d.assumedStart; });
 
         var rows = durations.map(function(d, i) {
           var col = durationColor(d.duration);
+          var subtitle = 'Done at ' + d.completedAt;
+          if (d.isFirst) {
+            subtitle += d.leftShopAt ? (' · left shop ' + d.leftShopAt) : ' · from 8:00 AM';
+          }
+          var breakdownLine = '';
+          if (d.breakdown) {
+            var parts = [];
+            if (d.breakdown.wrapUpMin !== null && d.breakdown.wrapUpMin > 0) parts.push('⏸ ' + formatDuration(d.breakdown.wrapUpMin) + ' wrap-up');
+            parts.push('🚗 ' + formatDuration(d.breakdown.driveMin) + ' drive');
+            if (d.breakdown.workMin !== null) parts.push('🔧 ' + formatDuration(d.breakdown.workMin) + ' work');
+            breakdownLine = '<div style="font-size:10px;color:var(--text4);margin-top:2px;">' + parts.join(' · ') + '</div>';
+          }
           return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:4px;">'
             + '<div style="width:22px;height:22px;border-radius:50%;background:' + (d.stop.completed?'var(--green3)':'var(--bg4)') + ';border:2px solid ' + (d.stop.completed?'var(--green)':'var(--border2)') + ';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;">' + (i+1) + '</div>'
             + '<div style="flex:1;min-width:0;">'
               + '<div style="font-size:13px;font-weight:700;">' + (d.prop?d.prop.name:'Unknown') + '</div>'
-              + '<div style="font-size:11px;color:var(--text3);">Done at ' + d.completedAt + (d.isFirst ? ' · from 8:00 AM' : '') + '</div>'
+              + '<div style="font-size:11px;color:var(--text3);">' + subtitle + '</div>'
+              + breakdownLine
             + '</div>'
             + '<div style="text-align:right;flex-shrink:0;">'
-              + '<span style="font-size:13px;font-weight:700;color:' + col + ';">' + formatDuration(d.duration) + (d.isFirst ? '*' : '') + '</span>'
+              + '<span style="font-size:13px;font-weight:700;color:' + col + ';">' + formatDuration(d.duration) + (d.isFirst && d.assumedStart ? '*' : '') + '</span>'
             + '</div>'
           + '</div>';
         }).join('');
@@ -8624,7 +8809,7 @@ function renderReports() {
             + '</div>'
           + '</div>'
           + rows
-          + '<div style="font-size:10px;color:var(--text4);margin-top:6px;padding:0 2px;">* assumes an 8:00 AM EST start</div>'
+          + (anyAssumedStart ? '<div style="font-size:10px;color:var(--text4);margin-top:6px;padding:0 2px;">* no Navigate tap logged — assumes an 8:00 AM EST start</div>' : '')
         + '</div>';
       }).join('');
     }
@@ -10252,7 +10437,7 @@ function renderCwDayContent() {
       html += '<div class="card" style="margin-bottom:10px;' + (s.completed?'opacity:.7;':'') + '">'
         + '<div style="display:flex;gap:10px;align-items:flex-start;">'
         + '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:' + (s.completed?'var(--green3)':'var(--bg4)') + ';border:2px solid ' + (s.completed?'var(--green)':'var(--border2)') + ';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:' + (s.completed?'#fff':'var(--text3)') + ';">' + (i+1) + '</div>'
-        + '<div style="flex:1;min-width:0;cursor:pointer;" onclick="openCrewPropSnapshot(\'' + s.propId + '\')">'
+        + '<div style="flex:1;min-width:0;cursor:pointer;" onclick="openCrewPropSnapshot(\'' + s.propId + '\',\'' + route.id + '\')">'
         + '<div style="font-weight:800;font-size:14px;color:var(--text);">' + (prop?.name||'Property') + ' <span style="font-size:11px;color:var(--text4);font-weight:400;">ⓘ</span>'
           + ((prop?.checklist||[]).length && !s.completed ? ' <span style="font-size:10px;font-weight:700;color:var(--yellow);background:rgba(250,204,21,.1);border:1px solid rgba(250,204,21,.25);border-radius:10px;padding:1px 6px;">⚠ ' + prop.checklist.length + '</span>' : '')
           + ((state.flags||[]).filter(f=>f.propId===s.propId&&!f.resolved).length ? ' <span style="font-size:10px;font-weight:700;color:var(--red);background:rgba(248,81,73,.12);border-radius:10px;padding:1px 6px;">⚑' + (state.flags||[]).filter(f=>f.propId===s.propId&&!f.resolved).length + '</span>' : '')
@@ -10275,7 +10460,7 @@ function renderCwDayContent() {
 
 // ── Crew Property Snapshot ────────────────────────────────────────────────
 // Read-only property info card shown when crew taps a property in My Week
-function openCrewPropSnapshot(propId) {
+function openCrewPropSnapshot(propId, routeId) {
   var prop  = (state.properties||[]).find(function(p){return p.id===propId;});
   if (!prop) return;
   var flags = (state.flags||[]).filter(function(f){return f.propId===propId&&!f.resolved;});
@@ -10327,7 +10512,7 @@ function openCrewPropSnapshot(propId) {
     + (prop.address ? '<a href="https://maps.google.com/?q=' + encodeURIComponent(prop.address) + '" target="_blank" style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--blue);margin-bottom:8px;text-decoration:none;" onclick="event.stopPropagation();">'
         + '<i class="ti ti-map-pin" style="font-size:13px;"></i> ' + prop.address + ' <i class="ti ti-external-link" style="font-size:11px;opacity:.7;"></i>'
       + '</a>' : '')
-    + (prop.address ? '<a href="https://maps.google.com/?q=' + encodeURIComponent(prop.address) + '" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px;background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.25);border-radius:10px;color:var(--blue);font-size:14px;font-weight:600;text-decoration:none;margin-bottom:12px;">'
+    + (prop.address ? '<a href="https://maps.google.com/?q=' + encodeURIComponent(prop.address) + '" target="_blank" onclick="' + (routeId ? "logStopNavigateTapped('" + routeId + "','" + propId + "');" : '') + '" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px;background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.25);border-radius:10px;color:var(--blue);font-size:14px;font-weight:600;text-decoration:none;margin-bottom:12px;">'
       + '<i class="ti ti-navigation" style="font-size:16px;"></i> ' + t('Navigate to Property')
     + '</a>' : '')
 
