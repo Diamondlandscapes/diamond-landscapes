@@ -1031,6 +1031,17 @@ select.inp{cursor:pointer;}
     </div>
 
 
+    <div id="screen-propmap" class="screen">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div>
+          <div style="font-size:20px;font-weight:800;">Property Map</div>
+          <div id="propmap-status" style="font-size:11px;color:var(--text3);margin-top:2px;"></div>
+        </div>
+      </div>
+      <div id="propmap-canvas" style="width:100%;height:calc(100vh - 180px);min-height:400px;border-radius:14px;overflow:hidden;border:1px solid var(--border);"></div>
+    </div>
+
+
     <div id="screen-crew" class="screen">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
         <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">Crew</div>
@@ -1652,7 +1663,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v21'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v22'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -1760,7 +1771,7 @@ function switchTab(tab) {
   // auto-render reports immediately when opened
   if (tab === 'reports') { setTimeout(() => renderReports(), 50); }
   const renders = { dashboard: renderDashboard, routes: renderRoutes,
-    properties: renderProperties, crew: renderCrew, inventory: renderInventory,
+    properties: renderProperties, propmap: renderPropertyMap, crew: renderCrew, inventory: renderInventory,
     equipment: renderEquipment, reports: renderReports,
     schedule: renderSchedule, 'crew-week': renderCrewWeek, field: renderFieldView,
     workorders: renderWorkOrders, 'wo-crew': renderCrewWorkOrders, attendance: renderAttendance };
@@ -2002,6 +2013,7 @@ function applyRole(r) {
     <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni"><i class="ti ti-clipboard-list"></i></span><span class="nl">Work Orders</span></button>
     <div class="nav-group-label" style="margin-top:10px;">Data</div>
     <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni"><i class="ti ti-home"></i></span><span class="nl">Properties</span><span class="n-count" id="nav-prop-count"></span></button>
+    <button class="nb" onclick="switchTab('propmap')" data-tab="propmap"><span class="ni"><i class="ti ti-map-pin"></i></span><span class="nl">Property Map</span></button>
     <button class="nb" onclick="switchTab('crew')" data-tab="crew"><span class="ni"><i class="ti ti-users"></i></span><span class="nl">Crew</span><span class="n-count" id="nav-crew-count"></span></button>
     <button class="nb" onclick="switchTab('inventory')" data-tab="inventory"><span class="ni"><i class="ti ti-package"></i></span><span class="nl">Inventory</span></button>
     <button class="nb" onclick="switchTab('equipment')" data-tab="equipment"><span class="ni"><i class="ti ti-tool"></i></span><span class="nl">Equipment</span></button>
@@ -4290,6 +4302,121 @@ function t(str) {
 // routes through the word-map translator only when Spanish is active.
 function tf(str) {
   return getCrewLang() === 'es' ? translateTextToSpanish(str) : str;
+}
+
+// ─── PROPERTY MAP (manager) ─────────────────────────────────────────────
+// Shows every property as a pin. Geocodes each address once and caches the
+// lat/lng on the property record so subsequent visits don't re-geocode
+// (keeps this fast and avoids burning Geocoding API quota unnecessarily).
+var _propMapInstance = null;
+var _propMapMarkers = [];
+
+async function renderPropertyMap() {
+  var statusEl = document.getElementById('propmap-status');
+  var mapEl    = document.getElementById('propmap-canvas');
+  if (!mapEl) return;
+
+  var attempts = 0;
+  while (typeof google === 'undefined' && attempts < 20) {
+    await new Promise(function(res){ setTimeout(res, 500); });
+    attempts++;
+  }
+  if (typeof google === 'undefined') {
+    mapEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--red);font-size:13px;">Could not load Google Maps</div>';
+    return;
+  }
+
+  _propMapMarkers.forEach(function(m){ m.setMap(null); });
+  _propMapMarkers = [];
+
+  if (!_propMapInstance) {
+    _propMapInstance = new google.maps.Map(mapEl, {
+      zoom: 11,
+      center: {lat:26.4615, lng:-80.0728},
+      mapTypeId: 'roadmap',
+      styles:[
+        {elementType:'geometry',stylers:[{color:'#1c2128'}]},
+        {elementType:'labels.text.fill',stylers:[{color:'#adbac7'}]},
+        {elementType:'labels.text.stroke',stylers:[{color:'#1c2128'}]},
+        {featureType:'road',elementType:'geometry',stylers:[{color:'#22272e'}]},
+        {featureType:'road',elementType:'geometry.stroke',stylers:[{color:'#2d333b'}]},
+        {featureType:'water',elementType:'geometry',stylers:[{color:'#0d1117'}]},
+        {featureType:'poi',stylers:[{visibility:'off'}]},
+        {featureType:'transit',stylers:[{visibility:'off'}]}
+      ],
+      disableDefaultUI:false, zoomControl:true, streetViewControl:false, mapTypeControl:false
+    });
+  }
+
+  var props = (state.properties||[]).filter(function(p){ return p.address; });
+  if (!props.length) {
+    if (statusEl) statusEl.textContent = 'No properties with addresses yet';
+    return;
+  }
+
+  var geocoder   = new google.maps.Geocoder();
+  var infoWindow = new google.maps.InfoWindow();
+  var bounds     = new google.maps.LatLngBounds();
+  var placed     = 0;
+  var toGeocode  = props.filter(function(p){ return p.lat == null || p.lng == null; });
+  if (statusEl) statusEl.textContent = toGeocode.length
+    ? 'Locating ' + toGeocode.length + ' of ' + props.length + ' properties…'
+    : props.length + ' properties mapped';
+
+  function placePin(prop, pos) {
+    var flags = (state.flags||[]).filter(function(f){ return f.propId===prop.id && !f.resolved; });
+    var color = flags.length ? '#f85149' : '#58a6ff';
+    var pinSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36">'
+      + '<path d="M14 0C6.268 0 0 6.268 0 14c0 10.5 14 22 14 22s14-11.5 14-22C28 6.268 21.732 0 14 0z" fill="' + color + '"/>'
+      + '<circle cx="14" cy="14" r="8" fill="rgba(0,0,0,0.25)"/>'
+      + '</svg>';
+    var marker = new google.maps.Marker({
+      position: pos, map: _propMapInstance, title: prop.name,
+      icon: {
+        url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(pinSvg),
+        scaledSize: new google.maps.Size(28,36),
+        anchor: new google.maps.Point(14,36)
+      }
+    });
+    marker.addListener('click', function() {
+      var rateStr = prop.monthlyRate ? ('$' + parseFloat(prop.monthlyRate).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + '/mo') : 'No rate set';
+      infoWindow.setContent(
+        '<div style="font-family:-apple-system,sans-serif;min-width:190px;padding:4px;">'
+        + '<div style="font-weight:700;font-size:14px;margin-bottom:4px;">' + prop.name + '</div>'
+        + '<div style="font-size:12px;color:#666;margin-bottom:8px;">' + (prop.address||'') + '</div>'
+        + '<div style="font-size:13px;font-weight:700;color:#2da44e;margin-bottom:2px;">' + rateStr + '</div>'
+        + '<div style="font-size:12px;color:#666;">' + (prop.frequency || 'No frequency set') + '</div>'
+        + (flags.length ? '<div style="font-size:12px;color:#f85149;font-weight:600;margin-top:6px;">⚑ ' + flags.length + ' open flag' + (flags.length>1?'s':'') + '</div>' : '')
+        + '</div>'
+      );
+      infoWindow.open(_propMapInstance, marker);
+    });
+    _propMapMarkers.push(marker);
+    bounds.extend(pos);
+    placed++;
+    if (placed === props.length && !bounds.isEmpty()) {
+      _propMapInstance.fitBounds(bounds);
+    }
+  }
+
+  props.forEach(function(prop) {
+    if (prop.lat != null && prop.lng != null) {
+      placePin(prop, {lat: prop.lat, lng: prop.lng});
+      return;
+    }
+    geocoder.geocode({address: prop.address + ', FL'}, function(results, status) {
+      if (status === 'OK' && results[0]) {
+        var loc = results[0].geometry.location;
+        prop.lat = loc.lat();
+        prop.lng = loc.lng();
+        saveAndSync('properties', prop); // cache so we never re-geocode this one again
+        placePin(prop, {lat: prop.lat, lng: prop.lng});
+      } else {
+        placed++;
+      }
+      if (statusEl) statusEl.textContent = placed + ' of ' + props.length + ' properties mapped';
+    });
+  });
 }
 
 // ── Route Map View ────────────────────────────────────────────────────────
@@ -8198,6 +8325,7 @@ function signOut() {
     <button class="nb" onclick="switchTab('routes')" data-tab="routes"><span class="ni">🗺️</span><span class="nl">Routes</span></button>
     <button class="nb" onclick="switchTab('schedule')" data-tab="schedule"><span class="ni">📅</span><span class="nl">Schedule</span></button>
     <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni">🏡</span><span class="nl">Properties</span></button>
+    <button class="nb" onclick="switchTab('propmap')" data-tab="propmap"><span class="ni">📍</span><span class="nl">Property Map</span></button>
     <button class="nb" onclick="switchTab('crew')" data-tab="crew"><span class="ni">👷</span><span class="nl">Crew</span></button>
     <button class="nb" onclick="switchTab('inventory')" data-tab="inventory"><span class="ni">📦</span><span class="nl">Inventory</span></button>
     <button class="nb" onclick="switchTab('equipment')" data-tab="equipment"><span class="ni">🔧</span><span class="nl">Equipment</span></button>
@@ -9021,6 +9149,7 @@ const MANAGER_MENU = [
   { tab:'dashboard', icon:'⚡', label:'Dashboard' },
   { tab:'routes',    icon:'🗺️', label:'Routes' },
   { tab:'properties',icon:'🏡', label:'Properties' },
+  { tab:'propmap',   icon:'📍', label:'Property Map' },
   { tab:'crew',      icon:'👷', label:'Crew' },
   { tab:'inventory', icon:'📦', label:'Inventory' },
   { tab:'equipment', icon:'🔧', label:'Equipment' },
