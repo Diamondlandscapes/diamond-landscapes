@@ -1703,7 +1703,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v39'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v40'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -8828,14 +8828,26 @@ function gsLoad() {
 // the local screen looked updated, but Firestore, and every other device,
 // never actually got it. This queues anything that exhausts its retries and
 // tries again once we're back online or the app reloads, so no write is
-// ever silently lost.
+// ever silently lost. Handles both saves and deletes — a failed delete is
+// just as invisible as a failed save: the local screen already removed the
+// item, so there's no sign anything went wrong, but the record survives on
+// the server and every other device keeps seeing it.
 function queuePendingWrite(table, record) {
   try {
     var queue = JSON.parse(localStorage.getItem('dl_pending_writes') || '[]');
     queue = queue.filter(function(q) { return !(q.table === table && q.id === record.id); }); // dedupe, keep latest
-    queue.push({ table: table, id: record.id, record: record, queuedAt: new Date().toISOString() });
+    queue.push({ op: 'set', table: table, id: record.id, record: record, queuedAt: new Date().toISOString() });
     localStorage.setItem('dl_pending_writes', JSON.stringify(queue));
   } catch(e) { console.warn('Could not queue pending write:', e); }
+}
+
+function queuePendingDelete(table, id) {
+  try {
+    var queue = JSON.parse(localStorage.getItem('dl_pending_writes') || '[]');
+    queue = queue.filter(function(q) { return !(q.table === table && q.id === id); }); // dedupe — a queued delete supersedes any queued save for the same doc
+    queue.push({ op: 'delete', table: table, id: id, queuedAt: new Date().toISOString() });
+    localStorage.setItem('dl_pending_writes', JSON.stringify(queue));
+  } catch(e) { console.warn('Could not queue pending delete:', e); }
 }
 
 function flushPendingWrites() {
@@ -8845,7 +8857,10 @@ function flushPendingWrites() {
   if (!_fbReady || !_db || !window._authReady) return; // try again next trigger
   console.log('Flushing ' + queue.length + ' pending write(s)...');
   localStorage.setItem('dl_pending_writes', '[]'); // clear optimistically; re-queued below on failure
-  queue.forEach(function(item) { gsSave(item.table, item.record); });
+  queue.forEach(function(item) {
+    if (item.op === 'delete') gsDelete(item.table, item.id);
+    else gsSave(item.table, item.record);
+  });
 }
 
 function gsSave(table, record, _attempt) {
@@ -8897,10 +8912,26 @@ window.addEventListener('online', flushPendingWrites);
 setTimeout(flushPendingWrites, 5000);
 
 // ── Delete one record from Firestore ──────────────────────────────────────
-function gsDelete(table, id) {
-  if (!_fbReady || !_db) return;
+function gsDelete(table, id, _attempt) {
+  if (!_fbReady || !_db) {
+    setTimeout(function() { gsDelete(table, id, (_attempt||0)+1); }, 2000);
+    return;
+  }
   window._fbSDK.deleteDoc(window._fbSDK.doc(_db, table, String(id)))
-    .catch(function(err) { console.warn('gsDelete failed:', err.message); });
+    .catch(function(err) {
+      console.warn('gsDelete failed [' + table + ']:', err.message);
+      if ((_attempt||0) < 3) {
+        setTimeout(function() { gsDelete(table, id, (_attempt||0)+1); },
+          Math.pow(2, (_attempt||0)+1) * 1000);
+      } else {
+        // Exhausted retries — don't let this delete silently vanish. The
+        // local screen already shows it as gone (no visible error), but
+        // without this the record would survive on the server forever and
+        // every other device would keep seeing it.
+        console.warn('gsDelete: exhausted retries, queuing for later [' + table + ']:', id);
+        queuePendingDelete(table, id);
+      }
+    });
 }
 
 // ── Bulk-write an array of records in Firestore batches ───────────────────
