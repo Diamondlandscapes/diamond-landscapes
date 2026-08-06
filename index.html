@@ -1703,7 +1703,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v38'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-04-v39'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -11697,8 +11697,16 @@ function renderWorkOrders() {
 
   const wos = state.workOrders || [];
 
-  // Get unique communities
-  let communities = [...new Set(wos.map(w => w.community).filter(Boolean))].sort();
+  // Get unique communities — work orders with no community set still need
+  // to be visible to a manager (to fix or clean up), not silently dropped.
+  // Previously .filter(Boolean) hid them from this list entirely, meaning
+  // there was no way to even see, let alone archive or delete, a work
+  // order that ended up with an empty community field.
+  let communities = [...new Set(wos.map(w => w.community || 'No Community Set'))].sort(function(a,b){
+    if (a === 'No Community Set') return 1; // always sort last, it's a cleanup bucket not a real community
+    if (b === 'No Community Set') return -1;
+    return a.localeCompare(b);
+  });
 
   if (!communities.length) {
     el.innerHTML =
@@ -11784,7 +11792,7 @@ function openCommunityWO(community) {
   var panel=document.createElement('div'); panel.id='wo-community-panel'; panel.className='panel open';
   document.body.appendChild(panel);
 
-  function allWOs(){return (state.workOrders||[]).filter(function(w){return w.community===community;});}
+  function allWOs(){return (state.workOrders||[]).filter(function(w){return community==='No Community Set' ? !w.community : w.community===community;});}
   function activeWOs(){return allWOs().filter(function(w){return w.status!=='archived'&&w.status!=='placeholder';});}
   function archivedWOs(){return allWOs().filter(function(w){return w.status==='archived';});}
   function sortV(a){return a.slice().sort(function(a,b){return (parseInt(a.village)||0)-(parseInt(b.village)||0);});}
@@ -14681,11 +14689,16 @@ function openCreateWO(community) {
   var sheet=document.createElement('div');sheet.id='wo-create-sheet';sheet.className='overlay open';
   var crewOpts='<option value="">— Unassigned —</option><option value="__team__">&#x1F465; General Team</option>'
     +(state.crew||[]).map(function(c){return '<option value="'+c.id+'">'+c.name+'</option>';}).join('');
+  var existingCommunities=[...new Set((state.workOrders||[]).map(function(w){return w.community;}).filter(Boolean))].sort();
   var inner=document.createElement('div');inner.className='sheet';inner.style.maxHeight='92vh';
   inner.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
     +'<div class="sheet-title" style="margin-bottom:0;">&#x2795; New Work Order</div>'
     +'<button id="woc-close" class="sheet-close">&#x2715;</button></div>'
-    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'
+    +'<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">COMMUNITY <span style="color:var(--red);">*</span></div>'
+    +(community
+      ? '<input id="woc-community" class="inp" value="'+community+'" readonly style="background:var(--bg4);color:var(--text2);"/>'
+      : '<input id="woc-community" class="inp" list="woc-comm-list" placeholder="e.g. Coastal Bay"/><datalist id="woc-comm-list">'+existingCommunities.map(function(c){return '<option value="'+c+'">';}).join('')+'</datalist>')
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;margin-top:12px;">'
     +'<div><div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">TYPE</div>'
     +'<select id="woc-type" class="inp" style="margin-bottom:0;"><option value="landscape">&#x1F33F; Landscaping</option><option value="irrigation">&#x1F4A7; Irrigation</option></select></div>'
     +'<div><div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">WO # (optional)</div>'
@@ -14717,12 +14730,14 @@ function openCreateWO(community) {
   document.getElementById('woc-close').onclick=function(){sheet.remove();};
   document.getElementById('woc-cancel').onclick=function(){sheet.remove();};
   document.getElementById('woc-save').onclick=function(){
+    var finalCommunity=document.getElementById('woc-community').value.trim();
+    if(!finalCommunity){toast('Community is required');return;}
     var owner=document.getElementById('woc-owner').value.trim();
     if(!owner){toast('Owner name is required');return;}
     var dv=document.getElementById('woc-date').value;
     var ds=dv?new Date(dv).toLocaleDateString():new Date().toLocaleDateString('en-US');
     var wo={id:'wo_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
-      type:document.getElementById('woc-type').value,community:community,date:ds,
+      type:document.getElementById('woc-type').value,community:finalCommunity,date:ds,
       dateReceived:new Date().toLocaleDateString('en-US'),dateCompleted:'',
       woNumber:document.getElementById('woc-num').value.trim(),
       address:document.getElementById('woc-address').value.trim(),
@@ -14735,7 +14750,7 @@ function openCreateWO(community) {
       completedOn:'',completedPhoto:'',completedBy:'',createdAt:new Date().toLocaleDateString('en-US')};
     state.workOrders=state.workOrders||[];state.workOrders.push(wo);saveAndSync('workOrders',wo);
     sheet.remove();renderWorkOrders();
-    var panel=document.getElementById('wo-community-panel');if(panel){panel.remove();openCommunityWO(community);}
+    var panel=document.getElementById('wo-community-panel');if(panel){panel.remove();openCommunityWO(finalCommunity);}
     toast('Work order created \u2713');
   };
 }
