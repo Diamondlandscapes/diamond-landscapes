@@ -1695,7 +1695,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-11-v41'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-11-v42'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -4383,13 +4383,18 @@ var UI_ES = {
   'All Communities':              'Todas las Comunidades',
 };
 function t(str) {
-  if (getCrewLang() !== 'es') return str;
+  // Translation is only for the crew-facing daily workflow — the language
+  // preference lives in localStorage (per device, not per role), so if
+  // Spanish was ever turned on on this device (even by a crew member
+  // testing on a shared device), it must not bleed into manager screens.
+  if (state.role === 'manager' || getCrewLang() !== 'es') return str;
   return UI_ES[str] || str;
 }
 // Shorthand for freeform text (notes, instructions, flag descriptions) —
-// routes through the word-map translator only when Spanish is active.
+// routes through the word-map translator only when Spanish is active, and
+// only for crew — same reasoning as t() above.
 function tf(str) {
-  return getCrewLang() === 'es' ? translateTextToSpanish(str) : str;
+  return (state.role !== 'manager' && getCrewLang() === 'es') ? translateTextToSpanish(str) : str;
 }
 
 // ─── PROPERTY MAP (manager) ─────────────────────────────────────────────
