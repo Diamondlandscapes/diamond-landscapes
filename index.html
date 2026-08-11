@@ -1217,7 +1217,6 @@ select.inp{cursor:pointer;}
       <div class="pills" style="margin-bottom:14px;" id="sched-view-pills">
         <button class="pill active" onclick="setSchedView('week')" id="sv-week">Week</button>
         <button class="pill" onclick="setSchedView('month')" id="sv-month">Month</button>
-        <button class="pill" onclick="setSchedView('due')" id="sv-due">Due for Service</button>
       </div>
 
 
@@ -1237,13 +1236,6 @@ select.inp{cursor:pointer;}
       <div id="sched-drafts-banner" style="display:none;background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.25);border-radius:14px;padding:14px;margin-bottom:14px;">
         <div style="font-size:12px;font-weight:800;color:var(--yellow);letter-spacing:1px;margin-bottom:8px;">⏳ PENDING APPROVAL</div>
         <div id="sched-drafts-list"></div>
-      </div>
-
-
-      <div id="sched-due-banner" style="display:none;background:rgba(251,146,60,.1);border:1px solid rgba(251,146,60,.3);border-radius:14px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:12px;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:8px;">📅 DUE FOR SERVICE</div>
-        <div id="sched-due-list"></div>
-        <button class="btn-sm" onclick="generateSchedule()" style="background:linear-gradient(135deg,var(--blue),var(--teal));color:#fff;border:none;margin-top:10px;padding:8px 16px;">✦ Generate Routes from Due Properties</button>
       </div>
 
 
@@ -1703,7 +1695,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-04-v40'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-11-v41'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -2103,7 +2095,7 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
   renderCrewStatusCard();
 
   var todayISO    = new Date().toISOString().slice(0,10);
-  const todayRoutes = state.routes.filter(r => r.date === todayISO || r.day === today);
+  const todayRoutes = state.routes.filter(r => r.date === todayISO || (!r.date && r.day === today));
   const completed   = todayRoutes.filter(r => r.status === 'Done').length;
   const openFlags   = state.flags.filter(f => !f.resolved);
   const activeCrew  = new Set(todayRoutes.map(r => r.crewId).filter(Boolean)).size;
@@ -2271,7 +2263,7 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
     var pnlEl = document.getElementById('dash-pnl');
     if (pnlEl) {
       var todayISO = new Date().toISOString().slice(0,10);
-      var todayDateRoutes = state.routes.filter(function(r){ return r.date === todayISO || r.day === today; });
+      var todayDateRoutes = state.routes.filter(function(r){ return r.date === todayISO || (!r.date && r.day === today); });
       var propsWithRates = (state.properties||[]).filter(function(p){ return parseFloat(p.monthlyRate) > 0; });
       if (!todayDateRoutes.length || !propsWithRates.length) {
         pnlEl.innerHTML = '<div style="font-size:13px;color:var(--text4);text-align:center;padding:8px 0;">Add monthly rates to properties to see today\'s P&L</div>';
@@ -2743,7 +2735,10 @@ function openRouteDetail(id) {
   }
 
   var canEdit = state.role === 'manager';
-  html += canEdit ? `<div style="margin-top:12px;"><button class="btn btn-red" onclick="deleteRoute('${r.id}')" style="font-size:13px;">Delete Route</button></div>` : '';
+  html += canEdit ? `<div style="margin-top:12px;display:flex;gap:8px;">
+    <button class="btn" onclick="openRescheduleRoute('${r.id}')" style="font-size:13px;flex:1;background:rgba(96,165,250,.12);color:var(--blue);border:1px solid rgba(96,165,250,.3);">📅 Reschedule</button>
+    <button class="btn btn-red" onclick="deleteRoute('${r.id}')" style="font-size:13px;flex:1;">Delete Route</button>
+  </div>` : '';
   document.getElementById('rp-body').innerHTML = html;
   document.getElementById('route-panel').classList.add('open');
   setTimeout(function() { patchFirebaseImages(document.getElementById('rp-body')); }, 150);
@@ -2782,7 +2777,7 @@ function openCrewDetail(id) {
   const today      = new Date().toLocaleDateString('en-US',{weekday:'long'});
   const todayISO2  = new Date().toISOString().slice(0,10);
   const allRoutes  = (state.routes||[]).filter(r => r.crewId === id);
-  const todayRoute = allRoutes.find(r => r.date === todayISO2) || allRoutes.find(r => r.day === today);
+  const todayRoute = allRoutes.find(r => r.date === todayISO2) || allRoutes.find(r => !r.date && r.day === today);
   const todayStops = todayRoute?.stops?.length || 0;
   const todayDone  = todayRoute?.stops?.filter(s=>s.completed).length || 0;
   const totalDone  = allRoutes.reduce((a,r)=>a+(r.stops?.filter(s=>s.completed).length||0),0);
@@ -2883,7 +2878,7 @@ function openCrewDetail(id) {
             const stops = r.stops?.length || 0;
             const done  = r.stops?.filter(s=>s.completed).length || 0;
             const pct   = stops ? Math.round((done/stops)*100) : 0;
-            const isToday = r.day === today;
+            const isToday = r.date === todayISO2 ? true : (!r.date && r.day === today);
             return `<div class="card-flat" onclick="closePanel('crew-panel');openRouteDetail('${r.id}')"
               style="margin-bottom:8px;cursor:pointer;${isToday?'border-color:rgba(74,222,128,.4);':''}">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
@@ -4709,7 +4704,7 @@ function getCrewStatusData() {
 
   return (state.crew||[]).map(function(c) {
     var route = (state.routes||[]).find(function(r) {
-      return r.crewId === c.id && (r.date === todayISO || r.day === todayName);
+      return r.crewId === c.id && (r.date === todayISO || (!r.date && r.day === todayName));
     });
     if (!route) return { crew: c, route: null };
 
@@ -4796,7 +4791,7 @@ function openDashStopsList(completedOnly) {
   var todayISO  = new Date().toISOString().slice(0,10);
   var todayName = new Date().toLocaleDateString('en-US',{weekday:'long'});
   var todayRoutes = (state.routes||[]).filter(function(r){
-    return r.date === todayISO || r.day === todayName;
+    return r.date === todayISO || (!r.date && r.day === todayName);
   });
 
   var ex = document.getElementById('dash-stops-sheet'); if(ex) ex.remove();
@@ -5083,6 +5078,64 @@ function toggleService(routeId, propId, svc, checked) {
   if (checked) { if(!s.completedServices.includes(svc)) s.completedServices.push(svc); }
   else { s.completedServices = s.completedServices.filter(x=>x!==svc); }
   save();
+}
+
+// ── Reschedule a route (e.g. moving a route to another day when a truck is
+// down) ─────────────────────────────────────────────────────────────────
+function openRescheduleRoute(routeId) {
+  var r = state.routes.find(function(x){ return x.id === routeId; });
+  if (!r) return;
+
+  // If the route name follows the usual "M/D T#" convention, suggest an
+  // updated name matching the new date — but this is just a suggestion,
+  // fully editable, never forced.
+  var nameMatch = /^(\d{1,2}\/\d{1,2})(\s+.*)$/.exec(r.name || '');
+  var nameSuffix = nameMatch ? nameMatch[2] : '';
+
+  var ex = document.getElementById('reschedule-sheet'); if (ex) ex.remove();
+  var sheet = document.createElement('div');
+  sheet.id = 'reschedule-sheet';
+  sheet.className = 'overlay open';
+  sheet.innerHTML = '<div class="sheet">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+      + '<div class="sheet-title" style="margin-bottom:0;">📅 Reschedule Route</div>'
+      + '<button onclick="document.getElementById(\'reschedule-sheet\').remove()" style="background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;">✕</button>'
+    + '</div>'
+    + '<div style="font-size:13px;color:var(--text3);margin-bottom:16px;">Moving <strong>' + r.name + '</strong>' + (r.crewId ? ' (' + ((state.crew||[]).find(function(c){return c.id===r.crewId;})?.name||'') + ')' : '') + '. Stops and completion progress stay exactly as they are — only the date changes.</div>'
+    + '<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">NEW DATE</div>'
+    + '<input type="date" class="inp" id="resched-date" value="' + formatDateForInput(r.date || '') + '" style="color-scheme:dark;margin-bottom:14px;"/>'
+    + '<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">ROUTE NAME</div>'
+    + '<input type="text" class="inp" id="resched-name" value="' + r.name + '" style="margin-bottom:6px;"/>'
+    + (nameSuffix ? '<div style="font-size:11px;color:var(--text4);margin-bottom:14px;">💡 <span onclick="document.getElementById(\'resched-name\').value=resched_suggestName();" style="color:var(--blue);cursor:pointer;text-decoration:underline;">Update name to match new date</span></div>' : '<div style="margin-bottom:14px;"></div>')
+    + '<button class="btn btn-green" style="width:100%;" onclick="saveRescheduleRoute(\'' + routeId + '\')">Move Route</button>'
+  + '</div>';
+  document.body.appendChild(sheet);
+
+  window.resched_suggestName = function() {
+    var dateVal = document.getElementById('resched-date').value;
+    if (!dateVal) return document.getElementById('resched-name').value;
+    var d = parseLocalDate(dateVal);
+    var md = (d.getMonth()+1) + '/' + d.getDate();
+    return md + nameSuffix;
+  };
+}
+
+function saveRescheduleRoute(routeId) {
+  var r = state.routes.find(function(x){ return x.id === routeId; });
+  if (!r) return;
+  var dateVal = document.getElementById('resched-date').value;
+  var newName = document.getElementById('resched-name').value.trim();
+  if (!dateVal) { toast('Pick a date'); return; }
+  var d = parseLocalDate(dateVal);
+  r.date = dateVal; // yyyy-mm-dd, matches todayISO comparisons used throughout the app
+  r.day  = d.toLocaleDateString('en-US', { weekday: 'long' }); // keep day name in sync with the actual date
+  if (newName) r.name = newName;
+  saveAndSync('routes', r);
+  document.getElementById('reschedule-sheet')?.remove();
+  openRouteDetail(routeId);
+  renderRoutes();
+  renderDashboard();
+  toast('✓ Route moved to ' + d.toLocaleDateString('en-US',{month:'short',day:'numeric'}));
 }
 
 function deleteRoute(id) {
@@ -6353,7 +6406,7 @@ function renderCrew() {
   el.innerHTML = sorted.map((c,i) => {
     const todayISO = new Date().toISOString().slice(0,10);
     const todayDay = new Date().toLocaleDateString('en-US',{weekday:'long'});
-    const route = state.routes.find(r => r.crewId === c.id && (r.date === todayISO || r.day === todayDay));
+    const route = state.routes.find(r => r.crewId === c.id && (r.date === todayISO || (!r.date && r.day === todayDay)));
     const done  = route?.stops?.filter(s=>s.completed).length || 0;
     const total = route?.stops?.length || 0;
     return `<div class="crew-card" data-crew-id="${c.id}" draggable="true" style="cursor:pointer;position:relative;">
@@ -7007,7 +7060,7 @@ function loadFieldView() {
   if (pillsEl) pillsEl.style.display = 'none';
 
   // Match by specific date first (new model), fall back to day name (legacy)
-  const route = myRoutes.find(r => r.date === todayISO) || myRoutes.find(r => r.day === today);
+  const route = myRoutes.find(r => r.date === todayISO) || myRoutes.find(r => !r.date && r.day === today);
   if (!route) {
     const dueWOsHtml = buildDueWOsHTML(crewId);
     el.innerHTML = dueWOsHtml +
