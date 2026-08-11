@@ -1695,7 +1695,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-11-v42'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-11-v43'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -10825,7 +10825,16 @@ function buildCwCalendar() {
     const dayName  = ROUTE_DAYS[date.getDay()];
     const isToday  = date.toDateString() === todayStr;
     const dateStr  = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
-    const route    = myRoutes.find(r => r.date === dateStr) || (myRoutes.some(r => r.date) ? null : myRoutes.find(r => r.day === dayName));
+    // Exact date match always wins. Falling back to day-name only applies to
+    // routes that genuinely have no date of their own (recurring templates),
+    // and only for today-or-future cells — an undated route showing up on
+    // every matching weekday going forward is useful (you can see upcoming
+    // work), but showing it on PAST weeks it never actually ran is misleading.
+    const cellMidnight = new Date(year, month, d); cellMidnight.setHours(0,0,0,0);
+    const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+    const isPastCell = cellMidnight < todayMidnight;
+    const route    = myRoutes.find(r => r.date === dateStr)
+      || (!isPastCell ? myRoutes.find(r => !r.date && r.day === dayName) : null);
     const hasRoute = !!route;
     const isSelected = state.crewWeekDay === dateStr;
     const weekSummary = hasRoute ? getWeekInstanceSummary(route, date) : {done:0, total:0};
@@ -10862,8 +10871,14 @@ function renderCwDayContent() {
   const dayName   = state.crewWeekDayName || todayName;
   const dateStr   = state.crewWeekDay;
   const myRoutes  = (state.routes||[]).filter(r => r.crewId === crewId);
-  // Match by specific date first (new model), fall back to day name (legacy)
-  const route = myRoutes.find(r => r.date === dateStr) || myRoutes.find(r => r.day === dayName);
+  // Match by specific date first; fall back to day name only for routes that
+  // genuinely have no date of their own, and only for today-or-future days —
+  // matches the same logic buildCwCalendar uses, so what you see after
+  // tapping a day always agrees with whether the calendar showed a dot there.
+  var selectedMidnight = dateStr ? new Date(dateStr + 'T00:00:00') : null;
+  var todayMidnightRCD = new Date(); todayMidnightRCD.setHours(0,0,0,0);
+  var isPastSelected = selectedMidnight && selectedMidnight < todayMidnightRCD;
+  const route = myRoutes.find(r => r.date === dateStr) || (!isPastSelected ? myRoutes.find(r => !r.date && r.day === dayName) : null);
   const el        = document.getElementById('cw-route-content');
   if (!el) return;
 
