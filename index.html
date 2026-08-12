@@ -1281,6 +1281,7 @@ select.inp{cursor:pointer;}
 
         <select id="field-crew-select" onchange="loadFieldView()" style="display:none;"></select>
       </div>
+      <div id="clock-widget"></div>
       <div id="field-stops"></div>
     </div>
 
@@ -1695,7 +1696,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-11-v43'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-11-v44'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -7043,6 +7044,8 @@ function buildDueWOsHTML(crewId) {
 function loadFieldView() {
   const crewId = state.loggedInCrewId || document.getElementById('field-crew-select').value;
   const crew   = state.crew.find(c => c.id === crewId);
+
+  renderClockWidget();
 
   // update header
   const nameEl   = document.getElementById('field-crew-name');
@@ -14944,6 +14947,71 @@ function normalizeAttDate(d) {
   } catch(e) {}
   return String(d);
 }
+// ── Clock In / Clock Out ─────────────────────────────────────────────────
+// Extends the existing attendance record (same one the manager's Attendance
+// tab already uses) with real timestamps, rather than building a separate
+// system. One record per crew member per day — status and hours worked
+// live together.
+function getTodayAttendanceRecord(crewId) {
+  var dateStr = todayStr();
+  var id = 'att_' + crewId + '_' + dateStr.replace(/-/g,'');
+  var existing = (state.attendance||[]).find(function(r){ return r.id === id; });
+  if (existing) return existing;
+  var crew = (state.crew||[]).find(function(c){ return c.id === crewId; });
+  return { id: id, date: dateStr, crewId: crewId, name: crew?crew.name:'', role: crew?crew.role||'':'', status: 'present', note: '' };
+}
+
+function crewClockIn() {
+  var crewId = state.loggedInCrewId;
+  if (!crewId) return;
+  var rec = getTodayAttendanceRecord(crewId);
+  rec.clockInISO = new Date().toISOString();
+  rec.status = 'present'; // clocking in confirms they're here today
+  saveAttendanceRecord(rec);
+  toast('✓ Clocked in');
+  renderClockWidget();
+}
+
+function crewClockOut() {
+  var crewId = state.loggedInCrewId;
+  if (!crewId) return;
+  var rec = getTodayAttendanceRecord(crewId);
+  if (!rec.clockInISO) { toast('Clock in first'); return; }
+  rec.clockOutISO = new Date().toISOString();
+  saveAttendanceRecord(rec);
+  toast('✓ Clocked out');
+  renderClockWidget();
+}
+
+function renderClockWidget() {
+  var el = document.getElementById('clock-widget');
+  if (!el) return;
+  var crewId = state.loggedInCrewId;
+  if (!crewId) { el.innerHTML = ''; return; }
+  var rec = getTodayAttendanceRecord(crewId);
+
+  if (rec.clockInISO && rec.clockOutISO) {
+    var mins = Math.round((new Date(rec.clockOutISO) - new Date(rec.clockInISO)) / 60000);
+    var hrs = Math.floor(mins/60), rem = mins%60;
+    el.innerHTML = '<div class="card" style="background:rgba(63,185,80,.08);border-color:rgba(63,185,80,.25);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">'
+      + '<div><div style="font-size:13px;font-weight:700;color:var(--green);">✓ Clocked out</div>'
+      + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + formatTimeEST(rec.clockInISO) + ' – ' + formatTimeEST(rec.clockOutISO) + ' · ' + hrs + 'h ' + rem + 'm worked</div></div>'
+    + '</div>';
+  } else if (rec.clockInISO) {
+    el.innerHTML = '<div class="card" style="background:rgba(88,166,255,.08);border-color:rgba(88,166,255,.25);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;">'
+      + '<div><div style="font-size:13px;font-weight:700;color:var(--blue);">🕐 Clocked in ' + formatTimeEST(rec.clockInISO) + '</div>'
+      + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">Optional — tap when you head out for the day</div></div>'
+      + '<button onclick="crewClockOut()" style="background:var(--bg4);border:1px solid var(--border2);border-radius:10px;padding:10px 16px;color:var(--text);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">Clock Out</button>'
+    + '</div>';
+  } else {
+    el.innerHTML = '<button onclick="crewClockIn()" class="card" style="width:100%;text-align:left;background:var(--bg3);border:1px solid var(--border2);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;">'
+      + '<div><div style="font-size:13px;font-weight:700;">🕐 Clock In</div>'
+      + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">Optional — just lets the office know you\'re here</div></div>'
+      + '<i class="ti ti-chevron-right" style="font-size:16px;color:var(--text3);"></i>'
+    + '</button>';
+  }
+}
+
 function getAttendanceDay(dateStr) {
   var norm = normalizeAttDate(dateStr);
   return (state.attendance||[]).filter(function(r){
@@ -15026,6 +15094,9 @@ function renderAttendance() {
     var rows = roster.map(function(rec) {
       var sm = statusMeta(rec.status || 'present');
       var initials = (rec.name||'?').trim()[0].toUpperCase();
+      var clockLabel = rec.clockInISO
+        ? (formatTimeEST(rec.clockInISO) + (rec.clockOutISO ? ' – ' + formatTimeEST(rec.clockOutISO) : ' – now'))
+        : '';
       return '<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);">'
         + '<div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--green),var(--teal));'
         +   'display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;color:#fff;flex-shrink:0;">'
@@ -15035,6 +15106,7 @@ function renderAttendance() {
         +   '<div style="font-weight:700;font-size:14px;line-height:1.2;">' + (rec.name||'') + '</div>'
         +   (rec.role ? '<div style="font-size:11px;color:var(--text3);">' + rec.role + '</div>' : '')
         +   (rec.crewId==='temp' ? '<div style="font-size:10px;color:#f97316;font-weight:700;">Day Laborer</div>' : '')
+        +   (clockLabel ? '<div onclick="attEditClockTimes(\'' + rec.id + '\')" style="font-size:11px;color:var(--blue);margin-top:2px;cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px;">🕐 ' + clockLabel + '</div>' : '')
         + '</div>'
         + '<button data-recid="' + rec.id + '" onclick="attCycleStatus(this)"'
         +   ' style="padding:7px 16px;border-radius:20px;font-size:12px;font-weight:800;cursor:pointer;'
@@ -15240,6 +15312,62 @@ function attEditNote(btn) {
   btn.textContent = rec.note ? '📝' : '➕';
   saveAttendanceRecord(rec); // save immediately, same reasoning as attCycleStatus
   toast('✓ Saved');
+}
+
+// Manager correction for clock times — crew will inevitably forget to clock
+// in/out sometimes, so this needs to be fixable without deleting and redoing
+// the whole attendance record.
+function attEditClockTimes(recId) {
+  var rec = (state.attendance||[]).find(function(r){ return r.id===recId; })
+    || (window._attRoster||[]).find(function(r){ return r.id===recId; });
+  if (!rec) return;
+  var toLocalInput = function(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  };
+  var ex = document.getElementById('att-clock-edit-sheet'); if (ex) ex.remove();
+  var sheet = document.createElement('div');
+  sheet.id = 'att-clock-edit-sheet';
+  sheet.className = 'overlay open';
+  sheet.innerHTML = '<div class="sheet">'
+    + '<div class="sheet-title">🕐 Edit Clock Times — ' + (rec.name||'') + '</div>'
+    + '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;">' + normalizeAttDate(rec.date) + '</div>'
+    + '<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">CLOCK IN</div>'
+    + '<input type="time" class="inp" id="att-clock-in-input" value="' + toLocalInput(rec.clockInISO) + '" style="color-scheme:dark;margin-bottom:14px;"/>'
+    + '<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">CLOCK OUT</div>'
+    + '<input type="time" class="inp" id="att-clock-out-input" value="' + toLocalInput(rec.clockOutISO) + '" style="color-scheme:dark;margin-bottom:16px;"/>'
+    + '<button class="btn btn-green" style="width:100%;margin-bottom:8px;" onclick="saveAttClockTimes(\'' + recId + '\')">Save</button>'
+    + (rec.clockInISO ? '<button class="btn" style="width:100%;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);color:var(--red);" onclick="clearAttClockTimes(\'' + recId + '\')">Clear Clock Times</button>' : '')
+  + '</div>';
+  document.body.appendChild(sheet);
+}
+
+function saveAttClockTimes(recId) {
+  var rec = (state.attendance||[]).find(function(r){ return r.id===recId; })
+    || (window._attRoster||[]).find(function(r){ return r.id===recId; });
+  if (!rec) return;
+  var dateStr = normalizeAttDate(rec.date);
+  var inVal  = document.getElementById('att-clock-in-input').value;
+  var outVal = document.getElementById('att-clock-out-input').value;
+  rec.clockInISO  = inVal  ? new Date(dateStr + 'T' + inVal + ':00').toISOString()  : '';
+  rec.clockOutISO = outVal ? new Date(dateStr + 'T' + outVal + ':00').toISOString() : '';
+  saveAttendanceRecord(rec);
+  document.getElementById('att-clock-edit-sheet')?.remove();
+  renderAttendance();
+  toast('✓ Clock times updated');
+}
+
+function clearAttClockTimes(recId) {
+  var rec = (state.attendance||[]).find(function(r){ return r.id===recId; })
+    || (window._attRoster||[]).find(function(r){ return r.id===recId; });
+  if (!rec) return;
+  rec.clockInISO = '';
+  rec.clockOutISO = '';
+  saveAttendanceRecord(rec);
+  document.getElementById('att-clock-edit-sheet')?.remove();
+  renderAttendance();
+  toast('✓ Cleared');
 }
 
 function attDeleteTemp(btn) {
