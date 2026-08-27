@@ -1696,7 +1696,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-27-v47'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-27-v48'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -2544,6 +2544,10 @@ function setRouteDay(d) { // legacy compat
 function openRouteDetail(id) {
   const r = state.routes.find(x => x.id === id);
   if (!r) return;
+  // Close any other open panel first — otherwise it stays open underneath,
+  // same z-index and same fixed position as this one, and visually covers
+  // it. Looks exactly like "nothing happened" even though this did open.
+  document.querySelectorAll('.panel.open').forEach(function(p){ if (p.id !== 'route-panel') p.classList.remove('open'); });
   const crew = state.crew.find(c => c.id === r.crewId);
   // Build editable title
   const rpTitle = document.getElementById('rp-title');
@@ -2782,6 +2786,7 @@ function toggleStop(id) {
 
 
 function openCrewDetail(id) {
+  document.querySelectorAll('.panel.open').forEach(function(p){ if (p.id !== 'crew-panel') p.classList.remove('open'); });
   const c = state.crew.find(x => x.id === id);
   if (!c) return;
   document.getElementById('cp-title').textContent = c.name;
@@ -3448,7 +3453,7 @@ function renderStopCompletionSheet(c) {
           + 'background:' + (isDone?'rgba(63,185,80,.15)':'var(--bg4)') + ';'
           + 'border:2px solid ' + (isDone?'var(--green)':'var(--border2)') + ';'
           + 'color:' + (isDone?'var(--green)':'var(--text2)') + ';">'
-          + (isDone ? t('✓ Confirmed') : (item.requiresPhoto ? t('Confirm with photo above') : t('Tap to confirm')))
+          + (isDone ? t('✓ Confirmed') : ((item.requiresPhoto && state.role !== 'manager') ? t('Confirm with photo above') : t('Tap to confirm')))
         + '</button>'
       + '</div>';
     });
@@ -3456,14 +3461,15 @@ function renderStopCompletionSheet(c) {
     html += '<button onclick="sca_nextStep()" ' + (!allDone?'disabled style="opacity:.4;cursor:not-allowed;"':'') + ' class="btn btn-green" style="width:100%;margin-top:4px;">' + t('Continue →') + '</button>';
   }
   else if (c.step === 'photo') {
-    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.6;">' + t('Take a photo of the property before starting work. This is required to complete the job.') + '</div>'
+    var photoRequired = state.role !== 'manager'; // photo requirement only applies to crew
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.6;">' + (photoRequired ? t('Take a photo of the property before starting work. This is required to complete the job.') : t('Take a photo of the property before starting work.') + ' (Optional for managers)') + '</div>'
       + '<label id="sca-photo-zone" style="display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg3);border:2px dashed var(--border2);border-radius:14px;padding:32px 20px;cursor:pointer;margin-bottom:16px;text-align:center;">'
         + '<div id="sca-photo-icon" style="font-size:48px;margin-bottom:10px;">' + (c.photo?'✅':'📷') + '</div>'
         + '<div id="sca-photo-label" style="font-size:14px;font-weight:700;color:' + (c.photo?'var(--green)':'var(--text2)') + ';">' + (c.photo?t('Photo taken! Tap to retake'):t('Tap to take property photo')) + '</div>'
         + '<input type="file" id="sca-photo-input" accept="image/*" capture="environment" style="display:none;"/>'
       + '</label>'
       + (c.photo ? '<img src="' + c.photo + '" style="width:100%;border-radius:10px;max-height:220px;object-fit:cover;margin-bottom:16px;"/>' : '')
-      + '<button onclick="sca_nextStep()" ' + (!c.photo?'disabled style="opacity:.4;cursor:not-allowed;"':'') + ' class="btn btn-green" style="width:100%;">' + t('Continue →') + '</button>';
+      + '<button onclick="sca_nextStep()" ' + (!c.photo && photoRequired?'disabled style="opacity:.4;cursor:not-allowed;"':'') + ' class="btn btn-green" style="width:100%;">' + t('Continue →') + '</button>';
   }
 
   // ── STEP: SERVICES ──────────────────────────────────────────────────────
@@ -3754,7 +3760,10 @@ window.sca_confirmChecklist = function(itemId) {
   var c = _getComp(); if (!c) return;
   var item = c.checklist.find(function(i){return i.id===itemId;});
   if (!item) return;
-  if (item.requiresPhoto && !(c.checklistDone[itemId] && c.checklistDone[itemId].photo)) {
+  // Photo requirement only applies to crew — a manager completing a job
+  // themselves (filling in, fixing a mistake, closing something out
+  // administratively) shouldn't be blocked by it.
+  if (state.role !== 'manager' && item.requiresPhoto && !(c.checklistDone[itemId] && c.checklistDone[itemId].photo)) {
     toast('Please take a photo first'); return;
   }
   if (!c.checklistDone[itemId]) c.checklistDone[itemId] = {};
@@ -5354,6 +5363,7 @@ function renderProperties() {
 }
 
 function openPropDetail(id) {
+  document.querySelectorAll('.panel.open').forEach(function(p){ if (p.id !== 'prop-panel') p.classList.remove('open'); });
   const p = state.properties.find(x => x.id === id);
   if (!p) return;
   const flags     = state.flags.filter(f => f.propId === id);
@@ -7344,6 +7354,7 @@ function getRegStatus(e) {
 }
 
 function openEqDetail(id) {
+  document.querySelectorAll('.panel.open').forEach(function(p){ if (p.id !== 'eq-panel') p.classList.remove('open'); });
   const e = state.equipment.find(x => x.id === id);
   if (!e) return;
   document.getElementById('ep-title').textContent = (EQ_ICONS[e.category]||'') + ' ' + e.name;
