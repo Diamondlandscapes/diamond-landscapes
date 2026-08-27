@@ -1696,7 +1696,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-27-v46'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-27-v47'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -11908,6 +11908,11 @@ function openCommunityWO(community) {
   window._woVillage=''; window._woType='all'; window._woDateFrom=''; window._woDateTo='';
   window._woBulkMode=false; window._woBulkSel=new Set();
   window._woShowArch=false; window._woArchVillage=''; window._woArchDateFrom=''; window._woArchDateTo=''; window._woArchType=''; window._woArchSearch='';
+  // Remove any existing panel first — without this, duplicate-ID panels pile
+  // up in the DOM every time this is called, and getElementById() always
+  // returns the OLDEST one, so button wiring silently attaches to a stale,
+  // invisible panel instead of the one actually on screen.
+  document.querySelectorAll('#wo-community-panel').forEach(function(p){ p.remove(); });
   var panel=document.createElement('div'); panel.id='wo-community-panel'; panel.className='panel open';
   document.body.appendChild(panel);
 
@@ -15603,6 +15608,7 @@ function openInstallInstructions() {
   } else {
     steps = '<li>Open this page in <b>Google Chrome</b> for the best install experience</li><li>Look for the install icon in the address bar</li>';
   }
+  var existingPanel = document.getElementById('install-instructions'); if (existingPanel) existingPanel.remove();
   var panel = document.createElement('div');
   panel.id = 'install-instructions';
   panel.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:24px;';
