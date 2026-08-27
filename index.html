@@ -1696,7 +1696,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-27-v48'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-27-v49'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -5127,15 +5127,44 @@ function openRescheduleRoute(routeId) {
       + '<div class="sheet-title" style="margin-bottom:0;">📅 Reschedule Route</div>'
       + '<button onclick="document.getElementById(\'reschedule-sheet\').remove()" style="background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;">✕</button>'
     + '</div>'
-    + '<div style="font-size:13px;color:var(--text3);margin-bottom:16px;">Moving <strong>' + r.name + '</strong>' + (r.crewId ? ' (' + ((state.crew||[]).find(function(c){return c.id===r.crewId;})?.name||'') + ')' : '') + '. Stops and completion progress stay exactly as they are — only the date changes.</div>'
+    + '<div style="font-size:13px;color:var(--text3);margin-bottom:16px;"><strong>' + r.name + '</strong>' + (r.crewId ? ' (' + ((state.crew||[]).find(function(c){return c.id===r.crewId;})?.name||'') + ')' : '') + '</div>'
+
+    + '<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px;">ACTION</div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:16px;">'
+      + '<button id="resched-mode-move" onclick="reschedSetMode(\'move\')" style="flex:1;padding:11px 8px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;border:2px solid var(--blue);background:rgba(88,166,255,.12);color:var(--blue);">Move<div style="font-size:10px;font-weight:400;color:var(--text3);margin-top:2px;">Off the old day entirely</div></button>'
+      + '<button id="resched-mode-dup" onclick="reschedSetMode(\'duplicate\')" style="flex:1;padding:11px 8px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;border:2px solid var(--border2);background:var(--bg3);color:var(--text2);">Duplicate<div style="font-size:10px;font-weight:400;color:var(--text3);margin-top:2px;">Keep original, add a copy</div></button>'
+    + '</div>'
+
+    + '<div id="resched-explain" style="font-size:12px;color:var(--text3);margin-bottom:14px;">Stays off ' + (r.day||'its original day') + ' — stops and completion progress move with it, nothing left behind.</div>'
     + '<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">NEW DATE</div>'
     + '<input type="date" class="inp" id="resched-date" value="' + formatDateForInput(r.date || '') + '" style="color-scheme:dark;margin-bottom:14px;"/>'
     + '<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">ROUTE NAME</div>'
     + '<input type="text" class="inp" id="resched-name" value="' + r.name + '" style="margin-bottom:6px;"/>'
     + (nameSuffix ? '<div style="font-size:11px;color:var(--text4);margin-bottom:14px;">💡 <span onclick="document.getElementById(\'resched-name\').value=resched_suggestName();" style="color:var(--blue);cursor:pointer;text-decoration:underline;">Update name to match new date</span></div>' : '<div style="margin-bottom:14px;"></div>')
-    + '<button class="btn btn-green" style="width:100%;" onclick="saveRescheduleRoute(\'' + routeId + '\')">Move Route</button>'
+    + '<button class="btn btn-green" style="width:100%;" id="resched-save-btn" onclick="saveRescheduleRoute(\'' + routeId + '\')">Move Route</button>'
   + '</div>';
   document.body.appendChild(sheet);
+
+  window._reschedMode = 'move';
+
+  window.reschedSetMode = function(mode) {
+    window._reschedMode = mode;
+    var moveBtn = document.getElementById('resched-mode-move');
+    var dupBtn  = document.getElementById('resched-mode-dup');
+    var explain = document.getElementById('resched-explain');
+    var saveBtn = document.getElementById('resched-save-btn');
+    if (mode === 'move') {
+      moveBtn.style.border = '2px solid var(--blue)'; moveBtn.style.background = 'rgba(88,166,255,.12)'; moveBtn.style.color = 'var(--blue)';
+      dupBtn.style.border  = '2px solid var(--border2)'; dupBtn.style.background = 'var(--bg3)'; dupBtn.style.color = 'var(--text2)';
+      explain.textContent = 'Stays off ' + (r.day||'its original day') + ' — stops and completion progress move with it, nothing left behind.';
+      saveBtn.textContent = 'Move Route';
+    } else {
+      dupBtn.style.border  = '2px solid var(--blue)'; dupBtn.style.background = 'rgba(88,166,255,.12)'; dupBtn.style.color = 'var(--blue)';
+      moveBtn.style.border = '2px solid var(--border2)'; moveBtn.style.background = 'var(--bg3)'; moveBtn.style.color = 'var(--text2)';
+      explain.textContent = 'The original stays on ' + (r.day||'its day') + ' exactly as-is. A new copy is created for the new date, with its stops reset to not-yet-completed.';
+      saveBtn.textContent = 'Duplicate Route';
+    }
+  };
 
   window.resched_suggestName = function() {
     var dateVal = document.getElementById('resched-date').value;
@@ -5153,6 +5182,31 @@ function saveRescheduleRoute(routeId) {
   var newName = document.getElementById('resched-name').value.trim();
   if (!dateVal) { toast('Pick a date'); return; }
   var d = parseLocalDate(dateVal);
+  var mode = window._reschedMode || 'move';
+
+  if (mode === 'duplicate') {
+    // Original stays untouched on its own day. New route is a fresh copy —
+    // same stops/services/checklist, but reset to not-yet-completed since
+    // this is a new, not-yet-run instance on a different date.
+    var copy = JSON.parse(JSON.stringify(r));
+    copy.id = uid();
+    copy.date = dateVal;
+    copy.day  = d.toLocaleDateString('en-US', { weekday: 'long' });
+    copy.name = newName || r.name;
+    (copy.stops||[]).forEach(function(s) {
+      s.completed = false; s.completedAtISO = ''; s.completedPhoto = '';
+      s.completedServices = []; s.navigateTappedAtISO = ''; s.estimatedDriveMinutes = null; s.estimatedArrivalAtISO = '';
+    });
+    state.routes.push(copy);
+    saveAndSync('routes', copy);
+    document.getElementById('reschedule-sheet')?.remove();
+    openRouteDetail(copy.id);
+    renderRoutes();
+    renderDashboard();
+    toast('✓ Duplicated to ' + d.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + ' — original untouched');
+    return;
+  }
+
   r.date = dateVal; // yyyy-mm-dd, matches todayISO comparisons used throughout the app
   r.day  = d.toLocaleDateString('en-US', { weekday: 'long' }); // keep day name in sync with the actual date
   if (newName) r.name = newName;
