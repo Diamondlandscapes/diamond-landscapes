@@ -1696,7 +1696,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-27-v45'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-27-v46'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -1732,6 +1732,21 @@ function load() {
   try { const s = localStorage.getItem('diamondlandscapes_v1'); if(s) Object.assign(state, JSON.parse(s)); } catch(e) {}
   if(!Array.isArray(state.attendance)) state.attendance=[];
 }
+// Walks an entire object tree and strips any embedded base64 image data
+// (data: URLs), wherever it's nested — route stop photos, flag photos,
+// checklist item photos, customer request photos, anything. This replaces
+// only checking one specific field (workOrders[].completedPhoto), which
+// missed every other place a photo can end up, and after months of real
+// use that leftover base64 data is what silently exceeded the browser's
+// localStorage quota and broke save() everywhere in the app.
+function stripBase64Deep(obj) {
+  if (obj == null) return obj;
+  if (typeof obj === 'string') return obj.startsWith('data:') ? '[photo]' : obj;
+  if (Array.isArray(obj)) { for (var i=0;i<obj.length;i++) obj[i]=stripBase64Deep(obj[i]); return obj; }
+  if (typeof obj === 'object') { for (var k in obj) if (Object.prototype.hasOwnProperty.call(obj,k)) obj[k]=stripBase64Deep(obj[k]); return obj; }
+  return obj;
+}
+
 function save() {
   try {
     // Save photos separately so main state stays small
@@ -1742,13 +1757,9 @@ function save() {
       }
     });
 
-    // Save slim state (no base64 photos inline)
-    var slim = JSON.parse(JSON.stringify(state));
-    (slim.workOrders||[]).forEach(function(w) {
-      if (w.completedPhoto && w.completedPhoto.startsWith('data:')) {
-        w.completedPhoto = 'saved'; // placeholder
-      }
-    });
+    // Save slim state — strip ANY embedded base64 photo data anywhere in
+    // the tree, not just the one field this used to check.
+    var slim = stripBase64Deep(JSON.parse(JSON.stringify(state)));
 
     localStorage.setItem('diamondlandscapes_v1', JSON.stringify(slim));
 
