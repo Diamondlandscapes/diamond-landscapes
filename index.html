@@ -1696,7 +1696,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-27-v51'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-27-v52'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -12676,21 +12676,27 @@ function openWODetail(woId) {
         '<button class="btn btn-red" onclick="deleteWO(\'' + woId + '\')" style="font-size:13px;padding:12px;">Delete</button>' +
       '</div>' +
       (wo.status !== 'completed' ?
-        '<button class="btn btn-green" onclick="quickCompleteWO(\'' + woId + '\')" style="width:100%;margin-top:8px;background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.3);color:var(--green);">✓ Mark Complete (no photo needed)</button>'
+        '<div style="margin-top:14px;">' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">COMPLETION NOTES (optional)</div>' +
+          '<textarea id="wo-quick-notes" class="inp" rows="2" placeholder="What was done..." style="margin-bottom:8px;"></textarea>' +
+          '<button class="btn btn-green" onclick="quickCompleteWO(\'' + woId + '\')" style="width:100%;background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.3);color:var(--green);">✓ Mark Complete (no photo needed)</button>' +
+        '</div>'
       : '') +
     '</div>';
 
   document.body.appendChild(sheet);
 }
 
-// One-tap complete for managers — no photo, no notes, no status dropdown to
-// remember to change. Sets exactly what saveWODetail's "completed" branch
-// already sets, just without needing to touch the other fields first.
+// One-tap complete for managers — no photo required, notes optional. Sets
+// exactly what saveWODetail's "completed" branch already sets, plus
+// whatever's in the notes field, without needing to touch the other fields.
 function quickCompleteWO(woId) {
   var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
   if (!wo) return;
+  var notes = document.getElementById('wo-quick-notes')?.value.trim() || '';
   wo.status = 'completed';
   wo.completedBy = 'Manager';
+  if (notes) wo.completedNotes = notes;
   if (!wo.completedOn)   wo.completedOn   = new Date().toLocaleDateString('en-US');
   if (!wo.dateCompleted) wo.dateCompleted = new Date().toLocaleDateString('en-US');
   saveAndSync('workOrders', wo);
