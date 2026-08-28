@@ -1696,7 +1696,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-27-v50'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-27-v51'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -12675,9 +12675,30 @@ function openWODetail(woId) {
         '<button class="btn btn-green" onclick="saveWODetail(\'' + woId + '\')" style="flex:1;">Save Changes</button>' +
         '<button class="btn btn-red" onclick="deleteWO(\'' + woId + '\')" style="font-size:13px;padding:12px;">Delete</button>' +
       '</div>' +
+      (wo.status !== 'completed' ?
+        '<button class="btn btn-green" onclick="quickCompleteWO(\'' + woId + '\')" style="width:100%;margin-top:8px;background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.3);color:var(--green);">✓ Mark Complete (no photo needed)</button>'
+      : '') +
     '</div>';
 
   document.body.appendChild(sheet);
+}
+
+// One-tap complete for managers — no photo, no notes, no status dropdown to
+// remember to change. Sets exactly what saveWODetail's "completed" branch
+// already sets, just without needing to touch the other fields first.
+function quickCompleteWO(woId) {
+  var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
+  if (!wo) return;
+  wo.status = 'completed';
+  wo.completedBy = 'Manager';
+  if (!wo.completedOn)   wo.completedOn   = new Date().toLocaleDateString('en-US');
+  if (!wo.dateCompleted) wo.dateCompleted = new Date().toLocaleDateString('en-US');
+  saveAndSync('workOrders', wo);
+  document.getElementById('wo-detail-sheet')?.remove();
+  toast('✓ Work order completed');
+  var panel = document.getElementById('wo-community-panel');
+  if (panel && window._woCommunity) { panel.remove(); openCommunityWO(window._woCommunity); }
+  renderWorkOrders();
 }
 
 function saveWODetail(woId) {
