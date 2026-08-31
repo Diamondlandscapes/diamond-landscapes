@@ -1696,7 +1696,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-27-v52'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-27-v53'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -5366,6 +5366,7 @@ function renderProperties() {
   if (propBtns) {
     propBtns.innerHTML = state.role === 'manager' ? `
       <button class="btn-sm" id="prop-select-btn" onclick="togglePropSelect()" style="background:var(--bg4);color:var(--text3);border:1px solid var(--border2);">Select</button>
+      <button class="btn-sm" onclick="exportPropertiesCSV()" style="background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3);">⬇ Export</button>
       <button class="btn-sm" onclick="openImport('properties')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">⬆ Import</button>
       <button class="btn-sm btn-green" onclick="openAddProperty()">+ Add</button>` : '';
   }
@@ -7788,6 +7789,49 @@ function resetImport() {
   if (dropzone) dropzone.style.display = 'block';
   if (nameEl) nameEl.style.display = 'none';
   if (fi) fi.value = '';
+}
+
+// Escapes a value for safe inclusion in a CSV cell — wraps in quotes and
+// doubles any internal quotes whenever the value contains a comma, quote,
+// or line break (names/notes/addresses can easily contain any of these).
+function csvCell(val) {
+  var s = (val == null) ? '' : String(val);
+  if (/[",\n\r]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function exportPropertiesCSV() {
+  var props = (state.properties || []).slice().sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); });
+  if (!props.length) { toast('No properties to export'); return; }
+
+  var headers = ['Name','Address','Phone','Email','Frequency','Monthly Rate','Last Service','Next Service','Services','Route Assigned','Notes'];
+  var rows = [headers.map(csvCell).join(',')];
+
+  props.forEach(function(p) {
+    var onRoutes = (state.routes||[]).filter(function(r){ return (r.stops||[]).some(function(s){ return s.propId === p.id; }); });
+    var routeNames = onRoutes.map(function(r){ return r.name + (r.day?' ('+r.day+')':''); }).join('; ');
+    rows.push([
+      csvCell(p.name),
+      csvCell(p.address),
+      csvCell(p.phone),
+      csvCell(p.email),
+      csvCell(p.frequency || p.customFreq || ''),
+      csvCell(p.monthlyRate != null ? p.monthlyRate : ''),
+      csvCell(p.lastServiceDate),
+      csvCell(p.nextServiceDate),
+      csvCell((p.services||[]).join('; ')),
+      csvCell(routeNames),
+      csvCell(p.notes)
+    ].join(','));
+  });
+
+  var csv = rows.join('\r\n');
+  var blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }); // BOM so Excel reads UTF-8 correctly, not just plain browsers
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'properties_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  toast('✓ Exported ' + props.length + ' properties');
 }
 
 function downloadTemplate() {
