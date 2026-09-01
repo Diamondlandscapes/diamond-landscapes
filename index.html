@@ -1048,11 +1048,15 @@ select.inp{cursor:pointer;}
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn-sm" onclick="selectAllProps()" style="background:var(--bg4);color:var(--text3);border:1px solid var(--border2);">Select All</button>
             <button class="btn-sm" onclick="bulkAssignToRoute()" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);">📅 Add to Route</button>
-            <button class="btn-sm" onclick="bulkDeleteProps()" style="background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);">🗑 Delete</button>
+            <button class="btn-sm" onclick="bulkArchiveProps()" style="background:rgba(210,153,34,.15);color:var(--yellow);border:1px solid rgba(210,153,34,.3);">📦 Archive</button>
           </div>
         </div>
       </div>
       <input class="inp" id="prop-search" placeholder="🔍  Search properties..." oninput="renderProperties()" style="margin-bottom:6px;"/>
+      <div class="pills" style="margin-bottom:10px;" id="prop-view-pills">
+        <button class="pill active" id="prop-view-active" onclick="setPropView('active')">Active</button>
+        <button class="pill" id="prop-view-archived" onclick="setPropView('archived')">📦 Archived</button>
+      </div>
       <div id="prop-count" style="font-size:11px;color:var(--text4);margin-bottom:10px;"></div>
       <div id="properties-list"></div>
     </div>
@@ -1696,7 +1700,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-27-v53'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-27-v54'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -4530,7 +4534,7 @@ async function renderPropertyMap() {
     });
   }
 
-  var props = (state.properties||[]).filter(function(p){ return p.address; });
+  var props = (state.properties||[]).filter(function(p){ return p.address && !p.archived; });
   if (!props.length) {
     if (statusEl) statusEl.textContent = 'No properties with addresses yet';
     return;
@@ -5360,6 +5364,11 @@ function saveRoute() {
 }
 
 // ─── PROPERTIES ───────────────────────────────────────────────────────────
+function setPropView(view) {
+  window._propView = view;
+  renderProperties();
+}
+
 function renderProperties() {
   // show/hide manager-only buttons
   const propBtns = document.getElementById('prop-header-btns');
@@ -5374,17 +5383,22 @@ function renderProperties() {
   const bulkBar = document.getElementById('prop-bulk-bar');
   if (bulkBar && state.role !== 'manager') bulkBar.style.display = 'none';
   const q = document.getElementById('prop-search')?.value?.toLowerCase() || '';
+  const propView = window._propView || 'active';
+  document.getElementById('prop-view-active')?.classList.toggle('active', propView==='active');
+  document.getElementById('prop-view-archived')?.classList.toggle('active', propView==='archived');
   const filtered = state.properties
+    .filter(p => propView==='archived' ? !!p.archived : !p.archived)
     .filter(p => p.name.toLowerCase().includes(q) || (p.address||'').toLowerCase().includes(q))
     .sort((a,b) => (a.name||'').localeCompare(b.name||''));
   const el = document.getElementById('properties-list');
   if (!filtered.length) {
-    el.innerHTML = `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">${q?'No results found':'No properties yet. Tap + Add to start.'}</div>`;
+    el.innerHTML = `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">${q?'No results found':(propView==='archived'?'No archived properties.':'No properties yet. Tap + Add to start.')}</div>`;
     return;
   }
   // Count display
   const countEl = document.getElementById('prop-count');
-  if (countEl) countEl.textContent = filtered.length + ' of ' + state.properties.length + ' properties';
+  const totalInView = state.properties.filter(p => propView==='archived' ? !!p.archived : !p.archived).length;
+  if (countEl) countEl.textContent = filtered.length + ' of ' + totalInView + ' properties' + (propView==='archived' ? ' (archived)' : '');
   el.innerHTML = filtered.map(p => {
     const flags = state.flags.filter(f => f.propId === p.id && !f.resolved);
     const lastVisit = state.routes.filter(r => r.stops?.some(s=>s.propId===p.id&&s.completed))
@@ -5639,7 +5653,14 @@ function openPropDetail(id) {
       ${getPropertyHistory(id)}
     </div>
 
-    ${state.role === 'manager' ? `<button class="btn btn-red" onclick="deleteProperty('${id}')" style="font-size:13px;margin-bottom:16px;">Delete Property</button>` : ''}`;
+    ${state.role === 'manager' ? (
+      p.archived
+        ? `<div style="background:rgba(210,153,34,.08);border:1px solid rgba(210,153,34,.25);border-radius:10px;padding:12px;margin-bottom:16px;">
+            <div style="font-size:12px;font-weight:700;color:var(--yellow);margin-bottom:8px;">📦 Archived${p.archivedAt?' · '+p.archivedAt:''}</div>
+            <button class="btn btn-green" onclick="unarchiveProperty('${id}')" style="font-size:13px;">↩ Restore to Active</button>
+          </div>`
+        : `<button class="btn" onclick="archiveProperty('${id}')" style="font-size:13px;margin-bottom:16px;background:rgba(210,153,34,.1);border:1px solid rgba(210,153,34,.3);color:var(--yellow);">📦 Archive Property</button>`
+    ) : ''}`;
 
   document.getElementById('pp-body').innerHTML = html;
   document.getElementById('prop-panel').classList.add('open');
@@ -6461,6 +6482,36 @@ function saveProperty() {
   saveAndSync('properties', newProp); closeOverlay('add-prop-overlay');
   ['np-name','np-address','np-phone','np-notes'].forEach(id => document.getElementById(id).value='');
   renderProperties(); toast('Property saved!');
+}
+
+// Archiving instead of deleting — keeps the property record, its full
+// service history, and its links to past routes/flags/work orders fully
+// intact. It just gets excluded from the active Properties list, Property
+// Map, and route-assignment tools, without erasing anything.
+function archiveProperty(id) {
+  var p = state.properties.find(x => x.id === id);
+  if (!p) return;
+  if (state.role !== 'manager') { toast('Manager access only'); return; }
+  p.archived = true;
+  p.archivedAt = new Date().toLocaleDateString('en-US');
+  saveAndSync('properties', p);
+  openPropDetail(id);
+  renderProperties();
+  renderDashboard();
+  toast('📦 Property archived');
+}
+
+function unarchiveProperty(id) {
+  var p = state.properties.find(x => x.id === id);
+  if (!p) return;
+  if (state.role !== 'manager') { toast('Manager access only'); return; }
+  p.archived = false;
+  p.archivedAt = '';
+  saveAndSync('properties', p);
+  openPropDetail(id);
+  renderProperties();
+  renderDashboard();
+  toast('✓ Property restored to active');
 }
 
 function deleteProperty(id) {
@@ -7801,7 +7852,7 @@ function csvCell(val) {
 }
 
 function exportPropertiesCSV() {
-  var props = (state.properties || []).slice().sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); });
+  var props = (state.properties || []).filter(function(p){ return !p.archived; }).sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); });
   if (!props.length) { toast('No properties to export'); return; }
 
   var headers = ['Name','Address','Phone','Email','Frequency','Monthly Rate','Last Service','Next Service','Services','Route Assigned','Notes'];
@@ -10559,22 +10610,23 @@ function selectAllProps() {
   renderProperties();
 }
 
-function bulkDeleteProps() {
+function bulkArchiveProps() {
   if (!selectedPropIds.size) { toast('Select properties first'); return; }
-  if (!confirm(`Delete ${selectedPropIds.size} propert${selectedPropIds.size>1?'ies':'y'}? This cannot be undone.`)) return;
-  const idsToDelete = [...selectedPropIds];
-  idsToDelete.forEach(id => {
-    state.properties = state.properties.filter(p => p.id !== id);
-    state.routes.forEach(r => { r.stops = r.stops?.filter(s => s.propId !== id) || []; });
-    gsDelete('properties', id);
+  if (!confirm(`Archive ${selectedPropIds.size} propert${selectedPropIds.size>1?'ies':'y'}? Their records stay intact — just hidden from the active list.`)) return;
+  const idsToArchive = [...selectedPropIds];
+  const today = new Date().toLocaleDateString('en-US');
+  idsToArchive.forEach(id => {
+    const p = state.properties.find(x => x.id === id);
+    if (!p) return;
+    p.archived = true;
+    p.archivedAt = today;
+    saveAndSync('properties', p);
   });
-  save();
-  state.routes.forEach(r => gsSave('routes', r));
   selectedPropIds.clear();
   togglePropSelect();
   renderProperties();
   renderDashboard();
-  toast('Properties deleted');
+  toast('📦 Properties archived');
 }
 
 function bulkAssignToRoute() {
