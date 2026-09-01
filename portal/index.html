@@ -127,7 +127,11 @@
           <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;">YOUR YARD — LAST VISIT</div>
           <span style="font-size:11px;color:var(--blue);flex-shrink:0;white-space:nowrap;" id="last-visit-date"></span>
         </div>
-        <img id="last-visit-photo" style="width:100%;border-radius:12px;max-height:280px;object-fit:cover;margin-bottom:16px;"/>
+        <img id="last-visit-photo" style="width:100%;border-radius:12px;max-height:280px;object-fit:cover;margin-bottom:12px;cursor:pointer;" onclick="openVisitLightbox(this.src, document.getElementById('last-visit-date').textContent)"/>
+        <div id="past-visits-section" style="display:none;margin-bottom:16px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.5px;margin-bottom:8px;">PAST VISITS</div>
+          <div id="past-visits-strip" style="display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;"></div>
+        </div>
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
@@ -402,22 +406,58 @@ async function loadLastVisitPhoto() {
   section.style.display = 'none';
   try {
     var snap = await getDocs(collection(db, 'routes'));
-    var best = null;
+    var visits = [];
     snap.forEach(function(d) {
       var route = d.data();
       (route.stops || []).forEach(function(s) {
         if (s.propId === currentProp.id && s.completed && s.completedPhoto && s.completedAtISO) {
-          if (!best || new Date(s.completedAtISO) > new Date(best.completedAtISO)) best = s;
+          visits.push({ photo: s.completedPhoto, dateISO: s.completedAtISO });
         }
       });
     });
-    if (best) {
-      document.getElementById('last-visit-photo').src = best.completedPhoto;
-      document.getElementById('last-visit-date').textContent = fmtDate(best.completedAtISO);
-      section.style.display = 'block';
+    if (!visits.length) return;
+    visits.sort(function(a, b) { return new Date(b.dateISO) - new Date(a.dateISO); });
+
+    var latest = visits[0];
+    document.getElementById('last-visit-photo').src = latest.photo;
+    document.getElementById('last-visit-date').textContent = fmtDate(latest.dateISO);
+    section.style.display = 'block';
+
+    // Everything after the most recent one — shown as a scrollable strip of
+    // past visits, tap any of them to view full-size.
+    var older = visits.slice(1, 13); // cap at 12 past visits, plenty for a customer to scroll through
+    var pastSection = document.getElementById('past-visits-section');
+    var strip = document.getElementById('past-visits-strip');
+    if (older.length) {
+      strip.innerHTML = older.map(function(v) {
+        var dateLabel = fmtDate(v.dateISO);
+        return '<div onclick="openVisitLightbox(\'' + v.photo + '\',\'' + dateLabel + '\')" style="flex-shrink:0;width:100px;cursor:pointer;">'
+          + '<img src="' + v.photo + '" style="width:100px;height:80px;border-radius:8px;object-fit:cover;display:block;"/>'
+          + '<div style="font-size:10px;color:var(--text3);margin-top:4px;text-align:center;">' + dateLabel + '</div>'
+        + '</div>';
+      }).join('');
+      pastSection.style.display = 'block';
+    } else {
+      pastSection.style.display = 'none';
     }
-  } catch(e) { console.warn('Could not load last visit photo:', e.message); }
+  } catch(e) { console.warn('Could not load visit history:', e.message); }
 }
+
+// Simple full-size viewer for any visit photo — hero or from the past-visits
+// strip, same lightbox either way.
+window.openVisitLightbox = function(photoUrl, dateLabel) {
+  var wrap = document.createElement('div');
+  wrap.className = 'overlay';
+  wrap.style.zIndex = '3000';
+  wrap.style.alignItems = 'center';
+  wrap.innerHTML = '<div style="max-width:520px;width:100%;padding:0 16px;">'
+    + '<div style="text-align:right;margin-bottom:8px;"><button onclick="this.closest(\'.overlay\').remove()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;width:32px;height:32px;color:var(--text2);font-size:16px;cursor:pointer;">✕</button></div>'
+    + '<img src="' + photoUrl + '" style="width:100%;border-radius:12px;"/>'
+    + (dateLabel ? '<div style="text-align:center;font-size:13px;color:var(--text3);margin-top:10px;">' + dateLabel + '</div>' : '')
+  + '</div>';
+  wrap.addEventListener('click', function(e){ if (e.target === wrap) wrap.remove(); });
+  document.body.appendChild(wrap);
+};
 
 // ── Request history ───────────────────────────────────────────────────
 async function loadRequestHistory() {
