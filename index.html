@@ -1700,7 +1700,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-27-v54'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-27-v55'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -1732,8 +1732,79 @@ let state = {
   selectedProps: [],
 };
 
-function load() {
-  try { const s = localStorage.getItem('diamondlandscapes_v1'); if(s) Object.assign(state, JSON.parse(s)); } catch(e) {}
+// ── IndexedDB — replaces localStorage for the main state cache ──────────
+// localStorage caps out around 5-10MB per browser, and a real business
+// with months of properties/routes/work orders WILL hit that ceiling —
+// this app already did, in production, and every save() silently failed
+// until it was found and fixed. IndexedDB has no such practical limit
+// (browsers grant it a large share of available disk space) and never
+// blocks the main thread. Kept as a small, self-contained wrapper so
+// save()/load() can swap their storage backend without every one of
+// save()'s 60+ call sites needing to change at all — they still just
+// call save() synchronously, exactly as before.
+var IDB_NAME = 'diamondlandscapes_idb';
+var IDB_STORE = 'state';
+var _idbConn = null;
+
+function idbOpen() {
+  if (_idbConn) return Promise.resolve(_idbConn);
+  return new Promise(function(resolve, reject) {
+    try {
+      var req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = function(e) {
+        var db = e.target.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+      };
+      req.onsuccess = function(e) { _idbConn = e.target.result; resolve(_idbConn); };
+      req.onerror = function(e) { reject(e.target.error); };
+    } catch(e) { reject(e); }
+  });
+}
+
+function idbGet(key) {
+  return idbOpen().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      try {
+        var tx = db.transaction(IDB_STORE, 'readonly');
+        var req = tx.objectStore(IDB_STORE).get(key);
+        req.onsuccess = function() { resolve(req.result); };
+        req.onerror = function() { reject(req.error); };
+      } catch(e) { reject(e); }
+    });
+  });
+}
+
+function idbSet(key, value) {
+  return idbOpen().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      try {
+        var tx = db.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).put(value, key);
+        tx.oncomplete = function() { resolve(); };
+        tx.onerror = function() { reject(tx.error); };
+      } catch(e) { reject(e); }
+    });
+  });
+}
+
+async function load() {
+  try {
+    var fromIdb = await idbGet('diamondlandscapes_v1');
+    if (fromIdb) {
+      Object.assign(state, fromIdb);
+    } else {
+      // One-time migration path — an existing user's device may still have
+      // the old localStorage blob from before this change. Read it once,
+      // adopt it, and write it into IndexedDB so every save() from here on
+      // goes there instead. Never touches localStorage again after this.
+      var legacy = localStorage.getItem('diamondlandscapes_v1');
+      if (legacy) {
+        var parsed = JSON.parse(legacy);
+        Object.assign(state, parsed);
+        idbSet('diamondlandscapes_v1', parsed).catch(function(){});
+      }
+    }
+  } catch(e) { console.warn('load() failed:', e); }
   if(!Array.isArray(state.attendance)) state.attendance=[];
 }
 // Walks an entire object tree and strips any embedded base64 image data
@@ -1765,7 +1836,13 @@ function save() {
     // the tree, not just the one field this used to check.
     var slim = stripBase64Deep(JSON.parse(JSON.stringify(state)));
 
-    localStorage.setItem('diamondlandscapes_v1', JSON.stringify(slim));
+    // Fire-and-forget — every one of save()'s 60+ call sites across the app
+    // calls this synchronously and doesn't wait for it, exactly as before.
+    // IndexedDB writes are async under the hood, but nothing outside this
+    // function needs to know that.
+    idbSet('diamondlandscapes_v1', slim).catch(function(e) {
+      console.error('save() to IndexedDB failed:', e);
+    });
 
     // Save photos in separate key
     if (Object.keys(photos).length > 0) {
@@ -10718,7 +10795,8 @@ function bulkCreateRoute(ids) {
 function clearCacheAndReload() {
   if (!confirm('This will clear all locally cached data and reload fresh from Google Sheets. Your data in Google Sheets is safe. Continue?')) return;
   try {
-    localStorage.removeItem('diamondlandscapes_v1');
+    localStorage.removeItem('diamondlandscapes_v1'); // legacy key, harmless if already gone
+    idbSet('diamondlandscapes_v1', null).catch(function(){});
   } catch(e) {}
   location.reload();
 }
@@ -15014,11 +15092,12 @@ function seedData() {
 
 
 // ─── INIT ─────────────────────────────────────────────────────────────────
-load();
-seedData();
-applyRole('manager');
-document.getElementById('login-screen').style.display = 'flex';
-ls_showWho();
+load().then(function() {
+  seedData();
+  applyRole('manager');
+  document.getElementById('login-screen').style.display = 'flex';
+  ls_showWho();
+});
 // load live data from Google Sheets
 
 function openCreateWO(community) {
