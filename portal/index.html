@@ -170,6 +170,29 @@
 
 <div id="toast" class="toast"></div>
 
+<script>
+// Version check — if this browser has an older cached copy of the portal
+// than what's actually deployed, clear cache storage and force a fresh
+// reload. Runs immediately, before anything else, so a customer who
+// bookmarked the portal (or has it cached from a prior visit) always lands
+// on the current version instead of a stale one. Uses its own version key,
+// separate from the main app's — same origin, but a different page with an
+// independent release cycle.
+var PORTAL_VERSION = '2026-08-27-v1';
+(function(){
+  try{
+    var v=localStorage.getItem('portal_version');
+    if(v!==PORTAL_VERSION){
+      localStorage.setItem('portal_version',PORTAL_VERSION);
+      if('caches' in window){
+        caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});
+      } else {
+        window.location.reload(true);
+      }
+    }
+  }catch(e){}
+})();
+</script>
 <script type="module">
 import { initializeApp, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getFirestore, collection, query, where, getDocs, addDoc, doc, setDoc }
