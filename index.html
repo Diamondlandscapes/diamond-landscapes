@@ -1700,7 +1700,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-27-v55'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-08-27-v56'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -1913,6 +1913,46 @@ function switchTab(tab) {
 }
 
 function closePanel(id) { document.getElementById(id).classList.remove('open'); }
+
+// Shared panel-opener — closes any other open static panel first, then
+// opens the one requested. This exact "close others first" step used to be
+// hand-copied into four separate functions (route/crew/property/equipment
+// detail), and one of them (route detail) was missing it entirely — which
+// is exactly what caused Route Assigned links to silently do nothing: the
+// still-open property panel visually covered the route panel underneath.
+// Consolidating to one function means that bug class can't recur in a
+// fifth place without this helper catching it too.
+function openPanel(id) {
+  document.querySelectorAll('.panel.open').forEach(function(p){ if (p.id !== id) p.classList.remove('open'); });
+  var el = document.getElementById(id);
+  if (el) el.classList.add('open');
+}
+
+// Shared route/date matcher — a route matches a given date if its own
+// `date` field matches exactly, or (only when it has no date of its own)
+// its `day` name matches instead. The day-name fallback must never apply
+// to a route that already has a real date — otherwise it matches every
+// occurrence of that weekday, including past and future weeks it was
+// never actually scheduled for, which is exactly the bug that let last
+// week's routes bleed into this week's view. This same inline expression
+// used to be hand-copied into eight separate places; consolidating here
+// means the fix can't silently regress in a ninth.
+function routeMatchesDate(route, dateISO, dayName) {
+  if (!route) return false;
+  return route.date === dateISO || (!route.date && route.day === dayName);
+}
+
+// Same matching rule as routeMatchesDate, but for the handful of places
+// that need to find ONE route and must prefer an exact date match over a
+// day-name fallback — scanning the whole list for a date match first,
+// only falling back to day-name if genuinely none exists. A single
+// combined .find() would return whichever comes first in array order,
+// which isn't necessarily the one with the real date — this keeps that
+// priority explicit and correct.
+function findRouteForDate(routes, dateISO, dayName) {
+  return (routes||[]).find(function(r){ return r.date === dateISO; })
+      || (routes||[]).find(function(r){ return !r.date && r.day === dayName; });
+}
 function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
 function openOverlay(id) { document.getElementById(id).classList.add('open'); }
 
@@ -2188,7 +2228,7 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
   renderCrewStatusCard();
 
   var todayISO    = new Date().toISOString().slice(0,10);
-  const todayRoutes = state.routes.filter(r => r.date === todayISO || (!r.date && r.day === today));
+  const todayRoutes = state.routes.filter(r => routeMatchesDate(r, todayISO, today));
   const completed   = todayRoutes.filter(r => r.status === 'Done').length;
   const openFlags   = state.flags.filter(f => !f.resolved);
   const activeCrew  = new Set(todayRoutes.map(r => r.crewId).filter(Boolean)).size;
@@ -2356,7 +2396,7 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
     var pnlEl = document.getElementById('dash-pnl');
     if (pnlEl) {
       var todayISO = new Date().toISOString().slice(0,10);
-      var todayDateRoutes = state.routes.filter(function(r){ return r.date === todayISO || (!r.date && r.day === today); });
+      var todayDateRoutes = state.routes.filter(function(r){ return routeMatchesDate(r, todayISO, today); });
       var propsWithRates = (state.properties||[]).filter(function(p){ return parseFloat(p.monthlyRate) > 0; });
       if (!todayDateRoutes.length || !propsWithRates.length) {
         pnlEl.innerHTML = '<div style="font-size:13px;color:var(--text4);text-align:center;padding:8px 0;">Add monthly rates to properties to see today\'s P&L</div>';
@@ -2625,10 +2665,6 @@ function setRouteDay(d) { // legacy compat
 function openRouteDetail(id) {
   const r = state.routes.find(x => x.id === id);
   if (!r) return;
-  // Close any other open panel first — otherwise it stays open underneath,
-  // same z-index and same fixed position as this one, and visually covers
-  // it. Looks exactly like "nothing happened" even though this did open.
-  document.querySelectorAll('.panel.open').forEach(function(p){ if (p.id !== 'route-panel') p.classList.remove('open'); });
   const crew = state.crew.find(c => c.id === r.crewId);
   // Build editable title
   const rpTitle = document.getElementById('rp-title');
@@ -2837,7 +2873,7 @@ function openRouteDetail(id) {
     <button class="btn btn-red" onclick="deleteRoute('${r.id}')" style="font-size:13px;flex:1;">Delete Route</button>
   </div>` : '';
   document.getElementById('rp-body').innerHTML = html;
-  document.getElementById('route-panel').classList.add('open');
+  openPanel('route-panel');
   setTimeout(function() { patchFirebaseImages(document.getElementById('rp-body')); }, 150);
   // Show map button for managers
   var mapBtn = document.getElementById('rp-map-btn');
@@ -2867,7 +2903,6 @@ function toggleStop(id) {
 
 
 function openCrewDetail(id) {
-  document.querySelectorAll('.panel.open').forEach(function(p){ if (p.id !== 'crew-panel') p.classList.remove('open'); });
   const c = state.crew.find(x => x.id === id);
   if (!c) return;
   document.getElementById('cp-title').textContent = c.name;
@@ -2875,7 +2910,7 @@ function openCrewDetail(id) {
   const today      = new Date().toLocaleDateString('en-US',{weekday:'long'});
   const todayISO2  = new Date().toISOString().slice(0,10);
   const allRoutes  = (state.routes||[]).filter(r => r.crewId === id);
-  const todayRoute = allRoutes.find(r => r.date === todayISO2) || allRoutes.find(r => !r.date && r.day === today);
+  const todayRoute = findRouteForDate(allRoutes, todayISO2, today);
   const todayStops = todayRoute?.stops?.length || 0;
   const todayDone  = todayRoute?.stops?.filter(s=>s.completed).length || 0;
   const totalDone  = allRoutes.reduce((a,r)=>a+(r.stops?.filter(s=>s.completed).length||0),0);
@@ -2976,7 +3011,7 @@ function openCrewDetail(id) {
             const stops = r.stops?.length || 0;
             const done  = r.stops?.filter(s=>s.completed).length || 0;
             const pct   = stops ? Math.round((done/stops)*100) : 0;
-            const isToday = r.date === todayISO2 ? true : (!r.date && r.day === today);
+            const isToday = routeMatchesDate(r, todayISO2, today);
             return `<div class="card-flat" onclick="closePanel('crew-panel');openRouteDetail('${r.id}')"
               style="margin-bottom:8px;cursor:pointer;${isToday?'border-color:rgba(74,222,128,.4);':''}">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
@@ -3038,7 +3073,7 @@ function openCrewDetail(id) {
     <button class="btn btn-red" onclick="deleteCrew('${id}');closePanel('crew-panel');" style="font-size:13px;margin-bottom:16px;">Remove Crew Member</button>`;
 
   document.getElementById('cp-body').innerHTML = html;
-  document.getElementById('crew-panel').classList.add('open');
+  openPanel('crew-panel');
   // init crew calendar for manager view
   if (!state._mgrCal) state._mgrCal = {};
   if (!state._mgrCal[id]) state._mgrCal[id] = { year: new Date().getFullYear(), month: new Date().getMonth() };
@@ -4811,7 +4846,7 @@ function getCrewStatusData() {
 
   return (state.crew||[]).map(function(c) {
     var route = (state.routes||[]).find(function(r) {
-      return r.crewId === c.id && (r.date === todayISO || (!r.date && r.day === todayName));
+      return r.crewId === c.id && routeMatchesDate(r, todayISO, todayName);
     });
     if (!route) return { crew: c, route: null };
 
@@ -4898,7 +4933,7 @@ function openDashStopsList(completedOnly) {
   var todayISO  = new Date().toISOString().slice(0,10);
   var todayName = new Date().toLocaleDateString('en-US',{weekday:'long'});
   var todayRoutes = (state.routes||[]).filter(function(r){
-    return r.date === todayISO || (!r.date && r.day === todayName);
+    return routeMatchesDate(r, todayISO, todayName);
   });
 
   var ex = document.getElementById('dash-stops-sheet'); if(ex) ex.remove();
@@ -5509,7 +5544,6 @@ function renderProperties() {
 }
 
 function openPropDetail(id) {
-  document.querySelectorAll('.panel.open').forEach(function(p){ if (p.id !== 'prop-panel') p.classList.remove('open'); });
   const p = state.properties.find(x => x.id === id);
   if (!p) return;
   const flags     = state.flags.filter(f => f.propId === id);
@@ -5740,7 +5774,7 @@ function openPropDetail(id) {
     ) : ''}`;
 
   document.getElementById('pp-body').innerHTML = html;
-  document.getElementById('prop-panel').classList.add('open');
+  openPanel('prop-panel');
 }
 
 function togglePropEdit(id) {
@@ -6617,7 +6651,7 @@ function renderCrew() {
   el.innerHTML = sorted.map((c,i) => {
     const todayISO = new Date().toISOString().slice(0,10);
     const todayDay = new Date().toLocaleDateString('en-US',{weekday:'long'});
-    const route = state.routes.find(r => r.crewId === c.id && (r.date === todayISO || (!r.date && r.day === todayDay)));
+    const route = state.routes.find(r => r.crewId === c.id && routeMatchesDate(r, todayISO, todayDay));
     const done  = route?.stops?.filter(s=>s.completed).length || 0;
     const total = route?.stops?.length || 0;
     return `<div class="crew-card" data-crew-id="${c.id}" draggable="true" style="cursor:pointer;position:relative;">
@@ -7273,7 +7307,7 @@ function loadFieldView() {
   if (pillsEl) pillsEl.style.display = 'none';
 
   // Match by specific date first (new model), fall back to day name (legacy)
-  const route = myRoutes.find(r => r.date === todayISO) || myRoutes.find(r => !r.date && r.day === today);
+  const route = findRouteForDate(myRoutes, todayISO, today);
   if (!route) {
     const dueWOsHtml = buildDueWOsHTML(crewId);
     el.innerHTML = dueWOsHtml +
@@ -7537,7 +7571,6 @@ function getRegStatus(e) {
 }
 
 function openEqDetail(id) {
-  document.querySelectorAll('.panel.open').forEach(function(p){ if (p.id !== 'eq-panel') p.classList.remove('open'); });
   const e = state.equipment.find(x => x.id === id);
   if (!e) return;
   document.getElementById('ep-title').textContent = (EQ_ICONS[e.category]||'') + ' ' + e.name;
@@ -7635,7 +7668,7 @@ function openEqDetail(id) {
     </div>`;
 
   document.getElementById('ep-body').innerHTML = html;
-  document.getElementById('eq-panel').classList.add('open');
+  openPanel('eq-panel');
 
   // Wire add-photo input if no photo exists yet
   var eqPhotoInp = document.getElementById('eq-add-photo-input');
