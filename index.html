@@ -5534,10 +5534,13 @@ function renderProperties() {
           ${flags.length?`<span class="badge badge-red" style="flex-shrink:0;font-size:9px;">⚑ ${flags.length}</span>`:''}
         </div>
         <div style="font-size:11px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.address||'No address'}${p.frequency?` · <span style="color:var(--teal);">${p.frequency}</span>`:''}</div>
-        <div style="font-size:10px;color:var(--text4);margin-top:2px;">Last: ${p.lastServiceDate || 'Never'}</div>
       </div>
-      <div style="padding-right:12px;flex-shrink:0;color:var(--text3);">
-        <i class="ti ti-chevron-right" style="font-size:14px;"></i>
+      <div style="padding-right:12px;flex-shrink:0;display:flex;align-items:center;gap:8px;">
+        <div style="text-align:right;">
+          <div style="font-size:8px;color:var(--text4);text-transform:uppercase;letter-spacing:.3px;">Last Service</div>
+          <div style="font-size:14px;font-weight:700;color:#fff;white-space:nowrap;">${p.lastServiceDate || 'Never'}</div>
+        </div>
+        <i class="ti ti-chevron-right" style="font-size:14px;color:var(--text3);"></i>
       </div>
     </div>`;
   }).join('');
