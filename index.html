@@ -1700,7 +1700,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-08-27-v57'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-12-v58'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -12082,10 +12082,82 @@ function renderCustomerRequests() {
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
         + (r.status==='new' ? '<button class="btn-sm" onclick="markCreqStatus(\''+r.id+'\',\'reviewed\')" style="background:rgba(210,153,34,.15);color:var(--yellow);border:1px solid rgba(210,153,34,.3);">Mark Reviewed</button>' : '')
         + (r.status!=='resolved' ? '<button class="btn-sm btn-green" onclick="markCreqStatus(\''+r.id+'\',\'resolved\')">✓ Mark Resolved</button>' : '<button class="btn-sm" onclick="markCreqStatus(\''+r.id+'\',\'new\')" style="background:var(--bg4);color:var(--text3);border:1px solid var(--border2);">↩ Reopen</button>')
+        + (prop ? (r.flagId && (state.flags||[]).some(function(f){return f.id===r.flagId;})
+            ? '<span class="btn-sm" style="background:rgba(63,185,80,.12);color:var(--green);border:1px solid rgba(63,185,80,.3);cursor:default;">🚩 Flagged</span>'
+            : '<button class="btn-sm" onclick="creqToFlag(\''+r.id+'\')" style="background:rgba(248,81,73,.12);color:var(--red);border:1px solid rgba(248,81,73,.3);">🚩 Create Flag</button>') : '')
         + (prop ? '<button class="btn-sm" onclick="switchTab(\'properties\');setTimeout(function(){var s=document.getElementById(\'prop-search\');if(s){s.value=\''+(prop.name||'').replace(/'/g,"\\'")+'\';renderProperties();}},50);" style="background:rgba(96,165,250,.12);color:var(--blue);border:1px solid rgba(96,165,250,.3);">View Property</button>' : '')
       + '</div>'
     + '</div>';
   }).join('');
+}
+
+// Turn a customer portal request into a property flag so it shows up for the
+// crew on the next visit. Opens a small confirm sheet (service/priority/note
+// prefilled) rather than creating blindly.
+function creqToFlag(id) {
+  var r = (state.customerRequests||[]).find(function(x){ return x.id === id; });
+  if (!r) return;
+  var prop = (state.properties||[]).find(function(p){ return p.id === r.propId; });
+  if (!prop) { toast('Property not found for this request'); return; }
+  var desc = (r.description||'').trim();
+  var guess = 'Trim Shrubs';
+  var low = desc.toLowerCase();
+  if (/weed/.test(low)) guess = 'Weed Control';
+  else if (/mulch/.test(low)) guess = 'Mulch Refresh';
+  else if (/irrigat|sprinkler/.test(low)) guess = 'Irrigation Check';
+  else if (/leaf|leaves|blow|clean/.test(low)) guess = 'Blow & Clean';
+  else if (/trim|hedge|shrub|prune/.test(low)) guess = 'Trim Shrubs';
+  else if (/mow|grass|edge/.test(low)) guess = 'Mow & Edge';
+  var old = document.getElementById('creq-flag-sheet'); if (old) old.remove();
+  var sheet = document.createElement('div');
+  sheet.id = 'creq-flag-sheet';
+  sheet.className = 'overlay open';
+  sheet.innerHTML = '<div class="sheet">'
+    + '<div class="sheet-title">Create Flag from Request</div>'
+    + '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">' + (prop.name||'') + (prop.address?' · '+prop.address:'') + '</div>'
+    + '<div style="display:flex;flex-direction:column;gap:10px;">'
+      + '<select class="inp" id="creq-flag-service">' + SERVICES.map(function(s){return '<option'+(s===guess?' selected':'')+'>'+s+'</option>';}).join('') + '</select>'
+      + '<select class="inp" id="creq-flag-priority">' + PRIORITIES.map(function(p){return '<option'+(p==='Medium'?' selected':'')+'>'+p+'</option>';}).join('') + '</select>'
+      + '<textarea class="inp" id="creq-flag-note" rows="5"></textarea>'
+      + (r.photo ? '<div style="font-size:11px;color:var(--text4);">The customer\'s photo will be attached to the flag.</div>' : '')
+      + '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text3);"><input type="checkbox" id="creq-flag-markrev" checked/> Also mark request as Reviewed</label>'
+      + '<button class="btn btn-green" onclick="creqFlagSubmit(\''+id+'\')">Create Flag</button>'
+      + '<button class="btn btn-outline" onclick="document.getElementById(\'creq-flag-sheet\').remove()">Cancel</button>'
+    + '</div></div>';
+  document.body.appendChild(sheet);
+  document.getElementById('creq-flag-note').value = desc || 'Customer request';
+}
+
+function creqFlagSubmit(id) {
+  var r = (state.customerRequests||[]).find(function(x){ return x.id === id; });
+  if (!r) return;
+  var note = (document.getElementById('creq-flag-note').value||'').trim();
+  if (!note) { toast('Please add a description'); return; }
+  var flag = {
+    id: uid(), propId: r.propId,
+    service: document.getElementById('creq-flag-service').value,
+    priority: document.getElementById('creq-flag-priority').value,
+    note: note,
+    photo: r.photo || '',
+    by: 'Customer Request' + (r.customerEmail ? ' (' + r.customerEmail + ')' : ''),
+    date: new Date().toLocaleDateString('en-US'),
+    resolved: false,
+    fromRequestId: r.id
+  };
+  state.flags.push(flag);
+  save();
+  gsSave('flags', flag);
+  r.flagId = flag.id;
+  if (document.getElementById('creq-flag-markrev').checked && r.status === 'new') {
+    r.status = 'reviewed';
+    r.reviewedAt = new Date().toISOString();
+  }
+  saveAndSync('customerRequests', r);
+  document.getElementById('creq-flag-sheet').remove();
+  toast('🚩 Flag created — crew will see it on the next visit');
+  renderCustomerRequests();
+  renderDashboard();
+  renderProperties();
 }
 
 function markCreqStatus(id, status) {
