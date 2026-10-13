@@ -818,6 +818,12 @@ select.inp{cursor:pointer;}
   body > *:not(#pdf-print-overlay) { display: none !important; }
   #pdf-print-overlay { position:static !important; padding:0 !important; }
 }
+@media print {
+  html, body { height:auto !important; overflow:visible !important; background:#fff !important; }
+  body.wc-printing > *:not(#wc-report-overlay) { display:none !important; }
+  body.wc-printing #wc-report-overlay { display:block !important; position:static !important; overflow:visible !important; height:auto !important; }
+  .no-print { display:none !important; }
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
 </head>
@@ -963,6 +969,14 @@ select.inp{cursor:pointer;}
       </div>
 
 
+      <div class="card" id="dash-rem-card" style="display:none;border:1px solid rgba(251,146,60,.35);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div class="sec-title" style="margin-bottom:0;">⏰ Reminders</div>
+          <button class="btn-sm" onclick="switchTab('calendar')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">Calendar →</button>
+        </div>
+        <div id="dash-rem-list"></div>
+      </div>
+
       <div class="card" id="dash-creq-card" style="display:none;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
           <div class="sec-title" style="margin-bottom:0;">💬 New Customer Requests</div>
@@ -1074,6 +1088,11 @@ select.inp{cursor:pointer;}
         </div>
       </div>
       <div id="propmap-canvas" style="width:100%;height:calc(100vh - 180px);min-height:400px;border-radius:14px;overflow:hidden;border:1px solid var(--border);"></div>
+    </div>
+
+    <div id="screen-calendar" class="screen">
+      <div style="font-size:20px;font-weight:800;margin-bottom:12px;">Master Calendar</div>
+      <div id="cal-root"></div>
     </div>
 
     <div id="screen-customerrequests" class="screen">
@@ -1700,7 +1719,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-12-v58'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-13-v59'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -1725,6 +1744,8 @@ let state = {
   workOrders: [],
   attendance: [],
   customerRequests: [],
+  propEvents: [],
+  wetChecks: [],
   routeWeeks: {},
   eqCategory: 'All',
   routeDay: 'Monday',
@@ -1908,7 +1929,7 @@ function switchTab(tab) {
     equipment: renderEquipment, reports: renderReports,
     schedule: renderSchedule, 'crew-week': renderCrewWeek, field: renderFieldView,
     workorders: renderWorkOrders, 'wo-crew': renderCrewWorkOrders, attendance: renderAttendance,
-    customerrequests: renderCustomerRequests };
+    customerrequests: renderCustomerRequests, calendar: renderCalendar };
   renders[tab]?.();
 }
 
@@ -2186,6 +2207,7 @@ function applyRole(r) {
     <button class="nb" onclick="switchTab('schedule')" data-tab="schedule"><span class="ni"><i class="ti ti-calendar-week"></i></span><span class="nl">Schedule</span></button>
     <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni"><i class="ti ti-clipboard-list"></i></span><span class="nl">Work Orders</span></button>
     <button class="nb" onclick="switchTab('customerrequests')" data-tab="customerrequests"><span class="ni"><i class="ti ti-message-circle-2"></i></span><span class="nl">Customer Requests</span><span class="n-count" id="nav-creq-count"></span></button>
+    <button class="nb" onclick="switchTab('calendar')" data-tab="calendar"><span class="ni"><i class="ti ti-calendar"></i></span><span class="nl">Calendar</span></button>
     <div class="nav-group-label" style="margin-top:10px;">Data</div>
     <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni"><i class="ti ti-home"></i></span><span class="nl">Properties</span><span class="n-count" id="nav-prop-count"></span></button>
     <button class="nb" onclick="switchTab('propmap')" data-tab="propmap"><span class="ni"><i class="ti ti-map-pin"></i></span><span class="nl">Property Map</span></button>
@@ -2278,6 +2300,7 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
     }
   }
 
+  try { renderDashReminders(); } catch(e) { console.warn('reminders render failed', e); }
   // New customer request alerts
   var creqCard = document.getElementById('dash-creq-card');
   if (creqCard) {
@@ -5762,6 +5785,9 @@ function openPropDetail(id) {
     </div>
 
 
+    ${state.role === 'manager' ? renderPropEventsCard(id) : ''}
+    ${renderWetCheckCard(id)}
+
     <div class="card" style="margin-bottom:12px;">
       <div class="sec-title">Service History</div>
       ${getPropertyHistory(id)}
@@ -8905,6 +8931,7 @@ function signOut() {
     <button class="nb" onclick="switchTab('reports')" data-tab="reports"><span class="ni">📊</span><span class="nl">Reports</span></button>
     <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
     <button class="nb" onclick="switchTab('customerrequests')" data-tab="customerrequests"><span class="ni">💬</span><span class="nl">Customer Requests</span></button>
+    <button class="nb" onclick="switchTab('calendar')" data-tab="calendar"><span class="ni">🗓️</span><span class="nl">Calendar</span></button>
     <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni">📅</span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
@@ -9146,7 +9173,7 @@ function gsLoad() {
 
           // Start live listeners — critical first, then defer secondary
           var CRITICAL = ['crew','routes','flags'];
-          var SECONDARY = ['properties','workOrders','inventory','equipment','attendance','customerRequests'];
+          var SECONDARY = ['properties','workOrders','inventory','equipment','attendance','customerRequests','propEvents','wetChecks'];
           CRITICAL.forEach(function(name) { _listenCollection(name); });
           // Defer secondary collections by 800ms so UI loads fast
           setTimeout(function() {
@@ -9162,7 +9189,7 @@ function gsLoad() {
           var cachedHash = localStorage.getItem('dl_pin_hash_cache');
           if (cachedHash) _managerPinHash = cachedHash;
           var CRITICAL = ['crew','routes','flags'];
-          var SECONDARY = ['properties','workOrders','inventory','equipment','attendance','customerRequests'];
+          var SECONDARY = ['properties','workOrders','inventory','equipment','attendance','customerRequests','propEvents','wetChecks'];
           CRITICAL.forEach(function(name) { _listenCollection(name); });
           setTimeout(function() {
             SECONDARY.forEach(function(name) { _listenCollection(name); });
@@ -9798,6 +9825,7 @@ const MANAGER_MENU = [
   { tab:'schedule',  icon:'📅', label:'Schedule' },
   { tab:'workorders', icon:'📋', label:'Work Orders' },
   { tab:'customerrequests', icon:'💬', label:'Customer Requests' },
+  { tab:'calendar', icon:'🗓️', label:'Calendar' },
   { tab:'attendance',  icon:'📅', label:'Attendance' },
 ];
 const CREW_MENU = [
@@ -9835,7 +9863,7 @@ function buildDrawerItems(menuItems, activeTab) {
   const iconMap = {
     'dashboard':  'ti-layout-dashboard', 'routes':     'ti-route',
     'schedule':   'ti-calendar-week',    'workorders': 'ti-clipboard-list',
-    'customerrequests': 'ti-message-circle-2',
+    'customerrequests': 'ti-message-circle-2', 'calendar': 'ti-calendar',
     'properties': 'ti-home',             'propmap':    'ti-map-pin',
     'crew':       'ti-users',
     'inventory':  'ti-package',          'equipment':  'ti-tool',
@@ -9857,7 +9885,7 @@ function buildDrawerItems(menuItems, activeTab) {
     // so the mobile drawer and desktop nav look consistent, not like two different apps.
     var groups = [
       { label: 'Overview',  tabs: ['dashboard'] },
-      { label: 'Operations',tabs: ['routes','schedule','workorders','customerrequests'] },
+      { label: 'Operations',tabs: ['routes','schedule','workorders','customerrequests','calendar'] },
       { label: 'Data',      tabs: ['properties','propmap','crew','inventory','equipment'] },
       { label: 'Reporting', tabs: ['reports','attendance'] },
     ];
@@ -12120,7 +12148,7 @@ function creqToFlag(id) {
       + '<select class="inp" id="creq-flag-priority">' + PRIORITIES.map(function(p){return '<option'+(p==='Medium'?' selected':'')+'>'+p+'</option>';}).join('') + '</select>'
       + '<textarea class="inp" id="creq-flag-note" rows="5"></textarea>'
       + (r.photo ? '<div style="font-size:11px;color:var(--text4);">The customer\'s photo will be attached to the flag.</div>' : '')
-      + '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text3);"><input type="checkbox" id="creq-flag-markrev" checked/> Also mark request as Reviewed</label>'
+      + '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text3);"><input type="checkbox" id="creq-flag-markrev" checked style="-webkit-appearance:checkbox;appearance:auto;width:18px;height:18px;accent-color:var(--green);flex-shrink:0;"/> Also mark request as Reviewed</label>'
       + '<button class="btn btn-green" onclick="creqFlagSubmit(\''+id+'\')">Create Flag</button>'
       + '<button class="btn btn-outline" onclick="document.getElementById(\'creq-flag-sheet\').remove()">Cancel</button>'
     + '</div></div>';
@@ -12158,6 +12186,821 @@ function creqFlagSubmit(id) {
   renderCustomerRequests();
   renderDashboard();
   renderProperties();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PROPERTY CALENDAR / EVENTS, MASTER CALENDAR, AND IRRIGATION WET CHECKS
+// ═══════════════════════════════════════════════════════════════════════
+// propEvents  — per-property scheduled items (annual flowers, mulch, estimate
+//               follow-ups…) with optional "repeat in N months" follow-up and
+//               an "alert N days before" reminder. Collection: propEvents.
+// wetChecks   — timed irrigation wet-check reports. Collection: wetChecks.
+// Both sync through the same saveAndSync/_listenCollection plumbing as every
+// other collection. Events carry id/title/date/time/notes so they can be
+// published as an iPhone-subscribable calendar feed later without reshaping.
+
+var EVENT_TYPES = [
+  { k:'flowers',  label:'Annual Flowers',     icon:'🌸' },
+  { k:'mulch',    label:'Mulch',              icon:'🪵' },
+  { k:'fert',     label:'Fertilize',          icon:'🌱' },
+  { k:'irrig',    label:'Irrigation',         icon:'💧' },
+  { k:'trees',    label:'Tree Trim',          icon:'🌳' },
+  { k:'followup', label:'Estimate Follow-up', icon:'📞' },
+  { k:'other',    label:'Other',              icon:'📌' }
+];
+
+function _pcEsc(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function _pcIso(d) {
+  var m = d.getMonth() + 1, day = d.getDate();
+  return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+}
+function _pcToday() { return _pcIso(new Date()); }
+function _pcParse(iso) {
+  var p = String(iso || '').split('-');
+  return new Date(parseInt(p[0],10), parseInt(p[1],10) - 1, parseInt(p[2],10));
+}
+function _pcAddDays(iso, n) {
+  var d = _pcParse(iso); d.setDate(d.getDate() + n); return _pcIso(d);
+}
+function _pcAddMonths(iso, n) {
+  var d = _pcParse(iso), day = d.getDate();
+  d.setDate(1); d.setMonth(d.getMonth() + n);
+  var last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, last));
+  return _pcIso(d);
+}
+function _pcDaysBetween(aIso, bIso) {
+  return Math.round((_pcParse(bIso) - _pcParse(aIso)) / 86400000);
+}
+function _pcFmt(iso) {
+  if (!iso) return '';
+  var d = _pcParse(iso);
+  var opts = { weekday:'short', month:'short', day:'numeric' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString('en-US', opts);
+}
+function _pcFmtTime(t) {
+  if (!t) return '';
+  var p = t.split(':'); var h = parseInt(p[0],10), m = p[1] || '00';
+  return (h % 12 || 12) + ':' + m + (h >= 12 ? ' PM' : ' AM');
+}
+function _evType(k) {
+  for (var i = 0; i < EVENT_TYPES.length; i++) if (EVENT_TYPES[i].k === k) return EVENT_TYPES[i];
+  return EVENT_TYPES[EVENT_TYPES.length - 1];
+}
+
+// ── Reminder logic ──────────────────────────────────────────────────────
+// An event needs attention when it is still scheduled and either (a) it is
+// inside its "alert N days before" window and you haven't marked the client
+// contacted, or (b) its date has passed without being marked done.
+function _evNeedsAttention(ev) {
+  if (!ev || ev.status === 'done') return false;
+  var today = _pcToday();
+  if (ev.date < today) return true;
+  var rd = (ev.remindDays === undefined || ev.remindDays === null || ev.remindDays === '') ? 7 : parseInt(ev.remindDays, 10);
+  if (isNaN(rd) || rd < 0) return false;
+  if (ev.contactedAt) return false;
+  return today >= _pcAddDays(ev.date, -rd);
+}
+
+function _evRefresh(propId) {
+  try { renderDashboard(); } catch(e) {}
+  try { if (state.currentTab === 'calendar') renderCalendar(); } catch(e) {}
+  try { if (propId && document.getElementById('prop-panel').classList.contains('open')) openPropDetail(propId); } catch(e) {}
+}
+
+// ── Property panel card ─────────────────────────────────────────────────
+function renderPropEventsCard(propId) {
+  var today = _pcToday();
+  var all = (state.propEvents || []).filter(function(e){ return e.propId === propId; });
+  var upcoming = all.filter(function(e){ return e.status !== 'done'; }).sort(function(a,b){ return a.date < b.date ? -1 : 1; });
+  var done = all.filter(function(e){ return e.status === 'done'; }).sort(function(a,b){ return a.date < b.date ? 1 : -1; }).slice(0, 3);
+
+  function row(e) {
+    var t = _evType(e.type);
+    var isDone = e.status === 'done';
+    var days = _pcDaysBetween(today, e.date);
+    var badge = '';
+    if (!isDone) {
+      if (days < 0) badge = '<span class="badge badge-red">' + Math.abs(days) + 'd overdue</span>';
+      else if (days === 0) badge = '<span class="badge badge-yellow">Today</span>';
+      else badge = '<span class="badge badge-blue">in ' + days + 'd</span>';
+    } else badge = '<span class="badge badge-green">✓ Done</span>';
+    return '<div class="card-flat" style="margin-bottom:6px;cursor:pointer;" onclick="openEventSheet(\'' + propId + '\',\'' + e.id + '\')">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+        + '<div style="min-width:0;">'
+          + '<div style="font-size:13px;font-weight:700;">' + t.icon + ' ' + _pcEsc(e.title) + '</div>'
+          + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _pcFmt(e.date) + (e.time ? ' · ' + _pcFmtTime(e.time) : '')
+            + (e.repeatMonths > 0 ? ' · ↻ every ' + e.repeatMonths + ' mo' : '')
+            + (e.customerVisible ? ' · 👁 customer' : '') + '</div>'
+        + '</div>' + badge
+      + '</div></div>';
+  }
+
+  return '<div class="card" style="margin-bottom:12px;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+      + '<div class="sec-title" style="margin-bottom:0;">📅 Calendar &amp; Reminders</div>'
+      + '<button class="btn-sm" onclick="openEventSheet(\'' + propId + '\')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">+ Event</button>'
+    + '</div>'
+    + (upcoming.length ? upcoming.map(row).join('') : '<div style="font-size:13px;color:var(--text4);">Nothing scheduled</div>')
+    + (done.length ? '<div style="font-size:11px;color:var(--text4);margin:10px 0 6px;font-weight:700;">RECENTLY DONE</div>' + done.map(row).join('') : '')
+  + '</div>';
+}
+
+// ── Add / edit event sheet ──────────────────────────────────────────────
+function openEventSheet(propId, evId, presetDate) {
+  var ev = evId ? (state.propEvents || []).find(function(x){ return x.id === evId; }) : null;
+  var prop = (state.properties || []).find(function(p){ return p.id === propId; });
+  var old = document.getElementById('ev-sheet'); if (old) old.remove();
+  window._evPickedType = ev ? ev.type : 'other';
+  var rep = ev ? (ev.repeatMonths || 0) : 0;
+  var rd  = ev ? ((ev.remindDays === undefined || ev.remindDays === null) ? 7 : ev.remindDays) : 7;
+
+  function opt(val, label, cur) { return '<option value="' + val + '"' + (String(cur) === String(val) ? ' selected' : '') + '>' + label + '</option>'; }
+
+  var sheet = document.createElement('div');
+  sheet.id = 'ev-sheet';
+  sheet.className = 'overlay open';
+  sheet.style.zIndex = '340';
+  sheet.innerHTML = '<div class="sheet">'
+    + '<div class="sheet-title">' + (ev ? 'Edit Event' : 'New Event') + '</div>'
+    + '<div style="font-size:12px;color:var(--text3);margin:-10px 0 10px;">' + _pcEsc(prop ? prop.name : '') + '</div>'
+    + '<div style="display:flex;flex-direction:column;gap:10px;">'
+      + '<div id="ev-chips" style="display:flex;flex-wrap:wrap;gap:6px;">'
+        + EVENT_TYPES.map(function(t){
+            return '<button type="button" data-k="' + t.k + '" onclick="evPickType(\'' + t.k + '\')" class="btn-sm" style="background:var(--bg4);color:var(--text3);border:1px solid var(--border2);">' + t.icon + ' ' + t.label + '</button>';
+          }).join('')
+      + '</div>'
+      + '<input class="inp" id="ev-title" placeholder="What is it? (e.g. Annual flowers install)" value="' + _pcEsc(ev ? ev.title : '') + '"/>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+        + '<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px;">DATE</div><input class="inp" type="date" id="ev-date" value="' + (ev ? ev.date : (presetDate || _pcToday())) + '"/></div>'
+        + '<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px;">TIME (optional)</div><input class="inp" type="time" id="ev-time" value="' + (ev && ev.time ? ev.time : '') + '"/></div>'
+      + '</div>'
+      + '<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px;">STATUS</div>'
+        + '<select class="inp" id="ev-status">' + opt('scheduled','Scheduled (upcoming)', ev ? ev.status : 'scheduled') + opt('done','Done (already completed)', ev ? ev.status : 'scheduled') + '</select></div>'
+      + '<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px;">DO IT AGAIN IN</div>'
+        + '<select class="inp" id="ev-repeat">' + opt(0,'Don\'t repeat',rep) + opt(1,'1 month',rep) + opt(2,'2 months',rep) + opt(3,'3 months',rep) + opt(4,'4 months',rep) + opt(6,'6 months',rep) + opt(12,'12 months',rep) + '</select>'
+        + '<div style="font-size:11px;color:var(--text4);margin-top:4px;">When this is marked done, the next one is scheduled automatically.</div></div>'
+      + '<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px;">REMIND ME BEFORE</div>'
+        + '<select class="inp" id="ev-remind">' + opt(-1,'No reminder',rd) + opt(1,'1 day before',rd) + opt(3,'3 days before',rd) + opt(7,'1 week before',rd) + opt(14,'2 weeks before',rd) + opt(30,'1 month before',rd) + '</select></div>'
+      + '<textarea class="inp" id="ev-notes" rows="3" placeholder="Notes (optional)">' + _pcEsc(ev ? ev.notes : '') + '</textarea>'
+      + '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text3);"><input type="checkbox" id="ev-cust" style="-webkit-appearance:checkbox;appearance:auto;width:18px;height:18px;accent-color:var(--green);flex-shrink:0;"' + (ev ? (ev.customerVisible ? ' checked' : '') : ' checked') + '/> Show on customer portal</label>'
+      + '<button class="btn btn-green" onclick="evSave(\'' + propId + '\',' + (ev ? '\'' + ev.id + '\'' : 'null') + ')">' + (ev ? 'Save Changes' : 'Add Event') + '</button>'
+      + (ev && ev.status !== 'done' ? '<button class="btn btn-outline" onclick="evMarkDone(\'' + ev.id + '\')">✓ Mark Done</button>' : '')
+      + (ev ? '<button class="btn btn-outline" style="color:var(--red);" onclick="evDelete(\'' + ev.id + '\')">🗑 Delete Event</button>' : '')
+      + '<button class="btn btn-outline" onclick="document.getElementById(\'ev-sheet\').remove()">Cancel</button>'
+    + '</div></div>';
+  document.body.appendChild(sheet);
+  evHighlightChip();
+}
+
+function evHighlightChip() {
+  document.querySelectorAll('#ev-chips button').forEach(function(b) {
+    var on = b.getAttribute('data-k') === window._evPickedType;
+    b.style.background = on ? 'rgba(96,165,250,.2)' : 'var(--bg4)';
+    b.style.color = on ? 'var(--blue)' : 'var(--text3)';
+    b.style.borderColor = on ? 'rgba(96,165,250,.5)' : 'var(--border2)';
+  });
+}
+
+function evPickType(k) {
+  var prevLabel = _evType(window._evPickedType).label;
+  window._evPickedType = k;
+  var t = document.getElementById('ev-title');
+  var isLabel = EVENT_TYPES.some(function(x){ return x.label === t.value; });
+  if (k !== 'other' && (!t.value.trim() || isLabel || t.value === prevLabel)) t.value = _evType(k).label;
+  evHighlightChip();
+}
+
+function _evMakeFollowUp(ev, baseIso) {
+  var fu = {
+    id: uid(), propId: ev.propId, title: ev.title, type: ev.type,
+    date: _pcAddMonths(baseIso, ev.repeatMonths), time: '', notes: ev.notes || '',
+    repeatMonths: ev.repeatMonths, remindDays: ev.remindDays,
+    customerVisible: !!ev.customerVisible, status: 'scheduled',
+    createdAt: new Date().toISOString(), fromId: ev.id
+  };
+  ev.followUpId = fu.id;
+  state.propEvents.push(fu);
+  saveAndSync('propEvents', fu);
+  return fu;
+}
+
+function evSave(propId, evId) {
+  var title = (document.getElementById('ev-title').value || '').trim();
+  var date  = document.getElementById('ev-date').value;
+  if (!title) { toast('Please enter a title'); return; }
+  if (!date)  { toast('Please pick a date'); return; }
+  state.propEvents = state.propEvents || [];
+  var ev = evId ? state.propEvents.find(function(x){ return x.id === evId; }) : null;
+  var isNew = !ev;
+  if (isNew) ev = { id: uid(), propId: propId, createdAt: new Date().toISOString() };
+  var wasDone = ev.status === 'done';
+  // Changing the date of an event re-arms its reminder.
+  if (!isNew && ev.date !== date) ev.contactedAt = '';
+  ev.title = title; ev.type = window._evPickedType || 'other'; ev.date = date;
+  ev.time = document.getElementById('ev-time').value || '';
+  ev.status = document.getElementById('ev-status').value;
+  ev.repeatMonths = parseInt(document.getElementById('ev-repeat').value, 10) || 0;
+  ev.remindDays = parseInt(document.getElementById('ev-remind').value, 10);
+  ev.notes = (document.getElementById('ev-notes').value || '').trim();
+  ev.customerVisible = document.getElementById('ev-cust').checked;
+  if (isNew) state.propEvents.push(ev);
+  if (ev.status === 'done' && !wasDone) ev.completedAt = new Date().toISOString();
+  if (ev.status === 'done' && ev.repeatMonths > 0 && !ev.followUpId) {
+    var fu = _evMakeFollowUp(ev, ev.date);
+    toast('Saved ✓ — next one scheduled ' + _pcFmt(fu.date));
+  } else toast('Event saved ✓');
+  saveAndSync('propEvents', ev);
+  var sh = document.getElementById('ev-sheet'); if (sh) sh.remove();
+  _evRefresh(ev.propId);
+}
+
+function evMarkDone(evId) {
+  var ev = (state.propEvents || []).find(function(x){ return x.id === evId; });
+  if (!ev) return;
+  ev.status = 'done';
+  ev.completedAt = new Date().toISOString();
+  var msg = 'Marked done ✓';
+  if (ev.repeatMonths > 0 && !ev.followUpId) {
+    var fu = _evMakeFollowUp(ev, _pcToday());
+    msg += ' — next one ' + _pcFmt(fu.date);
+  }
+  saveAndSync('propEvents', ev);
+  var sh = document.getElementById('ev-sheet'); if (sh) sh.remove();
+  toast(msg);
+  _evRefresh(ev.propId);
+}
+
+function evContacted(evId) {
+  var ev = (state.propEvents || []).find(function(x){ return x.id === evId; });
+  if (!ev) return;
+  ev.contactedAt = new Date().toISOString();
+  saveAndSync('propEvents', ev);
+  toast('Marked contacted ✓');
+  _evRefresh(ev.propId);
+}
+
+function evDelete(evId) {
+  var ev = (state.propEvents || []).find(function(x){ return x.id === evId; });
+  if (!ev) return;
+  if (!confirm('Delete "' + ev.title + '"?')) return;
+  state.propEvents = state.propEvents.filter(function(x){ return x.id !== evId; });
+  save();
+  try { gsDelete('propEvents', evId); } catch(e) {}
+  var sh = document.getElementById('ev-sheet'); if (sh) sh.remove();
+  toast('Event deleted');
+  _evRefresh(ev.propId);
+}
+
+// ── Dashboard reminders card ────────────────────────────────────────────
+function renderDashReminders() {
+  var card = document.getElementById('dash-rem-card');
+  var list = document.getElementById('dash-rem-list');
+  if (!card || !list) return;
+  var today = _pcToday();
+  var items = (state.propEvents || []).filter(_evNeedsAttention).sort(function(a,b){ return a.date < b.date ? -1 : 1; });
+  if (!items.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  list.innerHTML = items.slice(0, 8).map(function(e) {
+    var prop = (state.properties || []).find(function(p){ return p.id === e.propId; });
+    var t = _evType(e.type);
+    var days = _pcDaysBetween(today, e.date);
+    var when = days < 0 ? '<span style="color:var(--red);font-weight:700;">' + Math.abs(days) + ' day' + (Math.abs(days) === 1 ? '' : 's') + ' overdue</span>'
+             : days === 0 ? '<span style="color:var(--yellow);font-weight:700;">Today</span>'
+             : '<span style="color:var(--blue);font-weight:700;">' + _pcFmt(e.date) + ' (in ' + days + 'd)</span>';
+    return '<div class="card-flat" style="margin-bottom:8px;">'
+      + '<div style="font-size:13px;font-weight:700;">' + t.icon + ' ' + _pcEsc(e.title) + '</div>'
+      + '<div style="font-size:12px;color:var(--text3);margin:2px 0 8px;">' + _pcEsc(prop ? prop.name : 'Unknown property') + ' · ' + when + '</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;">'
+        + (!e.contactedAt && days >= 0 ? '<button class="btn-sm" onclick="evContacted(\'' + e.id + '\')" style="background:rgba(210,153,34,.15);color:var(--yellow);border:1px solid rgba(210,153,34,.3);">✓ Contacted</button>' : '')
+        + '<button class="btn-sm btn-green" onclick="evMarkDone(\'' + e.id + '\')">✓ Done</button>'
+        + '<button class="btn-sm" onclick="openEventSheet(\'' + e.propId + '\',\'' + e.id + '\')" style="background:rgba(96,165,250,.12);color:var(--blue);border:1px solid rgba(96,165,250,.3);">Reschedule</button>'
+      + '</div></div>';
+  }).join('') + (items.length > 8 ? '<div style="font-size:11px;color:var(--text4);text-align:center;">+ ' + (items.length - 8) + ' more — see Calendar</div>' : '');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MASTER CALENDAR
+// ═══════════════════════════════════════════════════════════════════════
+var _calMonth = null; // 'yyyy-mm-01'
+var _calSel = null;
+
+function _isoFromDisplay(str) {
+  if (!str) return '';
+  var d = new Date(str);
+  return isNaN(d.getTime()) ? '' : _pcIso(d);
+}
+
+function _calItemsForDate(iso) {
+  var items = [];
+  var today = _pcToday();
+  var dayName = _pcParse(iso).toLocaleDateString('en-US', { weekday:'long' });
+
+  (state.routes || []).forEach(function(r) {
+    var match = r.date === iso || (!r.date && r.day === dayName && iso >= today);
+    if (!match) return;
+    var crew = (state.crew || []).find(function(c){ return c.id === r.crewId; });
+    var stops = r.stops || [];
+    var doneN = stops.filter(function(s){ return s.completed; }).length;
+    items.push({ kind:'route', color:'blue', icon:'🗺️', title:r.name || 'Route',
+      sub:(crew ? crew.name + ' · ' : '') + stops.length + ' stops' + (r.date && doneN ? ' · ' + doneN + ' done' : ''),
+      onclick:"openRouteDetail('" + r.id + "')" });
+  });
+
+  (state.propEvents || []).forEach(function(e) {
+    if (e.date !== iso) return;
+    var prop = (state.properties || []).find(function(p){ return p.id === e.propId; });
+    var t = _evType(e.type);
+    items.push({ kind:'event', color: e.status === 'done' ? 'green' : 'orange', icon:t.icon,
+      title:(e.status === 'done' ? '✓ ' : '') + e.title,
+      sub:(prop ? prop.name : 'Property') + (e.time ? ' · ' + _pcFmtTime(e.time) : ''),
+      onclick:"openEventSheet('" + e.propId + "','" + e.id + "')" });
+  });
+
+  (state.wetChecks || []).forEach(function(w) {
+    if (!w.startedAt || _pcIso(new Date(w.startedAt)) !== iso) return;
+    var prop = (state.properties || []).find(function(p){ return p.id === w.propId; });
+    items.push({ kind:'wet', color:'teal', icon:'💧', title:'Wet check' + (w.status === 'inprogress' ? ' (in progress)' : ''),
+      sub:(prop ? prop.name : 'Property') + (w.durationMin ? ' · ' + _wcDur(w.durationMin) : ''),
+      onclick: w.status === 'inprogress' ? "wcOpenForm('" + w.id + "')" : "wcViewReport('" + w.id + "')" });
+  });
+
+  (state.workOrders || []).forEach(function(w) {
+    if (w.status !== 'completed') return;
+    if (_isoFromDisplay(w.dateCompleted || w.completedOn) !== iso) return;
+    items.push({ kind:'wo', color:'green', icon:'📋', title:'Work order done', sub:(w.community || '') + (w.address ? ' · ' + w.address : ''), onclick:"switchTab('workorders')" });
+  });
+  return items;
+}
+
+function calShift(n) {
+  _calMonth = _pcAddMonths(_calMonth, n);
+  renderCalendar();
+}
+function calToday() {
+  _calSel = _pcToday();
+  _calMonth = _calSel.slice(0, 8) + '01';
+  renderCalendar();
+}
+function calSelect(iso) { _calSel = iso; renderCalendar(); }
+
+function renderCalendar() {
+  var root = document.getElementById('cal-root');
+  if (!root) return;
+  var today = _pcToday();
+  if (!_calSel) _calSel = today;
+  if (!_calMonth) _calMonth = _calSel.slice(0, 8) + '01';
+
+  var first = _pcParse(_calMonth);
+  var label = first.toLocaleDateString('en-US', { month:'long', year:'numeric' });
+  var startOffset = first.getDay();
+  var daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+
+  var cells = '';
+  for (var i = 0; i < startOffset; i++) cells += '<div></div>';
+  for (var d = 1; d <= daysInMonth; d++) {
+    var iso = _calMonth.slice(0, 8) + (d < 10 ? '0' : '') + d;
+    var items = _calItemsForDate(iso);
+    var dots = '';
+    var seen = {};
+    items.forEach(function(it){ if (!seen[it.color] && Object.keys(seen).length < 4) { seen[it.color] = 1; dots += '<span style="width:6px;height:6px;border-radius:50%;background:var(--' + it.color + ');display:inline-block;"></span>'; } });
+    var isSel = iso === _calSel, isToday = iso === today;
+    cells += '<div onclick="calSelect(\'' + iso + '\')" style="cursor:pointer;min-height:48px;border-radius:10px;padding:5px 2px;text-align:center;'
+      + 'background:' + (isSel ? 'rgba(63,185,80,.18)' : 'var(--bg2)') + ';'
+      + 'border:1px solid ' + (isSel ? 'var(--green)' : (isToday ? 'var(--blue)' : 'var(--border)')) + ';">'
+      + '<div style="font-size:13px;font-weight:' + (isToday ? '800' : '600') + ';color:' + (isToday ? 'var(--blue)' : 'var(--text)') + ';">' + d + '</div>'
+      + '<div style="display:flex;gap:3px;justify-content:center;margin-top:4px;min-height:6px;">' + dots + '</div></div>';
+  }
+
+  var selItems = _calItemsForDate(_calSel);
+  var order = { route:0, event:1, wet:2, wo:3 };
+  selItems.sort(function(a,b){ return order[a.kind] - order[b.kind]; });
+
+  var legend = [['blue','Routes'],['orange','Scheduled'],['green','Done'],['teal','Wet checks']].map(function(l){
+    return '<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--' + l[0] + ');"></span>' + l[1] + '</span>';
+  }).join('');
+
+  root.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
+      + '<button class="btn-sm" onclick="calShift(-1)" style="background:var(--bg4);color:var(--text);border:1px solid var(--border2);">‹</button>'
+      + '<div style="font-size:16px;font-weight:800;">' + label + '</div>'
+      + '<div style="display:flex;gap:6px;"><button class="btn-sm" onclick="calToday()" style="background:var(--bg4);color:var(--text);border:1px solid var(--border2);">Today</button>'
+      + '<button class="btn-sm" onclick="calShift(1)" style="background:var(--bg4);color:var(--text);border:1px solid var(--border2);">›</button></div>'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px;font-size:10px;color:var(--text4);text-align:center;font-weight:700;">'
+      + ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(function(x){ return '<div>' + x + '</div>'; }).join('') + '</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">' + cells + '</div>'
+    + '<div style="font-size:11px;color:var(--text4);margin:10px 0 14px;">' + legend + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+      + '<div style="font-size:14px;font-weight:800;">' + _pcFmt(_calSel) + '</div>'
+      + '<button class="btn-sm btn-green" onclick="calAddEvent()">+ Add Event</button>'
+    + '</div>'
+    + (selItems.length ? selItems.map(function(it) {
+        return '<div class="card-flat" style="margin-bottom:6px;cursor:pointer;border-left:3px solid var(--' + it.color + ');" onclick="' + it.onclick + '">'
+          + '<div style="font-size:13px;font-weight:700;">' + it.icon + ' ' + _pcEsc(it.title) + '</div>'
+          + (it.sub ? '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _pcEsc(it.sub) + '</div>' : '')
+        + '</div>';
+      }).join('') : '<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">Nothing on this day</div>');
+}
+
+function calAddEvent() {
+  var old = document.getElementById('cal-prop-sheet'); if (old) old.remove();
+  var props = (state.properties || []).filter(function(p){ return !p.archived; }).sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); });
+  var sheet = document.createElement('div');
+  sheet.id = 'cal-prop-sheet';
+  sheet.className = 'overlay open';
+  sheet.innerHTML = '<div class="sheet"><div class="sheet-title">Which property?</div>'
+    + '<div style="display:flex;flex-direction:column;gap:10px;">'
+    + '<select class="inp" id="cal-prop-pick">' + props.map(function(p){ return '<option value="' + p.id + '">' + _pcEsc(p.name) + '</option>'; }).join('') + '</select>'
+    + '<button class="btn btn-green" onclick="var v=document.getElementById(\'cal-prop-pick\').value;document.getElementById(\'cal-prop-sheet\').remove();openEventSheet(v,null,_calSel)">Continue</button>'
+    + '<button class="btn btn-outline" onclick="document.getElementById(\'cal-prop-sheet\').remove()">Cancel</button>'
+    + '</div></div>';
+  document.body.appendChild(sheet);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// IRRIGATION WET CHECKS
+// ═══════════════════════════════════════════════════════════════════════
+var WC_ISSUE_TYPES = ['Broken Head','Broken Lateral Line','Broken Mainline','Valve Problem','Clogged Nozzle','Head Adjusted / Realigned','Controller / Timer','Rain Sensor','Backflow','Low Pressure','Leak','Other'];
+var WC_ACTIONS = ['Repaired','Needs Follow-up','Recommended'];
+var _wcPhotoCache = {};
+var _wcTimer = null;
+
+function _wcDur(min) {
+  min = Math.max(0, Math.round(min || 0));
+  if (min < 60) return min + ' min';
+  return Math.floor(min / 60) + 'h ' + (min % 60) + 'm';
+}
+function _wcFmtDT(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
+}
+function _wcFmtT(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+}
+function _wcFind(id) { return (state.wetChecks || []).find(function(w){ return w.id === id; }); }
+function _wcWho() {
+  if (state.role === 'field') {
+    var c = (state.crew || []).find(function(x){ return x.id === state.loggedInCrewId; });
+    return c ? c.name : 'Crew';
+  }
+  return 'Manager';
+}
+function _wcPhoto(iss) { return iss.photo || _wcPhotoCache[iss.id] || ''; }
+
+function renderWetCheckCard(propId) {
+  var all = (state.wetChecks || []).filter(function(w){ return w.propId === propId; });
+  var active = all.find(function(w){ return w.status === 'inprogress'; });
+  var done = all.filter(function(w){ return w.status === 'done'; }).sort(function(a,b){ return a.startedAt < b.startedAt ? 1 : -1; });
+  return '<div class="card" style="margin-bottom:12px;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+      + '<div class="sec-title" style="margin-bottom:0;">💧 Wet Checks</div>'
+      + '<button class="btn-sm" onclick="wcStart(\'' + propId + '\')" style="background:rgba(45,212,191,.15);color:var(--teal);border:1px solid rgba(45,212,191,.35);">' + (active ? '▶ Resume Wet Check' : '▶ Start Wet Check') + '</button>'
+    + '</div>'
+    + (done.length ? done.map(function(w) {
+        return '<div class="card-flat" style="margin-bottom:6px;cursor:pointer;" onclick="wcViewReport(\'' + w.id + '\')">'
+          + '<div style="display:flex;justify-content:space-between;align-items:center;">'
+            + '<div><div style="font-size:13px;font-weight:700;">' + _pcFmt(_pcIso(new Date(w.startedAt))) + '</div>'
+            + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _wcDur(w.durationMin) + ' · ' + (w.issues || []).length + ' issue' + ((w.issues || []).length === 1 ? '' : 's') + ' · ' + _pcEsc(w.by || '') + '</div></div>'
+            + '<span style="color:var(--text3);">›</span>'
+          + '</div></div>';
+      }).join('') : '<div style="font-size:13px;color:var(--text4);">No wet checks yet</div>')
+  + '</div>';
+}
+
+function wcStart(propId) {
+  state.wetChecks = state.wetChecks || [];
+  var active = state.wetChecks.find(function(w){ return w.propId === propId && w.status === 'inprogress'; });
+  if (active) { wcOpenForm(active.id); return; }
+  var wc = { id: uid(), propId: propId, status: 'inprogress', startedAt: new Date().toISOString(), endedAt: '', durationMin: 0,
+             by: _wcWho(), issues: [], notes: '', zonesChecked: '' };
+  state.wetChecks.push(wc);
+  saveAndSync('wetChecks', wc);
+  wcOpenForm(wc.id);
+}
+
+function wcCloseForm() {
+  if (_wcTimer) { clearInterval(_wcTimer); _wcTimer = null; }
+  var f = document.getElementById('wc-form'); if (f) f.remove();
+}
+
+function wcField(id, field, val) {
+  var wc = _wcFind(id); if (!wc) return;
+  wc[field] = val;
+  saveAndSync('wetChecks', wc);
+}
+
+function wcOpenForm(id) {
+  var wc = _wcFind(id); if (!wc) return;
+  var prop = (state.properties || []).find(function(p){ return p.id === wc.propId; });
+  wcCloseForm();
+  var f = document.createElement('div');
+  f.id = 'wc-form';
+  f.style.cssText = 'position:fixed;inset:0;z-index:320;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 14px calc(30px + var(--safe-bottom));';
+  document.body.appendChild(f);
+  wcRenderForm(id);
+  _wcTimer = setInterval(function() {
+    var el = document.getElementById('wc-timer'); var w = _wcFind(id);
+    if (!el || !w || w.status !== 'inprogress') return;
+    var s = Math.floor((Date.now() - new Date(w.startedAt).getTime()) / 1000);
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    el.textContent = (h ? h + ':' : '') + (m < 10 && h ? '0' : '') + m + ':' + (sec < 10 ? '0' : '') + sec;
+  }, 1000);
+}
+
+function wcRenderForm(id) {
+  var f = document.getElementById('wc-form'); var wc = _wcFind(id);
+  if (!f || !wc) return;
+  var prop = (state.properties || []).find(function(p){ return p.id === wc.propId; });
+  f.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">'
+      + '<div><div style="font-size:18px;font-weight:800;">💧 Wet Check</div>'
+      + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">' + _pcEsc(prop ? prop.name : '') + (prop && prop.address ? ' · ' + _pcEsc(prop.address) : '') + '</div>'
+      + '<div style="font-size:11px;color:var(--text4);margin-top:2px;">Started ' + _wcFmtT(wc.startedAt) + ' · ' + _pcEsc(wc.by || '') + '</div></div>'
+      + '<button class="btn-sm" onclick="wcCloseForm()" style="background:var(--bg4);color:var(--text3);border:1px solid var(--border2);">Hide</button>'
+    + '</div>'
+    + '<div class="card" style="text-align:center;margin-bottom:12px;"><div style="font-size:11px;color:var(--text3);font-weight:700;">ELAPSED</div>'
+      + '<div id="wc-timer" style="font-size:34px;font-weight:800;color:var(--teal);font-variant-numeric:tabular-nums;">0:00</div>'
+      + '<div style="font-size:11px;color:var(--text4);">The timer keeps running if you hide this screen.</div></div>'
+    + '<div class="card" style="margin-bottom:12px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+        + '<div class="sec-title" style="margin-bottom:0;">Issues Found (' + wc.issues.length + ')</div>'
+        + '<button class="btn-sm btn-green" onclick="wcIssueSheet(\'' + id + '\')">+ Add Issue</button></div>'
+      + (wc.issues.length ? wc.issues.map(function(iss, i) {
+          var ph = _wcPhoto(iss);
+          return '<div class="card-flat" style="margin-bottom:8px;cursor:pointer;" onclick="wcIssueSheet(\'' + id + '\',\'' + iss.id + '\')">'
+            + '<div style="display:flex;gap:10px;align-items:flex-start;">'
+              + '<div style="flex:1;min-width:0;">'
+                + '<div style="font-size:13px;font-weight:700;">Zone ' + _pcEsc(iss.zone || '?') + ' — ' + _pcEsc(iss.type) + '</div>'
+                + '<div style="font-size:11px;color:var(--teal);margin-top:2px;">' + _pcEsc(iss.action) + '</div>'
+                + (iss.desc ? '<div style="font-size:12px;color:var(--text2);margin-top:4px;">' + _pcEsc(iss.desc) + '</div>' : '')
+                + ((iss.parts || []).length ? '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Parts: ' + iss.parts.map(function(p){ return _pcEsc(p.name) + ' ×' + p.qty; }).join(', ') + '</div>' : '')
+              + '</div>'
+              + (ph ? '<img src="' + ph + '" referrerpolicy="no-referrer" style="width:56px;height:56px;border-radius:8px;object-fit:cover;"/>' : '')
+            + '</div></div>';
+        }).join('') : '<div style="font-size:13px;color:var(--text4);">No issues logged yet. If everything checks out, just end the wet check.</div>')
+    + '</div>'
+    + '<div class="card" style="margin-bottom:12px;display:flex;flex-direction:column;gap:10px;">'
+      + '<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px;">ZONES CHECKED (optional)</div>'
+        + '<input class="inp" id="wc-zones" placeholder="e.g. 12" value="' + _pcEsc(wc.zonesChecked || '') + '" onchange="wcField(\'' + id + '\',\'zonesChecked\',this.value)"/></div>'
+      + '<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px;">GENERAL NOTES</div>'
+        + '<textarea class="inp" id="wc-notes" rows="3" placeholder="Controller settings, recommendations, anything the client should know…" onchange="wcField(\'' + id + '\',\'notes\',this.value)">' + _pcEsc(wc.notes || '') + '</textarea></div>'
+    + '</div>'
+    + '<button class="btn btn-green" style="width:100%;" onclick="wcEnd(\'' + id + '\')">■ End Wet Check</button>'
+    + '<button class="btn btn-outline" style="width:100%;margin-top:8px;color:var(--red);" onclick="wcDiscard(\'' + id + '\')">Discard this wet check</button>';
+  // restart timer text immediately
+  var el = document.getElementById('wc-timer');
+  if (el) {
+    var s = Math.floor((Date.now() - new Date(wc.startedAt).getTime()) / 1000);
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    el.textContent = (h ? h + ':' : '') + (m < 10 && h ? '0' : '') + m + ':' + (sec < 10 ? '0' : '') + sec;
+  }
+}
+
+function wcDiscard(id) {
+  if (!confirm('Discard this wet check? Nothing will be saved.')) return;
+  var wc = _wcFind(id); if (!wc) return;
+  state.wetChecks = state.wetChecks.filter(function(w){ return w.id !== id; });
+  save();
+  try { gsDelete('wetChecks', id); } catch(e) {}
+  wcCloseForm();
+  _evRefresh(wc.propId);
+}
+
+// ── Add/edit one issue ──────────────────────────────────────────────────
+function wcIssueSheet(wcId, issId) {
+  var wc = _wcFind(wcId); if (!wc) return;
+  var iss = issId ? wc.issues.find(function(x){ return x.id === issId; }) : null;
+  var old = document.getElementById('wc-issue-sheet'); if (old) old.remove();
+  function opt(v, cur) { return '<option' + (v === cur ? ' selected' : '') + '>' + v + '</option>'; }
+  var invNames = (state.inventory || []).map(function(i){ return i.name; }).filter(Boolean);
+  var sheet = document.createElement('div');
+  sheet.id = 'wc-issue-sheet';
+  sheet.className = 'overlay open';
+  sheet.style.zIndex = '340';
+  sheet.innerHTML = '<div class="sheet">'
+    + '<div class="sheet-title">' + (iss ? 'Edit Issue' : 'Add Issue') + '</div>'
+    + '<datalist id="wc-parts-dl">' + invNames.map(function(n){ return '<option value="' + _pcEsc(n) + '">'; }).join('') + '</datalist>'
+    + '<div style="display:flex;flex-direction:column;gap:10px;">'
+      + '<input class="inp" id="wci-zone" placeholder="Zone # (e.g. 4)" value="' + _pcEsc(iss ? iss.zone : '') + '"/>'
+      + '<select class="inp" id="wci-type">' + WC_ISSUE_TYPES.map(function(t){ return opt(t, iss ? iss.type : ''); }).join('') + '</select>'
+      + '<select class="inp" id="wci-action">' + WC_ACTIONS.map(function(t){ return opt(t, iss ? iss.action : 'Repaired'); }).join('') + '</select>'
+      + '<textarea class="inp" id="wci-desc" rows="2" placeholder="What did you find / do?">' + _pcEsc(iss ? iss.desc : '') + '</textarea>'
+      + '<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:6px;">PARTS USED</div>'
+        + '<div id="wci-parts"></div>'
+        + '<button type="button" class="btn-sm" onclick="wcAddPartRow()" style="background:var(--bg4);color:var(--text);border:1px solid var(--border2);">+ Part</button></div>'
+      + '<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:6px;">PHOTO</div>'
+        + '<label class="photo-zone" for="wci-photo-input" id="wci-photo-zone"><div style="font-size:26px;">📷</div><div style="font-size:13px;color:var(--text3);">Tap to take/choose photo</div>'
+        + '<input type="file" id="wci-photo-input" accept="image/*" style="display:none;"/></label>'
+        + '<img id="wci-photo-preview" style="display:none;width:100%;border-radius:10px;margin-top:8px;max-height:200px;object-fit:cover;"/></div>'
+      + '<button class="btn btn-green" onclick="wcIssueSave(\'' + wcId + '\',' + (iss ? '\'' + iss.id + '\'' : 'null') + ')">' + (iss ? 'Save Issue' : 'Add Issue') + '</button>'
+      + (iss ? '<button class="btn btn-outline" style="color:var(--red);" onclick="wcIssueDelete(\'' + wcId + '\',\'' + iss.id + '\')">🗑 Delete Issue</button>' : '')
+      + '<button class="btn btn-outline" onclick="document.getElementById(\'wc-issue-sheet\').remove()">Cancel</button>'
+    + '</div></div>';
+  document.body.appendChild(sheet);
+
+  var parts = iss && iss.parts && iss.parts.length ? iss.parts : [];
+  parts.forEach(function(p){ wcAddPartRow(p.name, p.qty); });
+  if (!parts.length) wcAddPartRow();
+
+  var existingPhoto = iss ? _wcPhoto(iss) : '';
+  var prev = document.getElementById('wci-photo-preview');
+  if (existingPhoto) { prev.src = existingPhoto; prev.style.display = 'block'; }
+  document.getElementById('wci-photo-input').onchange = function() {
+    var file = this.files[0]; if (!file) return;
+    var zone = document.getElementById('wci-photo-zone');
+    if (zone) zone.querySelector('div:nth-child(2)').textContent = '⏳ Processing photo…';
+    readFileAsDataUrl(file, function(dataUrl) {
+      if (!dataUrl) { toast('Could not read photo'); return; }
+      compressPhoto(dataUrl, 1000, 0.82, function(compressed) {
+        prev.src = compressed; prev.style.display = 'block'; prev.dataset.compressed = compressed;
+        if (zone) zone.style.display = 'none';
+      });
+    });
+  };
+}
+
+function wcAddPartRow(name, qty) {
+  var host = document.getElementById('wci-parts'); if (!host) return;
+  var row = document.createElement('div');
+  row.className = 'wci-part-row';
+  row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;';
+  row.innerHTML = '<input class="inp wci-pname" list="wc-parts-dl" placeholder="Part (e.g. Rainbird 1804 head)" style="flex:1;min-width:0;" value="' + _pcEsc(name || '') + '"/>'
+    + '<input class="inp wci-pqty" type="number" min="1" inputmode="numeric" style="width:64px;" value="' + (qty || 1) + '"/>'
+    + '<button type="button" class="btn-sm" onclick="this.parentNode.remove()" style="background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);">✕</button>';
+  host.appendChild(row);
+}
+
+function wcIssueSave(wcId, issId) {
+  var wc = _wcFind(wcId); if (!wc) return;
+  var zone = (document.getElementById('wci-zone').value || '').trim();
+  if (!zone) { toast('Please enter the zone'); return; }
+  var parts = [];
+  document.querySelectorAll('#wci-parts .wci-part-row').forEach(function(r) {
+    var n = (r.querySelector('.wci-pname').value || '').trim();
+    var q = parseInt(r.querySelector('.wci-pqty').value, 10) || 1;
+    if (n) parts.push({ name: n, qty: q });
+  });
+  var iss = issId ? wc.issues.find(function(x){ return x.id === issId; }) : null;
+  if (!iss) { iss = { id: uid(), photo: '' }; wc.issues.push(iss); }
+  iss.zone = zone;
+  iss.type = document.getElementById('wci-type').value;
+  iss.action = document.getElementById('wci-action').value;
+  iss.desc = (document.getElementById('wci-desc').value || '').trim();
+  iss.parts = parts;
+
+  var prev = document.getElementById('wci-photo-preview');
+  var newPhoto = prev && prev.dataset.compressed;
+  if (newPhoto) {
+    _wcPhotoCache[iss.id] = newPhoto;
+    iss.photo = '';
+  }
+  save();
+  gsSave('wetChecks', wc);
+  var sh = document.getElementById('wc-issue-sheet'); if (sh) sh.remove();
+  wcRenderForm(wcId);
+  if (newPhoto) {
+    toast('📤 Uploading photo…');
+    uploadPhotoToStorage(newPhoto, 'photos/wetchecks/' + wc.id + '_' + iss.id + '_' + Date.now() + '.jpg',
+      function(url) { iss.photo = url; save(); gsSave('wetChecks', wc); toast('Photo uploaded ✓'); },
+      function(err) { console.warn('wet check photo upload failed:', err); toast('Photo kept on this device only'); });
+  } else toast('Issue saved ✓');
+}
+
+function wcIssueDelete(wcId, issId) {
+  var wc = _wcFind(wcId); if (!wc) return;
+  if (!confirm('Delete this issue?')) return;
+  wc.issues = wc.issues.filter(function(x){ return x.id !== issId; });
+  save(); gsSave('wetChecks', wc);
+  var sh = document.getElementById('wc-issue-sheet'); if (sh) sh.remove();
+  wcRenderForm(wcId);
+}
+
+function wcEnd(id) {
+  var wc = _wcFind(id); if (!wc) return;
+  var z = document.getElementById('wc-zones'); var n = document.getElementById('wc-notes');
+  if (z) wc.zonesChecked = z.value;
+  if (n) wc.notes = n.value;
+  if (!confirm('End this wet check now? The clock stops and the report is created.')) return;
+  wc.endedAt = new Date().toISOString();
+  wc.durationMin = Math.max(1, Math.round((new Date(wc.endedAt) - new Date(wc.startedAt)) / 60000));
+  wc.status = 'done';
+  saveAndSync('wetChecks', wc);
+  wcCloseForm();
+  toast('Wet check complete ✓');
+  _evRefresh(wc.propId);
+  wcViewReport(id);
+}
+
+// ── Report (print / save as PDF / email summary) ────────────────────────
+function wcReportHtml(wc) {
+  var prop = (state.properties || []).find(function(p){ return p.id === wc.propId; }) || {};
+  var issues = wc.issues || [];
+  var repaired = issues.filter(function(i){ return i.action === 'Repaired'; }).length;
+  var followup = issues.length - repaired;
+  var partTotals = {};
+  issues.forEach(function(i){ (i.parts || []).forEach(function(p){ var k = p.name.trim(); partTotals[k] = (partTotals[k] || 0) + (parseInt(p.qty, 10) || 1); }); });
+  var partKeys = Object.keys(partTotals).sort();
+  var green = '#2f7d32';
+
+  return '<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;color:#1a1a1a;max-width:760px;margin:0 auto;padding:24px 20px;">'
+    + '<div style="border-bottom:3px solid ' + green + ';padding-bottom:10px;margin-bottom:16px;">'
+      + '<div style="font-size:12px;letter-spacing:2px;color:' + green + ';font-weight:800;">DIAMOND LANDSCAPES</div>'
+      + '<div style="font-size:24px;font-weight:800;margin-top:2px;">Irrigation Wet Check Report</div></div>'
+    + '<table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:16px;">'
+      + '<tr><td style="padding:3px 0;color:#666;width:120px;">Property</td><td style="font-weight:700;">' + _pcEsc(prop.name || '') + '</td></tr>'
+      + '<tr><td style="padding:3px 0;color:#666;">Address</td><td>' + _pcEsc(prop.address || '') + '</td></tr>'
+      + '<tr><td style="padding:3px 0;color:#666;">Date</td><td>' + _pcFmt(_pcIso(new Date(wc.startedAt))) + '</td></tr>'
+      + '<tr><td style="padding:3px 0;color:#666;">Time on site</td><td>' + _wcFmtT(wc.startedAt) + ' – ' + _wcFmtT(wc.endedAt) + ' (' + _wcDur(wc.durationMin) + ')</td></tr>'
+      + '<tr><td style="padding:3px 0;color:#666;">Technician</td><td>' + _pcEsc(wc.by || '') + '</td></tr>'
+      + (wc.zonesChecked ? '<tr><td style="padding:3px 0;color:#666;">Zones checked</td><td>' + _pcEsc(wc.zonesChecked) + '</td></tr>' : '')
+    + '</table>'
+    + '<div style="display:flex;gap:10px;margin-bottom:18px;">'
+      + [['Issues found', issues.length], ['Repaired', repaired], ['Follow-up / recommended', followup]].map(function(s){
+          return '<div style="flex:1;background:#f3f7f3;border:1px solid #d6e4d6;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:22px;font-weight:800;color:' + green + ';">' + s[1] + '</div><div style="font-size:11px;color:#555;">' + s[0] + '</div></div>';
+        }).join('')
+    + '</div>'
+    + '<div style="font-size:15px;font-weight:800;margin-bottom:8px;">Findings</div>'
+    + (issues.length ? issues.map(function(i, n) {
+        var ph = _wcPhoto(i);
+        return '<div style="border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:10px;page-break-inside:avoid;">'
+          + '<div style="display:flex;gap:12px;">'
+            + '<div style="flex:1;">'
+              + '<div style="font-size:14px;font-weight:800;">' + (n + 1) + '. Zone ' + _pcEsc(i.zone) + ' — ' + _pcEsc(i.type) + '</div>'
+              + '<div style="font-size:12px;font-weight:700;color:' + (i.action === 'Repaired' ? green : '#b45309') + ';margin:2px 0 4px;">' + _pcEsc(i.action) + '</div>'
+              + (i.desc ? '<div style="font-size:13px;margin-bottom:4px;">' + _pcEsc(i.desc) + '</div>' : '')
+              + ((i.parts || []).length ? '<div style="font-size:12px;color:#444;"><b>Parts used:</b> ' + i.parts.map(function(p){ return _pcEsc(p.name) + ' ×' + p.qty; }).join(', ') + '</div>' : '')
+            + '</div>'
+            + (ph ? '<img src="' + ph + '" style="width:150px;height:150px;object-fit:cover;border-radius:6px;"/>' : '')
+          + '</div></div>';
+      }).join('') : '<div style="font-size:13px;color:#555;margin-bottom:14px;">No issues found — system operating normally.</div>')
+    + (partKeys.length ? '<div style="font-size:15px;font-weight:800;margin:16px 0 6px;">Parts Used (Total)</div>'
+        + '<table style="width:100%;font-size:13px;border-collapse:collapse;">' + partKeys.map(function(k){
+            return '<tr><td style="padding:4px 0;border-bottom:1px solid #eee;">' + _pcEsc(k) + '</td><td style="padding:4px 0;border-bottom:1px solid #eee;text-align:right;font-weight:700;">' + partTotals[k] + '</td></tr>';
+          }).join('') + '</table>' : '')
+    + (wc.notes ? '<div style="font-size:15px;font-weight:800;margin:16px 0 6px;">Notes</div><div style="font-size:13px;white-space:pre-wrap;">' + _pcEsc(wc.notes) + '</div>' : '')
+    + '<div style="margin-top:24px;font-size:11px;color:#888;border-top:1px solid #ddd;padding-top:8px;">Diamond Landscapes · Report generated ' + _wcFmtDT(wc.endedAt) + '</div>'
+  + '</div>';
+}
+
+function wcViewReport(id) {
+  var wc = _wcFind(id); if (!wc) return;
+  var old = document.getElementById('wc-report-overlay'); if (old) old.remove();
+  var o = document.createElement('div');
+  o.id = 'wc-report-overlay';
+  o.style.cssText = 'position:fixed;inset:0;z-index:330;background:#fff;overflow-y:auto;-webkit-overflow-scrolling:touch;';
+  o.innerHTML =
+    '<div class="no-print" style="position:sticky;top:0;z-index:5;background:#16181d;padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
+      + '<button class="btn-sm btn-green" onclick="wcPrint()">⬇ Download PDF</button>'
+      + '<button class="btn-sm" onclick="wcEmailSummary(\'' + id + '\')" style="background:rgba(96,165,250,.15);color:#60a5fa;border:1px solid rgba(96,165,250,.3);">✉ Email summary</button>'
+      + (state.role === 'manager' ? '<button class="btn-sm" onclick="wcDeleteReport(\'' + id + '\')" style="background:rgba(248,113,113,.15);color:#f87171;border:1px solid rgba(248,113,113,.3);">🗑</button>' : '')
+      + '<button class="btn-sm" onclick="document.getElementById(\'wc-report-overlay\').remove()" style="margin-left:auto;background:#2a2d35;color:#ccc;border:1px solid #444;">Close</button>'
+    + '</div>'
+    + wcReportHtml(wc);
+  document.body.appendChild(o);
+}
+
+function wcPrint() {
+  document.body.classList.add('wc-printing');
+  var cleanup = function() { document.body.classList.remove('wc-printing'); window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(function() { window.print(); }, 100);
+}
+
+function wcEmailSummary(id) {
+  var wc = _wcFind(id); if (!wc) return;
+  var prop = (state.properties || []).find(function(p){ return p.id === wc.propId; }) || {};
+  var lines = [];
+  lines.push('Irrigation Wet Check Report — ' + (prop.name || ''));
+  lines.push('Date: ' + _pcFmt(_pcIso(new Date(wc.startedAt))) + '   Time on site: ' + _wcFmtT(wc.startedAt) + ' – ' + _wcFmtT(wc.endedAt) + ' (' + _wcDur(wc.durationMin) + ')');
+  lines.push('Technician: ' + (wc.by || ''));
+  lines.push('');
+  if ((wc.issues || []).length) {
+    lines.push('Findings:');
+    wc.issues.forEach(function(i, n) {
+      lines.push((n + 1) + '. Zone ' + i.zone + ' — ' + i.type + ' (' + i.action + ')' + (i.desc ? ': ' + i.desc : '')
+        + ((i.parts || []).length ? ' [Parts: ' + i.parts.map(function(p){ return p.name + ' x' + p.qty; }).join(', ') + ']' : ''));
+    });
+  } else lines.push('No issues found — system operating normally.');
+  if (wc.notes) { lines.push(''); lines.push('Notes: ' + wc.notes); }
+  lines.push('');
+  lines.push('— Diamond Landscapes');
+  var href = 'mailto:' + encodeURIComponent(prop.email || '') + '?subject=' + encodeURIComponent('Wet Check Report — ' + (prop.name || '')) + '&body=' + encodeURIComponent(lines.join('\n'));
+  window.location.href = href;
+}
+
+function wcDeleteReport(id) {
+  var wc = _wcFind(id); if (!wc) return;
+  if (!confirm('Delete this wet check report permanently?')) return;
+  state.wetChecks = state.wetChecks.filter(function(w){ return w.id !== id; });
+  save();
+  try { gsDelete('wetChecks', id); } catch(e) {}
+  var o = document.getElementById('wc-report-overlay'); if (o) o.remove();
+  _evRefresh(wc.propId);
 }
 
 function markCreqStatus(id, status) {
