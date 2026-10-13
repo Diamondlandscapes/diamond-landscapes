@@ -122,6 +122,11 @@
         <div style="font-size:12px;color:var(--text2);margin-top:8px;" id="hero-frequency"></div>
       </div>
 
+      <div id="upcoming-events-section" class="card" style="display:none;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:.6px;color:var(--blue);text-transform:uppercase;margin-bottom:8px;">Upcoming Services</div>
+        <div id="upcoming-events-list"></div>
+      </div>
+
       <div id="last-visit-section" style="display:none;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
           <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;">YOUR YARD — LAST VISIT</div>
@@ -178,7 +183,7 @@
 // on the current version instead of a stale one. Uses its own version key,
 // separate from the main app's — same origin, but a different page with an
 // independent release cycle.
-var PORTAL_VERSION = '2026-08-27-v1';
+var PORTAL_VERSION = '2026-10-13-v2';
 (function(){
   try{
     var v=localStorage.getItem('portal_version');
@@ -415,6 +420,7 @@ function showMainScreen() {
   document.getElementById('info-address').textContent = currentProp.address || '';
 
   loadLastVisitPhoto();
+  loadUpcomingEvents();
   loadRequestHistory();
   renderRatingStars();
 }
@@ -424,6 +430,40 @@ function showMainScreen() {
 // reads propId/completed/completedPhoto/completedAtISO off route stops —
 // never touches crew records (those contain phone numbers and login PINs
 // that have no business being in a customer-facing page).
+// ── Upcoming services — property events the manager marked "show on customer
+// portal" (annual flowers, mulch, etc). Only title/date/time are displayed;
+// internal notes and reminder/contact status are never shown here.
+async function loadUpcomingEvents() {
+  var sec = document.getElementById('upcoming-events-section');
+  var list = document.getElementById('upcoming-events-list');
+  if (!sec || !list) return;
+  sec.style.display = 'none';
+  try {
+    var snap = await getDocs(query(collection(db, 'propEvents'), where('propId', '==', currentProp.id)));
+    var now = new Date(); var pad = function(n){ return n < 10 ? '0' + n : '' + n; };
+    var today = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+    var evs = [];
+    snap.forEach(function(d) {
+      var e = d.data();
+      if (e.customerVisible && e.status !== 'done' && e.date && e.date >= today) evs.push(e);
+    });
+    evs.sort(function(a, b){ return a.date < b.date ? -1 : 1; });
+    if (!evs.length) return;
+    list.innerHTML = evs.slice(0, 6).map(function(e) {
+      var p = e.date.split('-');
+      var dt = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+      var label = dt.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+      var t = '';
+      if (e.time) { var tp = e.time.split(':'); var h = parseInt(tp[0], 10); t = ' · ' + ((h % 12) || 12) + ':' + tp[1] + (h >= 12 ? ' PM' : ' AM'); }
+      var title = String(e.title || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return '<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--border);">'
+        + '<div style="font-size:14px;font-weight:700;">' + title + '</div>'
+        + '<div style="font-size:12px;color:var(--text2);white-space:nowrap;">' + label + t + '</div></div>';
+    }).join('');
+    sec.style.display = '';
+  } catch (err) { console.warn('upcoming events unavailable:', err.message); }
+}
+
 async function loadLastVisitPhoto() {
   var section = document.getElementById('last-visit-section');
   section.style.display = 'none';
