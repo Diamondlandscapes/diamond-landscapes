@@ -1719,7 +1719,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-13-v59'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-13-v61'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -4129,6 +4129,12 @@ window.sca_submit = async function() {
     s.completedPhoto    = photoUrl || c.photo || '';
     saveAndSync('routes', r);
   }
+  // Photo didn't upload in time — keep it and keep retrying instead of losing it
+  if (c.photo && !photoUrl) {
+    queuePendingPhoto({ kind:'stop', dataUrl:c.photo, path:'photos/stops/' + c.propId + '_' + Date.now() + '.jpg',
+      recordId:c.routeId, propId:c.propId, logEntryId:logEntry.id,
+      weekKey: (r && !r.date && typeof getWeekKey === 'function') ? getWeekKey(r.id, new Date()) : '' });
+  }
 
   // 5. Process flag resolutions
   c.flagResolutions.forEach(function(res) {
@@ -4141,10 +4147,14 @@ window.sca_submit = async function() {
       flag.resolvedBy    = crewName;
       // Upload resolve photo if taken
       if (res.resolvePhoto) {
+        // Save the resolution right away (so it syncs even if the upload is
+        // slow or the app is closed), then attach the photo when it lands.
+        saveAndSync('flags', flag);
         var rpath = 'photos/resolves/' + flag.id + '_' + Date.now() + '.jpg';
-        uploadPhotoToStorage(res.resolvePhoto, rpath,
+        var rdata = res.resolvePhoto;
+        uploadPhotoToStorage(rdata, rpath,
           function(url) { flag.resolvePhoto=url; saveAndSync('flags',flag); },
-          function()    { flag.resolvePhoto=''; saveAndSync('flags',flag); }
+          function()    { queuePendingPhoto({ kind:'flag', dataUrl:rdata, path:rpath, recordId:flag.id, field:'resolvePhoto' }); }
         );
       } else {
         saveAndSync('flags', flag);
@@ -4173,9 +4183,11 @@ window.sca_submit = async function() {
     // Upload flag photo if taken
     if (nf.photo) {
       var fpath = 'photos/flags/' + newFlag.id + '_' + Date.now() + '.jpg';
-      uploadPhotoToStorage(nf.photo, fpath,
+      var fdata = nf.photo;
+      saveAndSync('flags', newFlag);
+      uploadPhotoToStorage(fdata, fpath,
         function(url) { newFlag.photo=url; saveAndSync('flags',newFlag); },
-        function()    { saveAndSync('flags',newFlag); }
+        function()    { queuePendingPhoto({ kind:'flag', dataUrl:fdata, path:fpath, recordId:newFlag.id, field:'photo' }); }
       );
     } else {
       saveAndSync('flags', newFlag);
@@ -6468,6 +6480,7 @@ function resolveFlag(flagId, propId) {
   document.getElementById('mgr-resolve-cancel-btn').onclick = () => sheet.remove();
 
   // Add preview img to sheet
+  window._mgrResolveBusy = false;
   var resolvePreviewImg = document.createElement('img');
   resolvePreviewImg.id = 'mgr-resolve-preview';
   resolvePreviewImg.style.cssText = 'display:none;width:100%;border-radius:10px;margin-bottom:12px;max-height:200px;object-fit:cover;';
@@ -6478,9 +6491,14 @@ function resolveFlag(flagId, propId) {
   document.getElementById('mgr-resolve-input').onchange = function() {
     const file = this.files[0];
     if (!file) return;
+    window._mgrResolveBusy = true;   // photo picked but not processed yet
+    const zoneEl = document.getElementById('mgr-resolve-zone');
+    const zoneTxt = zoneEl && zoneEl.querySelector('div:nth-child(2)');
+    if (zoneTxt) zoneTxt.textContent = '⏳ Processing photo…';
     readFileAsDataUrl(file, function(dataUrl) {
-      if (!dataUrl) { toast('Could not read photo'); return; }
+      if (!dataUrl) { window._mgrResolveBusy = false; toast('Could not read photo — try again'); if (zoneTxt) zoneTxt.textContent = 'Could not read photo — tap to retry'; return; }
       compressPhoto(dataUrl, 800, 0.82, function(compressed) {
+        window._mgrResolveBusy = false;
         const preview = document.getElementById('mgr-resolve-preview');
         const zone    = document.getElementById('mgr-resolve-zone');
         const btn     = document.getElementById('mgr-resolve-submit-btn');
@@ -6495,6 +6513,9 @@ function resolveFlag(flagId, propId) {
   document.getElementById('mgr-resolve-submit-btn').onclick = function() {
     const preview = document.getElementById('mgr-resolve-preview');
     const photo   = preview && preview.dataset.compressed;
+    // A photo was picked but is still being processed — submitting now would
+    // silently resolve the flag WITHOUT it (managers don't require a photo).
+    if (window._mgrResolveBusy) { toast('⏳ Photo still processing — one second'); return; }
     // Photo is only required for crew — a manager resolving a flag
     // themselves (fixing something directly, or a flag that doesn't need
     // photo documentation) shouldn't be blocked by it.
@@ -6541,8 +6562,9 @@ function resolveFlag(flagId, propId) {
       },
       function(err) {
         console.warn('Resolve photo upload failed:', err);
+        f.resolvePhoto = '';
         gsSave('flags', f);
-        toast('Flag resolved (photo local only)');
+        queuePendingPhoto({ kind:'flag', dataUrl:photo, path:storagePath, recordId:f.id, field:'resolvePhoto' });
       }
     );
   };
@@ -6587,7 +6609,9 @@ function submitMgrResolve(flagId, propId) {
         },
         function(err) {
           console.warn('Manager resolve photo upload failed:', err);
+          f.resolvePhoto = '';
           gsSave('flags', f);
+          queuePendingPhoto({ kind:'flag', dataUrl:photo, path:storagePath2, recordId:f.id, field:'resolvePhoto' });
         }
       );
     } else {
@@ -9295,6 +9319,7 @@ function gsSave(table, record, _attempt) {
 // Retry queued writes whenever we come back online, and once shortly after
 // the app finishes loading (covers "was offline the whole session" case).
 window.addEventListener('online', flushPendingWrites);
+window.addEventListener('online', function(){ setTimeout(retryPendingPhotos, 2000); });
 setTimeout(flushPendingWrites, 5000);
 
 // ── Delete one record from Firestore ──────────────────────────────────────
@@ -9352,16 +9377,96 @@ function startAutoSync() { /* real-time listeners replace polling */ }
 // ── Firebase Storage photo upload ─────────────────────────────────────────
 // Uploads a base64/dataURL photo and returns a permanent HTTPS download URL.
 // Path format: e.g. 'workOrders/wo_123_photo.jpg' or 'flags/flag_456_photo.jpg'
-function uploadPhotoToStorage(base64Data, storagePath, onSuccess, onError) {
+// ── Durable photo retry queue ───────────────────────────────────────────
+// A photo that fails to upload (weak cell signal in the field, the 15-second
+// stop-completion timeout, a transient Storage error) used to be dropped for
+// good: the flag/stop was saved WITHOUT the photo and the picture was lost.
+// Now the photo is kept in IndexedDB and retried on its own — on app start,
+// when the phone comes back online, and every minute while any are pending —
+// and attached to the right record as soon as an upload succeeds.
+var PENDING_PHOTO_KEY = 'pending_photos_v1';
+var _ppRunning = false;
+function _ppLoad() { return idbGet(PENDING_PHOTO_KEY).then(function(v){ return Array.isArray(v) ? v : []; }).catch(function(){ return []; }); }
+function _ppSave(list) { return idbSet(PENDING_PHOTO_KEY, list).catch(function(e){ console.warn('pending photo save failed', e); }); }
+
+function queuePendingPhoto(entry) {
+  entry.key = entry.key || uid();
+  return _ppLoad().then(function(list) { list.push(entry); return _ppSave(list); }).then(function() {
+    toast('📷 Photo will keep retrying in the background');
+    setTimeout(retryPendingPhotos, 20000);
+  });
+}
+
+function _ppApply(e, url) {
+  if (e.kind === 'flag') {
+    var f = (state.flags || []).find(function(x){ return x.id === e.recordId; });
+    if (f) { f[e.field] = url; saveAndSync('flags', f); }
+  } else if (e.kind === 'stop') {
+    var r = (state.routes || []).find(function(x){ return x.id === e.recordId; });
+    var touched = false;
+    if (r) {
+      var s1 = (r.stops || []).find(function(x){ return x.propId === e.propId; });
+      if (s1) { s1.completedPhoto = url; touched = true; }
+      var inst = e.weekKey && state.routeWeeks && state.routeWeeks[e.weekKey];
+      var s2 = inst ? (inst.stops || []).find(function(x){ return x.propId === e.propId; }) : null;
+      if (s2) { s2.completedPhoto = url; touched = true; }
+      if (touched) saveAndSync('routes', r);
+    }
+    var p = (state.properties || []).find(function(x){ return x.id === e.propId; });
+    var le = p && (p.serviceLog || []).find(function(x){ return x.id === e.logEntryId; });
+    if (le) { le.photo = url; saveAndSync('properties', p); }
+  }
+}
+
+function retryPendingPhotos() {
+  if (_ppRunning) return Promise.resolve();
+  _ppRunning = true;
+  return _ppLoad().then(function(list) {
+    if (!list.length) return;
+    var remaining = [];
+    return list.reduce(function(chain, e) {
+      return chain.then(function() {
+        return new Promise(function(resolve) {
+          uploadPhotoToStorage(e.dataUrl, e.path, function(url) { _ppApply(e, url); resolve(); },
+            function() { remaining.push(e); resolve(); }, true);
+        });
+      });
+    }, Promise.resolve()).then(function() {
+      return _ppSave(remaining).then(function() {
+        if (list.length > remaining.length) toast('📷 ' + (list.length - remaining.length) + ' pending photo(s) uploaded ✓');
+        if (remaining.length) setTimeout(retryPendingPhotos, 60000);
+      });
+    });
+  }).catch(function(e){ console.warn('retryPendingPhotos failed', e); }).then(function(){ _ppRunning = false; });
+}
+
+// Shows a red banner with the real reason a photo upload failed. Uploads used
+// to fail with only a brief generic toast, so "photos not uploading" couldn't
+// be diagnosed — the actual Firebase error (permissions, quota, billing,
+// offline…) was only in the console. This makes it visible on the phone.
+function showUploadError(msg, path) {
+  window._lastUploadError = { msg: msg, path: path, at: new Date().toISOString() };
+  var old = document.getElementById('upload-err-banner'); if (old) old.remove();
+  var b = document.createElement('div');
+  b.id = 'upload-err-banner';
+  b.style.cssText = 'position:fixed;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top));z-index:9999;background:#7f1d1d;color:#fff;border:1px solid #f87171;border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.4;box-shadow:0 6px 24px rgba(0,0,0,.5);';
+  b.innerHTML = '<div style="font-weight:800;margin-bottom:4px;">⚠️ Photo did not upload</div><div style="opacity:.95;word-break:break-word;">' + String(msg || 'Unknown error').replace(/</g,'&lt;') + '</div><div style="opacity:.7;font-size:11px;margin-top:4px;">Tap to dismiss</div>';
+  b.onclick = function() { b.remove(); };
+  document.body.appendChild(b);
+  setTimeout(function() { if (b.parentNode) b.remove(); }, 15000);
+}
+
+function uploadPhotoToStorage(base64Data, storagePath, onSuccess, onError, quiet) {
   if (!_fbReady || !_storage) {
     // Fallback: keep photo local if storage not ready
+    if (!quiet) showUploadError('Firebase Storage not ready (still connecting, or offline). Try again in a moment.', storagePath);
     onError('Firebase Storage not ready');
     return;
   }
   // Wait for auth before uploading — Storage rules require request.auth != null
   if (!window._authReady) {
     setTimeout(function() {
-      uploadPhotoToStorage(base64Data, storagePath, onSuccess, onError);
+      uploadPhotoToStorage(base64Data, storagePath, onSuccess, onError, quiet);
     }, 1000);
     return;
   }
@@ -9371,6 +9476,7 @@ function uploadPhotoToStorage(base64Data, storagePath, onSuccess, onError) {
     .then(function(url) { onSuccess(url); })
     .catch(function(err) {
       console.error('Storage upload failed:', err.message);
+      if (!quiet) showUploadError((err && err.code ? err.code + ' — ' : '') + (err && err.message ? err.message : err), storagePath);
       onError(err.message);
     });
 }
@@ -16764,6 +16870,7 @@ function attExportPDF() {
 // Initialize Firebase — listeners attach automatically and push live data
 gsLoad().then(function(ok) {
   if (!ok) console.warn('Firebase init failed — app running on local cache');
+  setTimeout(retryPendingPhotos, 6000); // re-send any photos that failed to upload earlier
 });
 document.title = 'Diamond Landscapes';
 var tdEl2 = document.getElementById('topbar-date'); if(tdEl2) tdEl2.textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
