@@ -1994,6 +1994,15 @@ async function managerEmailLogin() {
   try {
     if (!window._fbAuth || !window._fbAuthMod) await gsLoad();
     if (!window._fbAuth) throw new Error('Firebase not ready — check connection and try again.');
+    // Default is already local. Set it explicitly before this sign-in so the
+    // session is stored for the next cold load (box browser / iPhone PWA).
+    if (window._fbAuthMod.setPersistence && window._fbAuthMod.browserLocalPersistence) {
+      try {
+        await window._fbAuthMod.setPersistence(window._fbAuth, window._fbAuthMod.browserLocalPersistence);
+      } catch (ePers) {
+        console.warn('Auth persistence:', ePers && ePers.message);
+      }
+    }
     var cred = await window._fbAuthMod.signInWithEmailAndPassword(window._fbAuth, email, pass);
     if (cred.user && !cred.user.emailVerified) {
       // Phase 2 rules require a verified manager email; send the link once per attempt.
@@ -8784,6 +8793,7 @@ function ls_selectCrew(crewId) {
 
 
 function dismissLoginScreen(role) {
+  window._loginGatePassed = true; // crew or manager already chose; don't auto-override
   const screen = document.getElementById('login-screen');
   if (screen) {
     screen.style.opacity = '0';
@@ -9093,6 +9103,37 @@ function _listenCollection(name) {
   );
 }
 
+// What to do once Firebase has emitted its first auth state (persistence
+// has finished). Anonymous sign-in is only for a genuinely signed-out
+// device — never as a replacement for a restored manager or an existing
+// anonymous crew session. Manager view is only for a verified email user.
+function _authStartupPlan(user) {
+  var nonAnon = !!(user && user.isAnonymous !== true);
+  return {
+    anonSignIn: !user,
+    enterManager: nonAnon && !!user.emailVerified,
+    email: nonAnon ? (user.email || '') : ''
+  };
+}
+
+// Cold load: if Firebase restored a verified manager, dismiss the splash
+// the same way a successful sign-in does. Wait until load() has applied
+// the local cache (so applyRole/save cannot clobber it) and until the
+// splash is still the gate (a crew name/PIN choice this session wins).
+function _restoreManagerSessionIfNeeded(u) {
+  if (window._managerRestoreSettled || !window._appStateLoaded || !window._authStateKnown) return;
+  if (window._loginGatePassed) { window._managerRestoreSettled = true; return; }
+  window._managerRestoreSettled = true;
+  var plan = _authStartupPlan(u);
+  if (!plan.enterManager) return;
+  if (plan.email) window._managerAuthEmail = plan.email;
+  var screen = document.getElementById('login-screen');
+  if (screen && screen.style.display !== 'none') dismissLoginScreen('manager');
+  else applyRole('manager');
+  if (typeof _ensureExternalEventsListener === 'function') _ensureExternalEventsListener();
+  if (typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener();
+}
+
 // ── Initialize Firebase and start all real-time listeners ─────────────────
 function gsLoad() {
   return new Promise(function(resolve) {
@@ -9144,17 +9185,42 @@ function gsLoad() {
       // Sign in anonymously — gives Firebase Auth a valid token so
       // security rules can check request.auth != null.
       // Collections start AFTER auth so all reads are authenticated.
+      // currentUser is null until the first onAuthStateChanged emission,
+      // even when a manager session is about to be restored. Signing in
+      // anonymously on that synchronous null replaces the persisted
+      // manager (box browser and iPhone PWA cold loads).
       var fbAuth = authMod.getAuth(fbApp);
       window._fbAuth = fbAuth; window._fbAuthMod = authMod;
-      authMod.onAuthStateChanged(fbAuth, function(u) {
-        if (u && !u.isAnonymous) window._managerAuthEmail = u.email;
+      var _persistReady = Promise.resolve();
+      try {
+        if (authMod.setPersistence && authMod.browserLocalPersistence) {
+          _persistReady = authMod.setPersistence(fbAuth, authMod.browserLocalPersistence);
+        }
+      } catch (ePers) { console.warn('Auth persistence:', ePers && ePers.message); }
+      if (!_persistReady || typeof _persistReady.then !== 'function') _persistReady = Promise.resolve();
+      _persistReady = _persistReady.catch(function(ePers) {
+        console.warn('Auth persistence:', ePers && ePers.message);
       });
-      // Prefer an already-restored manager (email/password) session;
-      // anonymous sign-in is the transitional fallback for crew/portal.
-      var _initialAuth = (fbAuth.currentUser && !fbAuth.currentUser.isAnonymous)
-        ? Promise.resolve(fbAuth.currentUser)
-        : authMod.signInAnonymously(fbAuth);
-      _initialAuth
+      var _initialAuth = new Promise(function(resolve) {
+        var _firstAuth = true;
+        authMod.onAuthStateChanged(fbAuth, function(u) {
+          var plan = _authStartupPlan(u);
+          if (plan.email) window._managerAuthEmail = plan.email;
+          if (_firstAuth) {
+            _firstAuth = false;
+            window._authStateKnown = true;
+            resolve(u || null);
+          }
+          _restoreManagerSessionIfNeeded(u || null);
+        });
+      });
+      Promise.all([_persistReady, _initialAuth])
+        .then(function(results) {
+          var restored = results[1];
+          // Anonymous sign-in is the transitional fallback for crew/portal
+          // only when nothing was restored.
+          if (_authStartupPlan(restored).anonSignIn) return authMod.signInAnonymously(fbAuth);
+        })
         .then(function() {
           console.log('Firebase: auth ready');
           window._authReady = true;
@@ -16187,9 +16253,18 @@ function seedData() {
 // ─── INIT ─────────────────────────────────────────────────────────────────
 load().then(function() {
   seedData();
+  window._appStateLoaded = true;
   applyRole('manager');
-  document.getElementById('login-screen').style.display = 'flex';
-  ls_showWho();
+  var u = window._fbAuth && window._fbAuth.currentUser;
+  var entering = window._authStateKnown && _authStartupPlan(u).enterManager && !window._loginGatePassed;
+  // Logged-out, anonymous, and unverified sessions keep the splash.
+  // A restored verified manager skips it; dismiss happens below.
+  if (!entering) {
+    var screen = document.getElementById('login-screen');
+    if (screen) { screen.style.display = 'flex'; screen.style.opacity = '1'; }
+    ls_showWho();
+  }
+  if (window._authStateKnown) _restoreManagerSessionIfNeeded(u);
 });
 // load live data from Google Sheets
 
