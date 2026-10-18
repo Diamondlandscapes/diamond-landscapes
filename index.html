@@ -1745,6 +1745,7 @@ let state = {
   attendance: [],
   customerRequests: [],
   propEvents: [],
+  externalEvents: [], // iCloud (manager-only, display-only; populated lazily in manager calendar)
   wetChecks: [],
   routeWeeks: {},
   eqCategory: 'All',
@@ -2167,6 +2168,7 @@ function loginAsCrew(crewId) {
 
 function applyRole(r) {
   state.role = r;
+  if (r !== 'manager' && typeof _clearExternalEvents === 'function') _clearExternalEvents(); // never carry iPhone events into crew/guest
   save();
   const roleBadge = document.getElementById('role-badge');
   if (roleBadge) roleBadge.textContent = r === 'manager' ? 'MANAGER' : 'CREW';
@@ -9022,6 +9024,21 @@ function _renderActiveTab() {
   if (tab !== 'dashboard') try { renderDashboard(); } catch(e) {}
 }
 
+// ── iCloud externalEvents (manager-only, display-only) ───────────────────
+// Deliberately NOT in the CRITICAL/SECONDARY gsLoad lists: crew devices
+// never subscribe to (or download) the owner's personal iPhone events.
+// Subscribed lazily when the manager opens Calendar; cleared+unsubscribed
+// on any switch to crew/guest. Firestore rules must still enforce this —
+// hiding in the UI is not access control (see PATCH-SUMMARY).
+function _ensureExternalEventsListener() {
+  if (state.role !== 'manager' || !_db || _listeners['externalEvents']) return;
+  _listenCollection('externalEvents');
+}
+function _clearExternalEvents() {
+  try { if (_listeners['externalEvents']) { _listeners['externalEvents'](); delete _listeners['externalEvents']; } } catch(e) {}
+  state.externalEvents = [];
+}
+
 // ── Attach a real-time listener to a single Firestore collection ──────────
 // When any document in the collection changes, state[name] is updated and
 // the active tab re-renders automatically on every connected device.
@@ -12634,6 +12651,16 @@ function _calItemsForDate(iso) {
       onclick: w.status === 'inprogress' ? "wcOpenForm('" + w.id + "')" : "wcViewReport('" + w.id + "')" });
   });
 
+  if (state.role === 'manager') {
+    (state.externalEvents || []).forEach(function(e) {
+      if (!e || e.source !== 'icloud' || e.date !== iso) return;
+      // Single start-day display in this preview (multi-day spanning: see PATCH-SUMMARY)
+      items.push({ kind:'external', color:'yellow', icon:'📅', title:e.title || '(no title)',
+        sub:'iPhone · ' + (e.calendar || 'iCloud') + (e.allDay ? ' · All day' : (e.time ? ' · ' + _pcFmtTime(e.time) : '')) + (e.location ? ' · ' + e.location : ''),
+        onclick:'' });
+    });
+  }
+
   (state.workOrders || []).forEach(function(w) {
     if (w.status !== 'completed') return;
     if (_isoFromDisplay(w.dateCompleted || w.completedOn) !== iso) return;
@@ -12656,6 +12683,7 @@ function calSelect(iso) { _calSel = iso; renderCalendar(); }
 function renderCalendar() {
   var root = document.getElementById('cal-root');
   if (!root) return;
+  if (typeof _ensureExternalEventsListener === 'function') _ensureExternalEventsListener(); // manager-only lazy subscribe
   var today = _pcToday();
   if (!_calSel) _calSel = today;
   if (!_calMonth) _calMonth = _calSel.slice(0, 8) + '01';
@@ -12682,10 +12710,10 @@ function renderCalendar() {
   }
 
   var selItems = _calItemsForDate(_calSel);
-  var order = { route:0, event:1, wet:2, wo:3 };
+  var order = { route:0, event:1, wet:2, wo:3, external:4 };
   selItems.sort(function(a,b){ return order[a.kind] - order[b.kind]; });
 
-  var legend = [['blue','Routes'],['orange','Scheduled'],['green','Done'],['teal','Wet checks']].map(function(l){
+  var legend = [['blue','Routes'],['orange','Scheduled'],['green','Done'],['teal','Wet checks']].concat(state.role === 'manager' ? [['yellow','📅 iPhone (manager only)']] : []).map(function(l){
     return '<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--' + l[0] + ');"></span>' + l[1] + '</span>';
   }).join('');
 
@@ -12705,6 +12733,12 @@ function renderCalendar() {
       + '<button class="btn-sm btn-green" onclick="calAddEvent()">+ Add Event</button>'
     + '</div>'
     + (selItems.length ? selItems.map(function(it) {
+        if (it.kind === 'external') { // 📅 iPhone: view-only — no openEventSheet, no edit/delete
+          return '<div class="card-flat" style="margin-bottom:6px;border-left:3px solid var(--yellow);opacity:.92;">'
+            + '<div style="font-size:13px;font-weight:700;">' + it.icon + ' ' + _pcEsc(it.title) + '</div>'
+            + (it.sub ? '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _pcEsc(it.sub) + '</div>' : '')
+          + '</div>';
+        }
         return '<div class="card-flat" style="margin-bottom:6px;cursor:pointer;border-left:3px solid var(--' + it.color + ');" onclick="' + it.onclick + '">'
           + '<div style="font-size:13px;font-weight:700;">' + it.icon + ' ' + _pcEsc(it.title) + '</div>'
           + (it.sub ? '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _pcEsc(it.sub) + '</div>' : '')
