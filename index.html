@@ -1719,6 +1719,7 @@ let state = {
   customerRequests: [],
   propEvents: [],
   externalEvents: [], // iCloud (manager-only, display-only; populated lazily in manager calendar)
+  propertyPrivate: [], // RATE SPLIT: always kept empty in state/cache — rates live only in _propPrivateById (manager memory)
   wetChecks: [],
   routeWeeks: {},
   eqCategory: 'All',
@@ -2006,6 +2007,7 @@ async function managerEmailLogin() {
     if (_lsScreen && _lsScreen.style.display !== 'none') dismissLoginScreen('manager');
     else applyRole('manager');
     if (typeof _ensureExternalEventsListener === 'function') _ensureExternalEventsListener();
+    if (typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener();
   } catch (e) {
     console.warn('Manager email sign-in failed:', e && e.message);
     if (errEl) errEl.textContent = '✕ Sign-in failed — check email/password.';
@@ -2053,6 +2055,8 @@ function loginAsCrew(crewId) {
 function applyRole(r) {
   state.role = r;
   if (r !== 'manager' && typeof _clearExternalEvents === 'function') _clearExternalEvents(); // never carry iPhone events into crew/guest
+  if (r !== 'manager' && typeof _clearPropertyPrivate === 'function') _clearPropertyPrivate(); // RATE SPLIT: never carry rates into crew/guest (strips merged rates before save() below)
+  if (r === 'manager' && typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener(); // no-op until a verified manager auth session exists
   save();
   const roleBadge = document.getElementById('role-badge');
   if (roleBadge) roleBadge.textContent = r === 'manager' ? 'MANAGER' : 'CREW';
@@ -2305,7 +2309,7 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
     if (pnlEl) {
       var todayISO = new Date().toISOString().slice(0,10);
       var todayDateRoutes = state.routes.filter(function(r){ return routeMatchesDate(r, todayISO, today); });
-      var propsWithRates = (state.properties||[]).filter(function(p){ return parseFloat(p.monthlyRate) > 0; });
+      var propsWithRates = (state.properties||[]).filter(function(p){ return _rateFor(p) > 0; }); // RATE SPLIT: private first, properties fallback (manager only)
       if (!todayDateRoutes.length || !propsWithRates.length) {
         pnlEl.innerHTML = '<div style="font-size:13px;color:var(--text4);text-align:center;padding:8px 0;">Add monthly rates to properties to see today\'s P&L</div>';
       } else {
@@ -4201,7 +4205,7 @@ function getVisitsPerMonth(frequency) {
 
 // Get revenue per visit for a property
 function getRevenuePerVisit(prop) {
-  var rate = parseFloat(prop.monthlyRate) || 0;
+  var rate = _rateFor(prop); // RATE SPLIT
   var visits = getVisitsPerMonth(prop.frequency);
   return visits ? rate / visits : 0;
 }
@@ -4469,7 +4473,8 @@ function openPropMapCard(propId) {
   var prop = (state.properties||[]).find(function(p){ return p.id === propId; });
   if (!prop) return;
   var flags = (state.flags||[]).filter(function(f){ return f.propId===propId && !f.resolved; });
-  var rateStr = prop.monthlyRate ? ('$' + parseFloat(prop.monthlyRate).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + '/mo') : 'No rate set';
+  var _mapRate = _rateFor(prop); // RATE SPLIT: 0 for non-managers
+  var rateStr = _mapRate ? ('$' + _mapRate.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + '/mo') : 'No rate set';
 
   var ex = document.getElementById('propmap-card'); if (ex) ex.remove();
   var wrap = document.createElement('div');
@@ -4495,7 +4500,7 @@ function openPropMapCard(propId) {
     + '<div style="padding:14px 16px;display:flex;gap:10px;">'
       + '<div style="flex:1;background:var(--bg3);border-radius:10px;padding:10px 12px;">'
         + '<div style="font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text3);">Monthly rate</div>'
-        + '<div style="font-size:15px;font-weight:700;color:' + (prop.monthlyRate ? 'var(--text)' : 'var(--yellow)') + ';margin-top:4px;">' + rateStr + '</div>'
+        + '<div style="font-size:15px;font-weight:700;color:' + (_mapRate ? 'var(--text)' : 'var(--yellow)') + ';margin-top:4px;">' + rateStr + '</div>'
       + '</div>'
       + '<div style="flex:1;background:var(--bg3);border-radius:10px;padding:10px 12px;">'
         + '<div style="font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text3);">Frequency</div>'
@@ -5408,6 +5413,7 @@ function renderProperties() {
     propBtns.innerHTML = state.role === 'manager' ? `
       <button class="btn-sm" id="prop-select-btn" onclick="togglePropSelect()" style="background:var(--bg4);color:var(--text3);border:1px solid var(--border2);">Select</button>
       <button class="btn-sm" onclick="exportPropertiesCSV()" style="background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3);">⬇ Export</button>
+      <button class="btn-sm" onclick="runRateMigration()" title="One-time: copy monthly rates to manager-only propertyPrivate, verify, then remove them from properties" style="background:rgba(250,204,21,.12);color:var(--yellow);border:1px solid rgba(250,204,21,.3);">🔒 Move rates</button>
       <button class="btn-sm" onclick="openImport('properties')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">⬆ Import</button>
       <button class="btn-sm btn-green" onclick="openAddProperty()">+ Add</button>` : '';
   }
@@ -5536,7 +5542,7 @@ function openPropDetail(id) {
         <textarea class="inp" id="pe-notes-${id}" rows="2" placeholder="Notes (gate code, dog, etc.)">${p.notes||''}</textarea>
         <div>
           <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;">MONTHLY RATE ($)</div>
-          <input class="inp" id="pe-rate-${id}" value="${p.monthlyRate||''}" placeholder="e.g. 180" type="number" min="0" step="0.01"/>
+          <input class="inp" id="pe-rate-${id}" value="${_rateFor(p)||''}" placeholder="e.g. 180" type="number" min="0" step="0.01"/>
           <div style="font-size:11px;color:var(--text3);margin-top:4px;">What you charge this client per month</div>
         </div>
         <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">SERVICE FREQUENCY</div>
@@ -5724,7 +5730,7 @@ function savePropEdit(id) {
   p.phone      = document.getElementById('pe-phone-'+id)?.value.trim()   || '';
   p.email      = (document.getElementById('pe-email-'+id)?.value || '').trim().toLowerCase();
   p.notes      = document.getElementById('pe-notes-'+id)?.value          || '';
-  p.monthlyRate= parseFloat(document.getElementById('pe-rate-'+id)?.value) || 0;
+  p.monthlyRate= parseFloat(document.getElementById('pe-rate-'+id)?.value) || 0; // in-memory (manager display) only — gsSave strips it from properties; persisted below to propertyPrivate
   p.frequency  = document.getElementById('pe-freq-'+id)?.value           || '';
   p.customFreq = document.getElementById('pe-custom-'+id)?.value         || '';
   // Save service days for 2x Per Week
@@ -5764,7 +5770,8 @@ function savePropEdit(id) {
     p.nextServiceDate = parseLocalDate(calcNext).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   }
 
-  saveAndSync('properties', p);
+  saveAndSync('properties', p); // RATE SPLIT: gsSave strips monthlyRate from this write
+  _savePropertyRate(p);         // RATE SPLIT: rate persisted ONLY to propertyPrivate/{id} (manager)
   openPropDetail(id);
   renderProperties();
   toast('Property saved ✓');
@@ -5805,7 +5812,7 @@ function savePropServices(id) {
 
 
 function getPropProfitabilityCard(prop) {
-  var rate    = parseFloat(prop.monthlyRate) || 0;
+  var rate    = _rateFor(prop); // RATE SPLIT
   var visits  = getVisitsPerMonth(prop.frequency);
   var revPerVisit = rate > 0 ? rate / visits : 0;
 
@@ -6584,6 +6591,7 @@ function deleteProperty(id) {
   save();
   // delete from Google Sheets
   gsDelete('properties', id);
+  if (typeof gsDelete === 'function') gsDelete('propertyPrivate', id); // RATE SPLIT: remove orphaned rate doc (manager only; rules deny others)
   state.routes.forEach(r => gsSave('routes', r));
   closePanel('prop-panel'); renderProperties(); renderDashboard(); toast('Property deleted');
 }
@@ -7928,7 +7936,7 @@ function exportPropertiesCSV() {
       csvCell(p.phone),
       csvCell(p.email),
       csvCell(p.frequency || p.customFreq || ''),
-      csvCell(p.monthlyRate != null ? p.monthlyRate : ''),
+      csvCell(_rateFor(p) || ''), // RATE SPLIT: merged manager rate (private first)
       csvCell(p.lastServiceDate),
       csvCell(p.nextServiceDate),
       csvCell((p.services||[]).join('; ')),
@@ -8797,6 +8805,7 @@ function dismissLoginScreen(role) {
 
 function signOut() {
   state.loggedInCrewId = null;
+  if (typeof _clearPropertyPrivate === 'function') _clearPropertyPrivate(); // RATE SPLIT: strip merged rates before the save() below caches state
   state.role = 'guest';
   window._crewWOSelectedCommunity = ''; // don't carry over to the next crew member on this device
   window._crewWOVillage = '';
@@ -8906,6 +8915,98 @@ function _clearExternalEvents() {
   try { if (_listeners['externalEvents']) { _listeners['externalEvents'](); delete _listeners['externalEvents']; } } catch(e) {}
   state.externalEvents = [];
 }
+// ── RATE SPLIT (Phase 3 step 2): monthlyRate lives in propertyPrivate ────
+// properties/{id} must NEVER carry monthlyRate once migrated: crew devices
+// download every properties doc, and Firestore rules cannot redact a field.
+// propertyPrivate/{same id} = { monthlyRate, updatedAt, updatedBy } — rules
+// v3: manager full, read-bot read, crewAnon/sync denied. Rates are kept ONLY
+// in this in-memory map (never in state, so save()/IndexedDB never caches
+// them); _mergePropertyRates() overlays them onto state.properties for
+// manager screens, and _clearPropertyPrivate() strips them on role switch.
+var RATE_FIELDS = ['monthlyRate'];
+var _propPrivateById = {};
+function _rateFor(prop) {
+  if (!prop || state.role !== 'manager') return 0;
+  var priv = _propPrivateById[prop.id];
+  if (priv && priv.monthlyRate != null && priv.monthlyRate !== '') return parseFloat(priv.monthlyRate) || 0;
+  return parseFloat(prop.monthlyRate) || 0; // dual-read fallback until migration deletes the field from properties
+}
+function _mergePropertyRates() {
+  (state.properties || []).forEach(function(p) {
+    if (state.role !== 'manager') { RATE_FIELDS.forEach(function(f) { delete p[f]; }); return; }
+    var priv = _propPrivateById[p.id];
+    if (priv && priv.monthlyRate != null) p.monthlyRate = priv.monthlyRate;
+  });
+}
+function _stripRateFields(obj) { RATE_FIELDS.forEach(function(f) { delete obj[f]; }); return obj; }
+function _savePropertyRate(prop) {
+  if (!prop || state.role !== 'manager' || !_fbReady || !_db) return;
+  try {
+    gsSave('propertyPrivate', { id: prop.id, monthlyRate: parseFloat(prop.monthlyRate) || 0,
+      updatedAt: new Date().toISOString(), updatedBy: window._managerAuthEmail || '' });
+  } catch(e) { console.warn('propertyPrivate save failed:', e); }
+}
+function _ensurePropertyPrivateListener() {
+  // Manager-ONLY lazy subscription, mirroring externalEvents. Requires a
+  // verified non-anonymous Firebase session (rules isManager), so the
+  // startup applyRole('manager') UI default and crew/anon sessions never
+  // subscribe — crew devices never download rates.
+  if (state.role !== 'manager' || !_db || _listeners['propertyPrivate']) return;
+  var u = window._fbAuth && window._fbAuth.currentUser;
+  if (!u || u.isAnonymous || !u.emailVerified) return;
+  _listenCollection('propertyPrivate');
+}
+function _clearPropertyPrivate() {
+  try { if (_listeners['propertyPrivate']) { _listeners['propertyPrivate'](); delete _listeners['propertyPrivate']; } } catch(e) {}
+  _propPrivateById = {};
+  state.propertyPrivate = [];
+  (state.properties || []).forEach(function(p) { RATE_FIELDS.forEach(function(f) { delete p[f]; }); });
+}
+// One-time manager migration (Properties → 🔒 Move rates). Idempotent:
+// copies monthlyRate properties→propertyPrivate, VERIFIES count+sum,
+// only then deletes the field from properties. Fresh getDocs reads (not
+// merged state) so source-of-truth counts are exact. Reports aggregates
+// only. Safe to re-run: a second run finds 0 source fields and no-ops.
+async function runRateMigration() {
+  if (state.role !== 'manager') { toast('Manager access only'); return; }
+  var u = window._fbAuth && window._fbAuth.currentUser;
+  if (!u || u.isAnonymous || !u.emailVerified) { toast('Sign in as manager (verified email) first'); return; }
+  if (!_fbReady || !_db || !window._fbSDK.getDocs) { toast('Firebase not ready — try again in a moment'); return; }
+  var SDK = window._fbSDK;
+  async function readAll(col) { var out = []; var snap = await SDK.getDocs(SDK.collection(_db, col)); snap.forEach(function(d) { out.push(Object.assign({ id: d.id }, d.data())); }); return out; }
+  function rateStats(docs) { var n = 0, sum = 0; docs.forEach(function(d) { if (d.monthlyRate != null && d.monthlyRate !== '') { n++; sum += parseFloat(d.monthlyRate) || 0; } }); return { n: n, sum: Math.round(sum * 100) / 100 }; }
+  try {
+    toast('🔒 Checking rates…');
+    var props = await readAll('properties');
+    var src = rateStats(props);
+    if (!src.n) { toast('✓ No rates left on properties — already migrated'); return; }
+    if (!confirm('Move rates to private?\n\n' + src.n + ' properties have a monthly rate (total $' + src.sum.toFixed(2) + '/mo).\n\nStep 1 copies them to manager-only propertyPrivate, verifies the copy, then step 2 removes the rate from the crew-readable properties records. Crew screens do not change.')) return;
+    var by = window._managerAuthEmail || u.email || '';
+    for (var i = 0; i < props.length; i++) {
+      var d = props[i];
+      if (d.monthlyRate == null || d.monthlyRate === '') continue;
+      await SDK.setDoc(SDK.doc(_db, 'propertyPrivate', String(d.id)),
+        { monthlyRate: parseFloat(d.monthlyRate) || 0, updatedAt: new Date().toISOString(), updatedBy: by, migratedFrom: 'properties' }, { merge: true });
+    }
+    var copied = rateStats(await readAll('propertyPrivate'));
+    if (copied.n < src.n || Math.abs(copied.sum - src.sum) > 0.01) {
+      toast('✕ Copy verify FAILED (' + copied.n + '/' + src.n + ') — nothing deleted'); return;
+    }
+    if (!confirm('Copy verified: ' + copied.n + ' private rates, $' + copied.sum.toFixed(2) + '/mo.\n\nNow remove monthlyRate from all properties records? This is the step that stops crew phones downloading rates. Rollback: rates remain in propertyPrivate and can be copied back.')) return;
+    for (var j = 0; j < props.length; j++) {
+      var d2 = props[j];
+      if (d2.monthlyRate == null || d2.monthlyRate === '') continue;
+      var del = {}; del.monthlyRate = SDK.deleteField();
+      await SDK.setDoc(SDK.doc(_db, 'properties', String(d2.id)), del, { merge: true });
+    }
+    var afterProps = rateStats(await readAll('properties'));
+    var afterPriv = rateStats(await readAll('propertyPrivate'));
+    if (afterProps.n !== 0 || Math.abs(afterPriv.sum - src.sum) > 0.01) { toast('✕ Post-check mismatch — STOP and check Firestore (private copy is intact)'); return; }
+    _ensurePropertyPrivateListener(); _mergePropertyRates(); save();
+    toast('✓ Rates private: ' + afterPriv.n + ' rates, $' + afterPriv.sum.toFixed(2) + '/mo — crew can no longer download them');
+  } catch(e) { console.warn('runRateMigration failed:', e); toast('✕ Migration failed: ' + (e && e.message || e) + ' — copy step is idempotent, safe to retry'); }
+}
+
 
 // ── Attach a real-time listener to a single Firestore collection ──────────
 // When any document in the collection changes, state[name] is updated and
@@ -8933,7 +9034,16 @@ function _listenCollection(name) {
           });
         });
       }
+      if (name === 'propertyPrivate') {
+        // RATE SPLIT: keep rates only in the manager-memory map; never in
+        // state (so the save() below cannot cache them in IndexedDB).
+        _propPrivateById = {};
+        docs.forEach(function(d) { _propPrivateById[d.id] = d; });
+        state.propertyPrivate = [];
+        _mergePropertyRates();
+      }
       if (name === 'properties') {
+        _mergePropertyRates(); // RATE SPLIT: overlay private rates (manager) / strip field (crew) before save()+render
         state.properties.forEach(function(p) {
           if (typeof p.services === 'string')    { try { p.services    = JSON.parse(p.services);    } catch(e) { p.services    = []; } }
           if (typeof p.serviceDays === 'string') { try { p.serviceDays = JSON.parse(p.serviceDays); } catch(e) { p.serviceDays = []; } }
@@ -9021,6 +9131,8 @@ function gsLoad() {
         setDoc:         fsMod.setDoc,
         getDoc:         fsMod.getDoc,
         deleteDoc:      fsMod.deleteDoc,
+        getDocs:        fsMod.getDocs,
+        deleteField:    fsMod.deleteField,
         onSnapshot:     fsMod.onSnapshot,
         writeBatch:     fsMod.writeBatch,
         ref:            stMod.ref,
@@ -9092,6 +9204,7 @@ function gsLoad() {
           var CRITICAL = ['crew','routes','flags'];
           var SECONDARY = ['properties','workOrders','inventory','equipment','attendance','customerRequests','propEvents','wetChecks'];
           CRITICAL.forEach(function(name) { _listenCollection(name); });
+          if (window._managerAuthEmail && typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener(); // RATE SPLIT: restored verified-manager session
           // Defer secondary collections by 800ms so UI loads fast
           setTimeout(function() {
             SECONDARY.forEach(function(name) { _listenCollection(name); });
@@ -9137,7 +9250,8 @@ function queuePendingWrite(table, record) {
   try {
     var queue = JSON.parse(localStorage.getItem('dl_pending_writes') || '[]');
     queue = queue.filter(function(q) { return !(q.table === table && q.id === record.id); }); // dedupe, keep latest
-    queue.push({ op: 'set', table: table, id: record.id, record: record, queuedAt: new Date().toISOString() });
+    var _qrec = record; if (table === 'properties') { _qrec = _stripRateFields(Object.assign({}, record)); } // RATE SPLIT: never queue a rate to localStorage
+    queue.push({ op: 'set', table: table, id: record.id, record: _qrec, queuedAt: new Date().toISOString() });
     localStorage.setItem('dl_pending_writes', JSON.stringify(queue));
   } catch(e) { console.warn('Could not queue pending write:', e); }
 }
@@ -9184,6 +9298,7 @@ function gsSave(table, record, _attempt) {
 
   // Never store raw base64 in Firestore — photos go to Firebase Storage
   var toSave = Object.assign({}, record);
+  if (table === 'properties') _stripRateFields(toSave); // RATE SPLIT: crew completion + every whole-record write-back must never (re)write monthlyRate to properties; manager rates go via _savePropertyRate()
   if (toSave.completedPhoto && toSave.completedPhoto.startsWith('data:')) toSave.completedPhoto = '';
   if (toSave.photo          && toSave.photo.startsWith('data:'))          toSave.photo          = '';
   if (toSave.resolvePhoto   && toSave.resolvePhoto.startsWith('data:'))   toSave.resolvePhoto   = '';
@@ -9246,6 +9361,7 @@ async function gsPushAll(table, records) {
       records.slice(i, i + BATCH_SIZE).forEach(function(r) {
         if (!r || !r.id) return;
         var safe = JSON.parse(JSON.stringify(r, function(k,v) { return v === undefined ? null : v; }));
+        if (table === 'properties') _stripRateFields(safe); // RATE SPLIT (import/bulk)
         batch.set(window._fbSDK.doc(_db, table, String(r.id)), safe);
       });
       await batch.commit();
