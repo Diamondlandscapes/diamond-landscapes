@@ -1692,7 +1692,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-13-v61'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-18-v62'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -1980,6 +1980,9 @@ function openOverlay(id) { document.getElementById(id).classList.add('open'); }
 // Manager sign-in is Firebase Auth email/password only (see managerEmailLogin).
 // There is no manager PIN: config/auth is not read or written by the app.
 
+// In-session role switch. Manager Firebase Auth is memory-only for this page
+// (see gsLoad), so tabs and this switcher keep working until a reload, which
+// always returns to the splash. This does not write a persistent login.
 function openLoginSheet() {
   showLoginWho();
   openOverlay('login-overlay');
@@ -1994,7 +1997,8 @@ function showLoginWho() {
 // ── Manager email/password sign-in (Phase 1, transitional) ──────────────
 // Real Firebase Auth identity for the manager (email/password only;
 // there is no PIN fallback). Firestore rules, not this UI check, are
-// the security boundary. On success this
+// the security boundary. The Auth user is kept in memory for this page
+// only — a reload always shows the splash again. On success this
 // sets role=manager; _ensureExternalEventsListener() then subscribes to
 // externalEvents, which the Phase 2 rules allow only for the manager
 // allowlist email. No manager email is hard-coded here.
@@ -2016,16 +2020,15 @@ async function managerEmailLogin() {
   if (!email || !pass) { if (errEl) errEl.textContent = 'Enter email and password.'; return; }
   try {
     if (!window._fbAuth || !window._fbAuthMod) await gsLoad();
-    if (!window._fbAuth) throw new Error('Firebase not ready — check connection and try again.');
-    // Default is already local. Set it explicitly before this sign-in so the
-    // session is stored for the next cold load (box browser / iPhone PWA).
-    if (window._fbAuthMod.setPersistence && window._fbAuthMod.browserLocalPersistence) {
-      try {
-        await window._fbAuthMod.setPersistence(window._fbAuth, window._fbAuthMod.browserLocalPersistence);
-      } catch (ePers) {
-        console.warn('Auth persistence:', ePers && ePers.message);
-      }
+    // Cold-load sign-out of a legacy persisted manager runs inside this
+    // promise. Wait so a fast sign-in is not wiped by that one-time sign-out.
+    if (window._authStartupPromise) {
+      try { await window._authStartupPromise; } catch (eStart) {}
     }
+    if (!window._fbAuth) throw new Error('Firebase not ready — check connection and try again.');
+    // Memory only: this sign-in must not be written to IndexedDB/localStorage,
+    // or the next reload would restore it. Startup sets the same persistence.
+    await _useInMemoryAuth(window._fbAuth, window._fbAuthMod);
     var cred = await window._fbAuthMod.signInWithEmailAndPassword(window._fbAuth, email, pass);
     if (cred.user && !cred.user.emailVerified) {
       // Phase 2 rules require a verified manager email; send the link once per attempt.
@@ -2034,6 +2037,7 @@ async function managerEmailLogin() {
       return;
     }
     window._managerAuthEmail = cred.user && cred.user.email;
+    window._managerSessionUnlocked = true; // this page load only; gates private listeners
     closeOverlay('login-overlay');
     var _lsScreen = document.getElementById('login-screen');
     if (_lsScreen && _lsScreen.style.display !== 'none') dismissLoginScreen('manager');
@@ -5602,7 +5606,6 @@ function renderProperties() {
     propBtns.innerHTML = state.role === 'manager' ? `
       <button class="btn-sm" id="prop-select-btn" onclick="togglePropSelect()" style="background:var(--bg4);color:var(--text3);border:1px solid var(--border2);">Select</button>
       <button class="btn-sm" onclick="exportPropertiesCSV()" style="background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3);">⬇ Export</button>
-      <button class="btn-sm" onclick="runRateMigration()" title="One-time: copy monthly rates to manager-only propertyPrivate, verify, then remove them from properties" style="background:rgba(250,204,21,.12);color:var(--yellow);border:1px solid rgba(250,204,21,.3);">🔒 Move rates</button>
       <button class="btn-sm" onclick="openImport('properties')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">⬆ Import</button>
       <button class="btn-sm btn-green" onclick="openAddProperty()">+ Add</button>` : '';
   }
@@ -8981,7 +8984,7 @@ function ls_selectCrew(crewId) {
 
 
 function dismissLoginScreen(role) {
-  window._loginGatePassed = true; // crew or manager already chose; don't auto-override
+  window._loginGatePassed = true; // explicit crew or manager choice this page load
   const screen = document.getElementById('login-screen');
   if (screen) {
     screen.style.opacity = '0';
@@ -9001,6 +9004,9 @@ function dismissLoginScreen(role) {
   }
 }
 
+// Splash again, crew selection cleared. Firebase Auth is left as-is so
+// live listeners survive an in-session manager ↔ crew switch. A reload
+// drops the in-memory manager user and requires email + password again.
 function signOut() {
   state.loggedInCrewId = null;
   if (typeof _clearPropertyPrivate === 'function') _clearPropertyPrivate(); // RATE SPLIT: strip merged rates before the save() below caches state
@@ -9107,6 +9113,8 @@ function _ensureExternalEventsListener() {
   // Phase 2 rules allow this read only for the manager allowlist email
   // (or the sync identity); PIN-only sessions will soft-fail once those
   // rules deploy — manager email sign-in above is the supported path.
+  // Unlocked only after email/password on this page load, not a restored session.
+  if (!window._managerSessionUnlocked) return;
   if (state.role !== 'manager' || !_db || _listeners['externalEvents']) return;
   _listenCollection('externalEvents');
 }
@@ -9150,6 +9158,9 @@ function _ensurePropertyPrivateListener() {
   // verified non-anonymous Firebase session (rules isManager), so the
   // startup applyRole('manager') UI default and crew/anon sessions never
   // subscribe — crew devices never download rates.
+  // Also requires password sign-in on THIS page load. A user restored from
+  // an older local session is signed out before unlock, and must not download rates.
+  if (!window._managerSessionUnlocked) return;
   if (state.role !== 'manager' || !_db || _listeners['propertyPrivate']) return;
   var u = window._fbAuth && window._fbAuth.currentUser;
   if (!u || u.isAnonymous || !u.emailVerified) return;
@@ -9169,6 +9180,7 @@ function _clearPropertyPrivate() {
 // rates will persist. Until any positive rate is loaded, P&L keeps the
 // old flat truck-day. Rates stay in _crewPrivateById only.
 function _ensureCrewPrivateListener() {
+  if (!window._managerSessionUnlocked) return; // same gate as property rates
   if (state.role !== 'manager' || !_db || _listeners['crewPrivate']) return;
   var u = window._fbAuth && window._fbAuth.currentUser;
   if (!u || u.isAnonymous || !u.emailVerified) return;
@@ -9202,7 +9214,8 @@ function _saveCrewDailyRate(crewId, rate) {
   try { gsSave('crewPrivate', doc); }
   catch (e) { console.warn('crewPrivate save failed:', e); }
 }
-// One-time manager migration (Properties → 🔒 Move rates). Idempotent:
+// One-time manager migration. No longer shown in the Properties header.
+// Idempotent:
 // copies monthlyRate properties→propertyPrivate, VERIFIES count+sum,
 // only then deletes the field from properties. Fresh getDocs reads (not
 // merged state) so source-of-truth counts are exact. Reports aggregates
@@ -9344,41 +9357,45 @@ function _listenCollection(name) {
   );
 }
 
-// What to do once Firebase has emitted its first auth state (persistence
-// has finished). Anonymous sign-in is only for a genuinely signed-out
-// device — never as a replacement for a restored manager or an existing
-// anonymous crew session. Manager view is only for a verified email user.
+// First Firebase auth emission on a page load, after any saved persistence
+// has been read. Manager view is never entered from this — email/password
+// on this load is the only way in (managerEmailLogin sets
+// _managerSessionUnlocked). A non-anonymous user here is a session left by
+// an older build that used local persistence; drop it, then anonymous
+// sign-in covers crew. Do not call anonymous sign-in on top of a user that
+// has not been signed out yet (that used to replace a restored manager).
 function _authStartupPlan(user) {
   var nonAnon = !!(user && user.isAnonymous !== true);
   return {
     anonSignIn: !user,
-    enterManager: nonAnon && !!user.emailVerified,
+    dropPersistedUser: nonAnon,
     email: nonAnon ? (user.email || '') : ''
   };
 }
 
-// Cold load: if Firebase restored a verified manager, dismiss the splash
-// the same way a successful sign-in does. Wait until load() has applied
-// the local cache (so applyRole/save cannot clobber it) and until the
-// splash is still the gate (a crew name/PIN choice this session wins).
-function _restoreManagerSessionIfNeeded(u) {
-  if (window._managerRestoreSettled || !window._appStateLoaded || !window._authStateKnown) return;
-  if (window._loginGatePassed) { window._managerRestoreSettled = true; return; }
-  window._managerRestoreSettled = true;
-  var plan = _authStartupPlan(u);
-  if (!plan.enterManager) return;
-  if (plan.email) window._managerAuthEmail = plan.email;
-  var screen = document.getElementById('login-screen');
-  if (screen && screen.style.display !== 'none') dismissLoginScreen('manager');
-  else applyRole('manager');
-  if (typeof _ensureExternalEventsListener === 'function') _ensureExternalEventsListener();
-  if (typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener();
-  if (typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener();
+// Keep Firebase Auth in memory for this page only. browserSessionPersistence
+// survives reload (sessionStorage). browserLocalPersistence survives reload
+// and a new PWA open — that is the behavior the owner rejected. Signing out
+// on every load while still using local persistence also works, but the
+// restored token exists until signOut finishes and the next sign-in writes
+// it back to disk. Memory persistence means a reload has nothing to restore.
+function _useInMemoryAuth(auth, authMod) {
+  if (!auth || !authMod || !authMod.setPersistence || !authMod.inMemoryPersistence) {
+    console.warn('Auth persistence: in-memory persistence unavailable');
+    return Promise.resolve();
+  }
+  return authMod.setPersistence(auth, authMod.inMemoryPersistence).catch(function(ePers) {
+    console.warn('Auth persistence:', ePers && ePers.message);
+  });
 }
 
 // ── Initialize Firebase and start all real-time listeners ─────────────────
 function gsLoad() {
-  return new Promise(function(resolve) {
+  // One in-flight init. A second caller (fast manager sign-in, crew list)
+  // must wait for the same auth startup instead of signing in anonymously
+  // again or resolving before the persisted-manager sign-out finishes.
+  if (window._gsLoadPromise) return window._gsLoadPromise;
+  window._gsLoadPromise = new Promise(function(resolve) {
     if (_fbReady && _db) { syncOnline = true; resolve(true); return; }
 
     var BASE = 'https://www.gstatic.com/firebasejs/10.12.0/';
@@ -9427,42 +9444,51 @@ function gsLoad() {
       // Sign in anonymously — gives Firebase Auth a valid token so
       // security rules can check request.auth != null.
       // Collections start AFTER auth so all reads are authenticated.
-      // currentUser is null until the first onAuthStateChanged emission,
-      // even when a manager session is about to be restored. Signing in
-      // anonymously on that synchronous null replaces the persisted
-      // manager (box browser and iPhone PWA cold loads).
+      // currentUser is null until the first onAuthStateChanged emission.
+      // Wait for that emission before anonymous sign-in: signing in
+      // anonymously on a synchronous null used to replace a persisted
+      // manager. A persisted non-anonymous user (older local persistence)
+      // is signed out first so this load starts at the splash, then
+      // persistence is switched to memory so the password sign-in below
+      // is not written to disk.
       var fbAuth = authMod.getAuth(fbApp);
       window._fbAuth = fbAuth; window._fbAuthMod = authMod;
-      var _persistReady = Promise.resolve();
-      try {
-        if (authMod.setPersistence && authMod.browserLocalPersistence) {
-          _persistReady = authMod.setPersistence(fbAuth, authMod.browserLocalPersistence);
-        }
-      } catch (ePers) { console.warn('Auth persistence:', ePers && ePers.message); }
-      if (!_persistReady || typeof _persistReady.then !== 'function') _persistReady = Promise.resolve();
-      _persistReady = _persistReady.catch(function(ePers) {
-        console.warn('Auth persistence:', ePers && ePers.message);
-      });
+      window._managerSessionUnlocked = false;
       var _initialAuth = new Promise(function(resolve) {
         var _firstAuth = true;
         authMod.onAuthStateChanged(fbAuth, function(u) {
-          var plan = _authStartupPlan(u);
-          if (plan.email) window._managerAuthEmail = plan.email;
           if (_firstAuth) {
             _firstAuth = false;
             window._authStateKnown = true;
             resolve(u || null);
+            return;
           }
-          _restoreManagerSessionIfNeeded(u || null);
+          // Later emissions are this page (anonymous fallback, or the
+          // password sign-in). Never treat them as a cold-load restore.
+          if (window._managerSessionUnlocked && u && u.isAnonymous !== true && u.emailVerified) {
+            window._managerAuthEmail = u.email || window._managerAuthEmail || '';
+          }
         });
       });
-      Promise.all([_persistReady, _initialAuth])
-        .then(function(results) {
-          var restored = results[1];
-          // Anonymous sign-in is the transitional fallback for crew/portal
-          // only when nothing was restored.
-          if (_authStartupPlan(restored).anonSignIn) return authMod.signInAnonymously(fbAuth);
-        })
+      window._authStartupPromise = _initialAuth.then(function(restored) {
+        var plan = _authStartupPlan(restored);
+        var chain = Promise.resolve();
+        if (plan.dropPersistedUser && authMod.signOut) {
+          chain = authMod.signOut(fbAuth).catch(function(eSign) {
+            console.warn('Sign-out of persisted session:', eSign && eSign.message);
+          });
+        }
+        return chain.then(function() {
+          // A password sign-in cannot have finished yet: managerEmailLogin
+          // waits on this promise. Still skip if unlock raced ahead.
+          if (window._managerSessionUnlocked) return;
+          return _useInMemoryAuth(fbAuth, authMod);
+        }).then(function() {
+          if (window._managerSessionUnlocked) return;
+          if (!fbAuth.currentUser) return authMod.signInAnonymously(fbAuth);
+        });
+      });
+      window._authStartupPromise
         .then(function() {
           console.log('Firebase: auth ready');
           window._authReady = true;
@@ -9512,8 +9538,10 @@ function gsLoad() {
           var CRITICAL = ['crew','routes','flags'];
           var SECONDARY = ['properties','workOrders','inventory','equipment','attendance','customerRequests','propEvents','wetChecks'];
           CRITICAL.forEach(function(name) { _listenCollection(name); });
-          if (window._managerAuthEmail && typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener(); // RATE SPLIT: restored verified-manager session
-          if (window._managerAuthEmail && typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener(); // PAY SPLIT: not in CRITICAL/SECONDARY — manager-only lazy listener
+          // Private rate/pay listeners start from managerEmailLogin after
+          // password sign-in on this load. A restored session is not one.
+          if (window._managerSessionUnlocked && typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener();
+          if (window._managerSessionUnlocked && typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener();
           // Defer secondary collections by 800ms so UI loads fast
           setTimeout(function() {
             SECONDARY.forEach(function(name) { _listenCollection(name); });
@@ -9539,9 +9567,11 @@ function gsLoad() {
     }).catch(function(err) {
       console.error('Firebase init failed:', err);
       syncOnline = false;
+      window._gsLoadPromise = null; // allow a later retry if the SDK failed to load
       resolve(false);
     });
   });
+  return window._gsLoadPromise;
 }
 
 // ── Write one record to Firestore ─────────────────────────────────────────
@@ -16512,16 +16542,12 @@ load().then(function() {
   seedData();
   window._appStateLoaded = true;
   applyRole('manager');
-  var u = window._fbAuth && window._fbAuth.currentUser;
-  var entering = window._authStateKnown && _authStartupPlan(u).enterManager && !window._loginGatePassed;
-  // Logged-out, anonymous, and unverified sessions keep the splash.
-  // A restored verified manager skips it; dismiss happens below.
-  if (!entering) {
-    var screen = document.getElementById('login-screen');
-    if (screen) { screen.style.display = 'flex'; screen.style.opacity = '1'; }
-    ls_showWho();
-  }
-  if (window._authStateKnown) _restoreManagerSessionIfNeeded(u);
+  // Every cold load / reload stops at the splash. Manager view opens only
+  // after email + password on this page (managerEmailLogin). Crew still
+  // taps a name. In-session tab changes do not come through here.
+  var screen = document.getElementById('login-screen');
+  if (screen) { screen.style.display = 'flex'; screen.style.opacity = '1'; }
+  ls_showWho();
 });
 // load live data from Google Sheets
 
