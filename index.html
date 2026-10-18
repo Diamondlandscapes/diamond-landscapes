@@ -1720,6 +1720,7 @@ let state = {
   propEvents: [],
   externalEvents: [], // iCloud (manager-only, display-only; populated lazily in manager calendar)
   propertyPrivate: [], // RATE SPLIT: always kept empty in state/cache — rates live only in _propPrivateById (manager memory)
+  crewPrivate: [], // PAY SPLIT: always kept empty in state/cache — daily rates live only in _crewPrivateById (manager memory)
   wetChecks: [],
   routeWeeks: {},
   eqCategory: 'All',
@@ -1802,6 +1803,22 @@ async function load() {
     }
   } catch(e) { console.warn('load() failed:', e); }
   if(!Array.isArray(state.attendance)) state.attendance=[];
+  // PAY SPLIT: a previous cache must never revive crew pay. Rates live only
+  // in _crewPrivateById after a verified manager listener, never in IndexedDB.
+  state.crewPrivate = [];
+  ['crew','routes','attendance'].forEach(function(tbl) {
+    (state[tbl] || []).forEach(function(rec) { if (rec) delete rec.dailyRate; });
+  });
+  try {
+    var pq = JSON.parse(localStorage.getItem('dl_pending_writes') || '[]');
+    if (Array.isArray(pq)) {
+      var pqFiltered = pq.filter(function(item) {
+        if (!item || item.table !== 'crewPrivate') return true;
+        return item.op === 'delete'; // id only — never keep a queued dailyRate payload
+      });
+      if (pqFiltered.length !== pq.length) localStorage.setItem('dl_pending_writes', JSON.stringify(pqFiltered));
+    }
+  } catch (ePay) {}
 }
 // Walks an entire object tree and strips any embedded base64 image data
 // (data: URLs), wherever it's nested — route stop photos, flag photos,
@@ -1831,6 +1848,12 @@ function save() {
     // Save slim state — strip ANY embedded base64 photo data anywhere in
     // the tree, not just the one field this used to check.
     var slim = stripBase64Deep(JSON.parse(JSON.stringify(state)));
+    // PAY SPLIT: never persist crew pay in the IndexedDB cache, even if a
+    // listener briefly assigned the collection or a crew doc still carried it.
+    slim.crewPrivate = [];
+    ['crew','routes','attendance'].forEach(function(tbl) {
+      (slim[tbl] || []).forEach(function(rec) { if (rec) delete rec.dailyRate; });
+    });
 
     // Fire-and-forget — every one of save()'s 60+ call sites across the app
     // calls this synchronously and doesn't wait for it, exactly as before.
@@ -2017,6 +2040,7 @@ async function managerEmailLogin() {
     else applyRole('manager');
     if (typeof _ensureExternalEventsListener === 'function') _ensureExternalEventsListener();
     if (typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener();
+    if (typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener();
   } catch (e) {
     console.warn('Manager email sign-in failed:', e && e.message);
     if (errEl) errEl.textContent = '✕ Sign-in failed — check email/password.';
@@ -2065,7 +2089,9 @@ function applyRole(r) {
   state.role = r;
   if (r !== 'manager' && typeof _clearExternalEvents === 'function') _clearExternalEvents(); // never carry iPhone events into crew/guest
   if (r !== 'manager' && typeof _clearPropertyPrivate === 'function') _clearPropertyPrivate(); // RATE SPLIT: never carry rates into crew/guest (strips merged rates before save() below)
+  if (r !== 'manager' && typeof _clearCrewPrivate === 'function') _clearCrewPrivate(); // PAY SPLIT: never carry crew pay into crew/guest
   if (r === 'manager' && typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener(); // no-op until a verified manager auth session exists
+  if (r === 'manager' && typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener(); // no-op until a verified manager auth session exists
   save();
   const roleBadge = document.getElementById('role-badge');
   if (roleBadge) roleBadge.textContent = r === 'manager' ? 'MANAGER' : 'CREW';
@@ -2322,29 +2348,37 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
       if (!todayDateRoutes.length || !propsWithRates.length) {
         pnlEl.innerHTML = '<div style="font-size:13px;color:var(--text4);text-align:center;padding:8px 0;">Add monthly rates to properties to see today\'s P&L</div>';
       } else {
-        var totalRev = 0, totalCost = 0;
+        var totalRev = 0, totalCost = 0, laborFallback = true;
         todayDateRoutes.forEach(function(r) {
           var p = getRoutePnL(r);
           totalRev  += p.revenue;
           totalCost += p.cost;
+          if (!p.laborFallback) laborFallback = false;
         });
         var totalMargin = totalRev - totalCost;
         var marginPct   = totalRev > 0 ? (totalMargin/totalRev)*100 : 0;
         var mColor = totalMargin > 0 ? 'var(--green)' : 'var(--red)';
+        // Real crew rates replace the old flat truck-day. Fuel stays in the
+        // label only while that flat fallback is what the number still is.
+        var laborLabel = laborFallback ? 'Labor+Fuel' : 'Labor';
+        var laborTitle = laborFallback
+          ? 'Flat truck-day (labor + fuel) until daily rates are entered'
+          : 'Labor: driver + 2 helpers (avg)';
         pnlEl.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
           + '<div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;">'
             + '<div style="font-size:18px;font-weight:700;color:var(--blue);">$' + totalRev.toFixed(0) + '</div>'
             + '<div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Revenue</div>'
           + '</div>'
-          + '<div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;">'
+          + '<div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;" title="' + laborTitle + '">'
             + '<div style="font-size:18px;font-weight:700;color:var(--text2);">$' + totalCost.toFixed(0) + '</div>'
-            + '<div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Labor+Fuel</div>'
+            + '<div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:2px;">' + laborLabel + '</div>'
           + '</div>'
           + '<div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;">'
             + '<div style="font-size:18px;font-weight:700;color:' + mColor + ';">$' + totalMargin.toFixed(0) + '</div>'
             + '<div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:2px;">' + marginPct.toFixed(0) + '% Margin</div>'
           + '</div>'
-        + '</div>';
+        + '</div>'
+        + '<div style="font-size:10px;color:var(--text3);margin-top:8px;text-align:center;">' + laborTitle + '</div>';
       }
     }
   }
@@ -2656,6 +2690,7 @@ function openRouteDetail(id) {
             <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-top:2px;">${pnl.marginPct.toFixed(0)}% Margin</div>
           </div>
         </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:6px;" title="${pnl.laborBasis}">${pnl.laborBasis}</div>
       </div>` : '<div style="font-size:11px;color:var(--text3);margin-top:8px;">Add monthly rates to properties to see P&L</div>'}
     `;
   } else {
@@ -2837,6 +2872,11 @@ function openCrewDetail(id) {
   const totalDone  = allRoutes.reduce((a,r)=>a+(r.stops?.filter(s=>s.completed).length||0),0);
   const totalStops = allRoutes.reduce((a,r)=>a+(r.stops?.length||0),0);
   const openFlags  = (state.flags||[]).filter(f => f.by === c.name && !f.resolved);
+  var crewRateAttr = '';
+  if (state.role === 'manager') {
+    var crewRateNum = _crewDailyRate(id);
+    if (crewRateNum != null) crewRateAttr = String(crewRateNum);
+  }
 
   let html = `
 
@@ -2888,6 +2928,12 @@ function openCrewDetail(id) {
         <select class="inp" id="ce-role-${id}">
           ${['Crew Lead','Crew Member','Driver'].map(r=>`<option ${c.role===r?'selected':''}>${r}</option>`).join('')}
         </select>
+        ${state.role==='manager'?`
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">DAILY RATE <span style="font-weight:600;letter-spacing:0;color:var(--text4);">(manager only)</span></div>
+          <input class="inp" id="ce-rate-${id}" value="${crewRateAttr}" placeholder="Daily rate" type="number" min="0" step="0.01" inputmode="decimal"/>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;">Saved only to private crew pay. Crew cannot see this.</div>
+        </div>`:''}
         <div>
           <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:4px;">LOGIN PIN ${c.pin?'<span style="color:var(--green);">● Set</span>':'<span style="color:var(--red);">● Not set</span>'}</div>
           <input class="inp" id="ce-pin-${id}" placeholder="New 4-digit PIN" type="tel" maxlength="4" inputmode="numeric" style="letter-spacing:6px;font-weight:800;font-size:18px;"/>
@@ -3029,7 +3075,18 @@ function saveCrewEdit(id) {
     if (dup) { toast('PIN already used by '+dup.name); return; }
     c.pin = pinVal;
   }
+  var rateEl = document.getElementById('ce-rate-'+id);
+  var rateNum = null;
+  if (rateEl && state.role === 'manager') {
+    var rawRate = (rateEl.value || '').trim();
+    if (rawRate !== '') {
+      rateNum = parseFloat(rawRate);
+      if (isNaN(rateNum) || rateNum < 0) { toast('Daily rate must be a positive number, or leave it blank'); return; }
+    }
+  }
+  delete c.dailyRate; // PAY SPLIT: crew docs are crew-readable — pay never rides along
   saveAndSync('crew',c);
+  if (rateEl && state.role === 'manager') _saveCrewDailyRate(id, rateNum);
   // If this is the currently logged-in crew member, rebuild their menu live
   if (state.loggedInCrewId === id && state.role === 'field') {
     rebuildCrewNav(state.currentTab || 'field');
@@ -4180,8 +4237,18 @@ function markStopDone(routeId, propId) {
 
 
 // ── Profitability Engine ─────────────────────────────────────────────────
+// Flat truck-day is the FALLBACK only, used when no crew daily rates are
+// loaded. It is not a person's pay. Real labor is driver + 2 helpers
+// (see getRouteLaborDetail). Do not put actual crew rates in this file.
 const TRUCK_DAILY_COST = { T1: 610, T2: 610, T3: 610, T4: 400 };
 const TRUCK_DEFAULT_COST = 610;
+const HELPERS_PER_TRUCK = 2;
+// Usual helper is resolved by first name from state.crew at runtime.
+// Rudy has no usual helper. Missing names are tolerated.
+var USUAL_HELPER_FIRST = { efrain: 'sergio', jeremias: 'miguel' };
+// PAY SPLIT: manager memory only. Never assigned onto state, crew docs,
+// routes, attendance, or localStorage / IndexedDB.
+var _crewPrivateById = {};
 
 // Extract truck number from route name e.g. "8/3 T1" → "T1"
 function getTruckFromRoute(routeName) {
@@ -4189,10 +4256,120 @@ function getTruckFromRoute(routeName) {
   return m ? 'T' + m[1] : null;
 }
 
-// Get daily cost for a route based on truck number
-function getRouteDailyCost(route) {
-  var truck = getTruckFromRoute(route.name||'');
+function getRouteFlatDailyCost(route) {
+  var truck = getTruckFromRoute(route && route.name || '');
   return truck && TRUCK_DAILY_COST[truck] ? TRUCK_DAILY_COST[truck] : TRUCK_DEFAULT_COST;
+}
+
+function _normCrewName(name) {
+  var s = String(name || '').toLowerCase();
+  try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  return s.replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Named leads: Efrain, Jeremias Mendez (or the only Jeremias), Rudy.
+// Matched from the live crew list — ids are never hard-coded.
+function _driverKey(crew) {
+  if (!crew) return null;
+  var n = _normCrewName(crew.name);
+  if (!n) return null;
+  var first = n.split(' ')[0];
+  if (first === 'efrain') return 'efrain';
+  if (first === 'rudy') return 'rudy';
+  if (first === 'jeremias' && n.indexOf('mendez') !== -1) return 'jeremias';
+  if (first === 'jeremias') {
+    var peers = (state.crew || []).filter(function(c) {
+      return c && c.id !== crew.id && _normCrewName(c.name).split(' ')[0] === 'jeremias';
+    });
+    if (!peers.length) return 'jeremias';
+  }
+  return null;
+}
+
+function _crewByFirstName(token) {
+  if (!token) return null;
+  var list = state.crew || [];
+  for (var i = 0; i < list.length; i++) {
+    if (list[i] && _normCrewName(list[i].name).split(' ')[0] === token) return list[i];
+  }
+  return null;
+}
+
+// Positive daily rate from manager memory only. Never reads crew docs.
+function _crewDailyRate(crewId) {
+  if (!crewId || state.role !== 'manager') return null;
+  var priv = _crewPrivateById[crewId];
+  if (!priv || priv.dailyRate == null || priv.dailyRate === '') return null;
+  var n = parseFloat(priv.dailyRate);
+  if (!(n > 0)) return null;
+  return n;
+}
+
+function _crewRatesLoaded() {
+  if (state.role !== 'manager') return false;
+  var ids = Object.keys(_crewPrivateById || {});
+  for (var i = 0; i < ids.length; i++) {
+    if (_crewDailyRate(ids[i]) != null) return true;
+  }
+  return false;
+}
+
+// routeDayLabor = driverRate + usualHelperRate (if that person has a rate)
+//   + avgHelperRate * remainingSlots
+// remainingSlots = 2 minus 1 when a usual helper was counted.
+// Helper-pool average = crew with a rate who are not the 3 named drivers,
+// not this route's lead, and not the usual helper already counted.
+function getRouteLaborDetail(route) {
+  if (!route || !_crewRatesLoaded()) {
+    return {
+      cost: getRouteFlatDailyCost(route || {}),
+      basis: 'Flat truck-day (labor + fuel) until daily rates are entered',
+      fallback: true
+    };
+  }
+  var driver = (state.crew || []).find(function(c) { return c && route.crewId && c.id === route.crewId; }) || null;
+  var driverRate = driver ? (_crewDailyRate(driver.id) || 0) : 0;
+  var key = _driverKey(driver);
+  var usual = null;
+  var usualRate = null;
+  if (key && USUAL_HELPER_FIRST[key]) {
+    usual = _crewByFirstName(USUAL_HELPER_FIRST[key]);
+    if (usual && driver && usual.id === driver.id) usual = null;
+    if (usual) usualRate = _crewDailyRate(usual.id);
+  }
+  var usualCounted = !!(usual && usualRate != null);
+  var namedDriver = {};
+  (state.crew || []).forEach(function(c) { if (c && _driverKey(c)) namedDriver[c.id] = true; });
+  var pool = [];
+  (state.crew || []).forEach(function(c) {
+    if (!c) return;
+    if (namedDriver[c.id]) return;
+    if (driver && c.id === driver.id) return;
+    if (usualCounted && usual && c.id === usual.id) return;
+    var rate = _crewDailyRate(c.id);
+    if (rate == null) return;
+    pool.push(rate);
+  });
+  var avg = pool.length ? pool.reduce(function(sum, n) { return sum + n; }, 0) / pool.length : 0;
+  var remaining = HELPERS_PER_TRUCK - (usualCounted ? 1 : 0);
+  var cost = driverRate + (usualCounted ? usualRate : 0) + avg * remaining;
+  var basis;
+  if (!pool.length && remaining > 0) {
+    basis = usualCounted
+      ? 'Labor: driver + usual helper + ' + remaining + ' helper (no helper rates)'
+      : 'Labor: driver + 2 helpers (no helper rates)';
+  } else if (usualCounted) {
+    basis = 'Labor: driver + usual helper + ' + remaining + ' helper (avg)';
+  } else {
+    basis = 'Labor: driver + 2 helpers (avg)';
+  }
+  return { cost: cost, basis: basis, fallback: false };
+}
+
+// Daily labor for a route. Falls back to the old flat truck-day when no
+// crew rates are loaded, so P&L still renders before rates are entered.
+function getRouteDailyCost(route) {
+  return getRouteLaborDetail(route).cost;
 }
 
 // Get cost per stop for a route (daily cost ÷ number of stops)
@@ -4253,7 +4430,8 @@ function getPropStopMargin(prop, route) {
 // Get full route P&L for a given date
 function getRoutePnL(route) {
   var stops = route.stops || [];
-  var dailyCost = getRouteDailyCost(route);
+  var labor = getRouteLaborDetail(route);
+  var dailyCost = labor.cost;
   var totalRevenue = 0;
   stops.forEach(function(s) {
     var prop = (state.properties||[]).find(function(p){return p.id===s.propId;});
@@ -4266,7 +4444,9 @@ function getRoutePnL(route) {
     margin:    margin,
     marginPct: totalRevenue > 0 ? (margin/totalRevenue)*100 : 0,
     truck:     getTruckFromRoute(route.name),
-    stops:     stops.length
+    stops:     stops.length,
+    laborBasis: labor.basis,
+    laborFallback: labor.fallback
   };
 }
 
@@ -5838,6 +6018,9 @@ function getPropProfitabilityCard(prop) {
   var marginPct = revPerVisit > 0 ? (margin / revPerVisit) * 100 : 0;
   var monthlyMargin = margin * visits;
   var marginColor = margin > 0 ? 'var(--green)' : margin === 0 ? 'var(--yellow)' : 'var(--red)';
+  var laborNote = _crewRatesLoaded()
+    ? 'Labor: driver + 2 helpers (avg), split equally per stop'
+    : 'Flat truck-day (labor + fuel) until daily rates are entered, split equally per stop';
 
   if (!rate) {
     return `<div class="card" style="margin-bottom:12px;border-left:3px solid var(--border2);">
@@ -5873,6 +6056,7 @@ function getPropProfitabilityCard(prop) {
         <div style="font-size:20px;font-weight:700;color:${marginColor};margin-top:2px;">$${monthlyMargin.toFixed(0)}</div>
       </div>
     </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:6px;">${laborNote}</div>
     ${propRoutes.length === 0 ? '<div style="font-size:11px;color:var(--text3);margin-top:6px;">⚠ Add to a route to see accurate cost per stop</div>' : ''}
   </div>`;
 }
@@ -6696,6 +6880,10 @@ function deleteCrew(id) {
   state.crew = state.crew.filter(c => c.id !== id);
   save();
   gsDelete('crew', id);
+  if (state.role === 'manager') {
+    delete _crewPrivateById[id];
+    try { gsDelete('crewPrivate', id); } catch (e) {}
+  }
   renderCrew(); toast('Removed');
 }
 
@@ -8817,6 +9005,7 @@ function signOut() {
   state.loggedInCrewId = null;
   if (typeof _clearPropertyPrivate === 'function') _clearPropertyPrivate(); // RATE SPLIT: strip merged rates before the save() below caches state
   state.role = 'guest';
+  if (typeof _clearCrewPrivate === 'function') _clearCrewPrivate(); // PAY SPLIT: drop crew pay before the save() below caches state
   window._crewWOSelectedCommunity = ''; // don't carry over to the next crew member on this device
   window._crewWOVillage = '';
   window._crewWOType = '';
@@ -8972,6 +9161,47 @@ function _clearPropertyPrivate() {
   state.propertyPrivate = [];
   (state.properties || []).forEach(function(p) { RATE_FIELDS.forEach(function(f) { delete p[f]; }); });
 }
+// ── PAY SPLIT: dailyRate lives in crewPrivate/{crewId} ───────────────────
+// crew/{id} is crew-readable, so pay must never be written there (or onto
+// routes / attendance). crewPrivate/{crewId} = { dailyRate, updatedAt,
+// updatedBy }. Rules are not in this repo — owner must publish a v-next
+// match (manager full, read-bot read, crew/anonymous/sync denied) before
+// rates will persist. Until any positive rate is loaded, P&L keeps the
+// old flat truck-day. Rates stay in _crewPrivateById only.
+function _ensureCrewPrivateListener() {
+  if (state.role !== 'manager' || !_db || _listeners['crewPrivate']) return;
+  var u = window._fbAuth && window._fbAuth.currentUser;
+  if (!u || u.isAnonymous || !u.emailVerified) return;
+  _listenCollection('crewPrivate');
+}
+function _clearCrewPrivate() {
+  try { if (_listeners['crewPrivate']) { _listeners['crewPrivate'](); delete _listeners['crewPrivate']; } } catch(e) {}
+  _crewPrivateById = {};
+  state.crewPrivate = [];
+  try {
+    document.querySelectorAll('[id^="ce-rate-"]').forEach(function(el) { el.value = ''; });
+    var cp = document.getElementById('cp-body');
+    if (cp) cp.innerHTML = '';
+  } catch (e2) {}
+}
+function _saveCrewDailyRate(crewId, rate) {
+  if (!crewId || state.role !== 'manager') return;
+  var n = (typeof rate === 'number') ? rate : parseFloat(rate);
+  if (!(n > 0)) {
+    delete _crewPrivateById[crewId];
+    try { gsDelete('crewPrivate', crewId); } catch (e) {}
+    return;
+  }
+  var doc = {
+    id: crewId,
+    dailyRate: n,
+    updatedAt: new Date().toISOString(),
+    updatedBy: window._managerAuthEmail || ''
+  };
+  _crewPrivateById[crewId] = doc;
+  try { gsSave('crewPrivate', doc); }
+  catch (e) { console.warn('crewPrivate save failed:', e); }
+}
 // One-time manager migration (Properties → 🔒 Move rates). Idempotent:
 // copies monthlyRate properties→propertyPrivate, VERIFIES count+sum,
 // only then deletes the field from properties. Fresh getDocs reads (not
@@ -9036,6 +9266,7 @@ function _listenCollection(name) {
       // Normalize array fields that Firestore may return as strings
       if (name === 'routes') {
         state.routes.forEach(function(r) {
+          if (r) delete r.dailyRate; // PAY SPLIT: pay never lives on a route
           if (typeof r.stops === 'string') { try { r.stops = JSON.parse(r.stops); } catch(e) { r.stops = []; } }
           if (!Array.isArray(r.stops)) r.stops = [];
           r.stops.forEach(function(s) {
@@ -9052,6 +9283,12 @@ function _listenCollection(name) {
         state.propertyPrivate = [];
         _mergePropertyRates();
       }
+      if (name === 'crewPrivate') {
+        // PAY SPLIT: same rule as propertyPrivate — memory map only.
+        _crewPrivateById = {};
+        docs.forEach(function(d) { if (d && d.id) _crewPrivateById[d.id] = d; });
+        state.crewPrivate = [];
+      }
       if (name === 'properties') {
         _mergePropertyRates(); // RATE SPLIT: overlay private rates (manager) / strip field (crew) before save()+render
         state.properties.forEach(function(p) {
@@ -9062,6 +9299,9 @@ function _listenCollection(name) {
         });
       }
       if (name === 'crew') {
+        // PAY SPLIT: if a crew doc ever carried dailyRate, drop it locally so
+        // it cannot be re-saved or cached. Server field is not rewritten here.
+        state.crew.forEach(function(c) { if (c) delete c.dailyRate; });
         // Always rebuild crew nav when crew data arrives — catches initial load
         // and live changes (e.g. manager toggling canViewRoutes)
         if (state.role === 'field' && state.loggedInCrewId) {
@@ -9082,6 +9322,7 @@ function _listenCollection(name) {
       if (name === 'attendance') {
         state.attendance = state.attendance.map(function(r) {
           if (r && r.date) r.date = normalizeAttDate(r.date);
+          if (r) delete r.dailyRate; // PAY SPLIT: pay never lives on attendance
           return r;
         });
       }
@@ -9132,6 +9373,7 @@ function _restoreManagerSessionIfNeeded(u) {
   else applyRole('manager');
   if (typeof _ensureExternalEventsListener === 'function') _ensureExternalEventsListener();
   if (typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener();
+  if (typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener();
 }
 
 // ── Initialize Firebase and start all real-time listeners ─────────────────
@@ -9271,6 +9513,7 @@ function gsLoad() {
           var SECONDARY = ['properties','workOrders','inventory','equipment','attendance','customerRequests','propEvents','wetChecks'];
           CRITICAL.forEach(function(name) { _listenCollection(name); });
           if (window._managerAuthEmail && typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener(); // RATE SPLIT: restored verified-manager session
+          if (window._managerAuthEmail && typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener(); // PAY SPLIT: not in CRITICAL/SECONDARY — manager-only lazy listener
           // Defer secondary collections by 800ms so UI loads fast
           setTimeout(function() {
             SECONDARY.forEach(function(name) { _listenCollection(name); });
@@ -9313,10 +9556,20 @@ function gsLoad() {
 // item, so there's no sign anything went wrong, but the record survives on
 // the server and every other device keeps seeing it.
 function queuePendingWrite(table, record) {
+  if (table === 'crewPrivate') {
+    // PAY SPLIT: a failed pay write stays in manager memory only. Never
+    // land dailyRate in localStorage, even as a retry payload.
+    console.warn('crewPrivate pay is kept in memory only — not queued to localStorage');
+    return;
+  }
   try {
     var queue = JSON.parse(localStorage.getItem('dl_pending_writes') || '[]');
     queue = queue.filter(function(q) { return !(q.table === table && q.id === record.id); }); // dedupe, keep latest
     var _qrec = record; if (table === 'properties') { _qrec = _stripRateFields(Object.assign({}, record)); } // RATE SPLIT: never queue a rate to localStorage
+    if (table === 'crew' || table === 'routes' || table === 'attendance') {
+      _qrec = Object.assign({}, _qrec);
+      delete _qrec.dailyRate;
+    }
     queue.push({ op: 'set', table: table, id: record.id, record: _qrec, queuedAt: new Date().toISOString() });
     localStorage.setItem('dl_pending_writes', JSON.stringify(queue));
   } catch(e) { console.warn('Could not queue pending write:', e); }
@@ -9365,6 +9618,7 @@ function gsSave(table, record, _attempt) {
   // Never store raw base64 in Firestore — photos go to Firebase Storage
   var toSave = Object.assign({}, record);
   if (table === 'properties') _stripRateFields(toSave); // RATE SPLIT: crew completion + every whole-record write-back must never (re)write monthlyRate to properties; manager rates go via _savePropertyRate()
+  if (table === 'crew' || table === 'routes' || table === 'attendance') delete toSave.dailyRate; // PAY SPLIT: pay is crewPrivate-only
   if (toSave.completedPhoto && toSave.completedPhoto.startsWith('data:')) toSave.completedPhoto = '';
   if (toSave.photo          && toSave.photo.startsWith('data:'))          toSave.photo          = '';
   if (toSave.resolvePhoto   && toSave.resolvePhoto.startsWith('data:'))   toSave.resolvePhoto   = '';
@@ -9380,6 +9634,8 @@ function gsSave(table, record, _attempt) {
       if ((_attempt||0) < 3) {
         setTimeout(function() { gsSave(table, record, (_attempt||0)+1); },
           Math.pow(2, (_attempt||0)+1) * 1000);
+      } else if (table === 'crewPrivate') {
+        console.warn('gsSave: crewPrivate write failed and was not stored locally. Publish crewPrivate rules, then save the rate again.', record.id);
       } else {
         // Exhausted retries — don't lose this write, queue it durably instead
         console.warn('gsSave: exhausted retries, queuing for later [' + table + ']:', record.id);
@@ -9428,6 +9684,7 @@ async function gsPushAll(table, records) {
         if (!r || !r.id) return;
         var safe = JSON.parse(JSON.stringify(r, function(k,v) { return v === undefined ? null : v; }));
         if (table === 'properties') _stripRateFields(safe); // RATE SPLIT (import/bulk)
+        if (table === 'crew' || table === 'routes' || table === 'attendance') delete safe.dailyRate; // PAY SPLIT
         batch.set(window._fbSDK.doc(_db, table, String(r.id)), safe);
       });
       await batch.commit();
