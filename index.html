@@ -851,6 +851,14 @@ select.inp{cursor:pointer;}
 
     <div id="ls-manager" style="width:100%;display:none;flex-direction:column;align-items:center;gap:12px;">
       <div style="font-size:11px;font-weight:700;color:#545d68;letter-spacing:2px;text-transform:uppercase;">Manager PIN</div>
+      <button id="ls-mgr-email-toggle" onclick="ls_toggleManagerEmail()" style="background:none;border:none;color:#3fb950;font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;padding:2px;">Use email instead</button>
+      <div id="ls-mgr-email-wrap" style="display:none;width:100%;max-width:300px;flex-direction:column;gap:8px;">
+        <input id="ls-mgr-email" type="email" autocomplete="username" placeholder="Manager email" class="inp" style="width:100%;box-sizing:border-box;"/>
+        <input id="ls-mgr-pass" type="password" autocomplete="current-password" placeholder="Password" class="inp" style="width:100%;box-sizing:border-box;"/>
+        <div id="ls-mgr-auth-error" style="font-size:12px;color:#f85149;text-align:center;min-height:16px;font-weight:600;"></div>
+        <button onclick="managerEmailLogin()" style="width:100%;padding:13px;background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.25);border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:14px;font-weight:700;color:#3fb950;cursor:pointer;">Sign in with email</button>
+        <div style="font-size:11px;color:#545d68;text-align:center;">— or use PIN below —</div>
+      </div>
       <div style="display:flex;gap:16px;margin:4px 0;" id="ls-pin-dots">
         <div class="pin-dot" id="lpd1"></div>
         <div class="pin-dot" id="lpd2"></div>
@@ -2038,9 +2046,20 @@ function showLoginWho() {
 // externalEvents, which the Phase 2 rules allow only for the manager
 // allowlist email. No manager email is hard-coded here.
 async function managerEmailLogin() {
-  var errEl = document.getElementById('mgr-auth-error');
-  var email = (document.getElementById('mgr-email').value || '').trim();
-  var pass = document.getElementById('mgr-pass').value || '';
+  // Splash (#ls-manager: ls-mgr-*) and drawer overlay (#login-manager-pin:
+  // mgr-*) share this handler. IDs are unique per screen (no duplicates);
+  // pick the visible form with an email entered, else any form with one.
+  var _forms = [
+    { email: document.getElementById('mgr-email'), pass: document.getElementById('mgr-pass'), err: document.getElementById('mgr-auth-error') },
+    { email: document.getElementById('ls-mgr-email'), pass: document.getElementById('ls-mgr-pass'), err: document.getElementById('ls-mgr-auth-error') }
+  ].filter(function(f) { return f.email && f.pass; });
+  function _visible(f) { return !!(f.email && f.email.offsetParent !== null); }
+  var _form = _forms.find(function(f) { return _visible(f) && (f.email.value || '').trim(); })
+    || _forms.find(function(f) { return (f.email.value || '').trim(); })
+    || _forms.find(_visible) || _forms[0] || {};
+  var errEl = _form.err || null;
+  var email = ((_form.email && _form.email.value) || '').trim();
+  var pass = (_form.pass && _form.pass.value) || '';
   if (!email || !pass) { if (errEl) errEl.textContent = 'Enter email and password.'; return; }
   try {
     if (!window._fbAuth || !window._fbAuthMod) await gsLoad();
@@ -2054,7 +2073,9 @@ async function managerEmailLogin() {
     }
     window._managerAuthEmail = cred.user && cred.user.email;
     closeOverlay('login-overlay');
-    applyRole('manager');
+    var _lsScreen = document.getElementById('login-screen');
+    if (_lsScreen && _lsScreen.style.display !== 'none') dismissLoginScreen('manager');
+    else applyRole('manager');
     if (typeof _ensureExternalEventsListener === 'function') _ensureExternalEventsListener();
   } catch (e) {
     console.warn('Manager email sign-in failed:', e && e.message);
@@ -8798,6 +8819,19 @@ function ls_showWho() {
   ls_updateDots('lpd', 0); ls_updateDots('lcd', 0);
   var pe = document.getElementById('ls-pin-error');   if (pe) pe.textContent = '';
   var ce = document.getElementById('ls-crew-error');  if (ce) ce.textContent = '';
+  var ew = document.getElementById('ls-mgr-email-wrap');   if (ew) ew.style.display = 'none';
+  var et = document.getElementById('ls-mgr-email-toggle'); if (et) et.textContent = 'Use email instead';
+  var ee = document.getElementById('ls-mgr-auth-error');   if (ee) ee.textContent = '';
+}
+
+function ls_toggleManagerEmail() {
+  var wrap = document.getElementById('ls-mgr-email-wrap');
+  var toggle = document.getElementById('ls-mgr-email-toggle');
+  if (!wrap) return;
+  var open = wrap.style.display !== 'flex';
+  wrap.style.display = open ? 'flex' : 'none';
+  if (toggle) toggle.textContent = open ? 'Use PIN instead' : 'Use email instead';
+  if (open) { var em = document.getElementById('ls-mgr-email'); if (em) em.focus(); }
 }
 
 function ls_showManager() {
