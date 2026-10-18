@@ -2030,12 +2030,49 @@ function showLoginWho() {
   document.getElementById('pin-error').textContent = '';
 }
 
+// ── Manager email/password sign-in (Phase 1, transitional) ──────────────
+// Real Firebase Auth identity for the manager, alongside the existing PIN
+// (PIN remains only as a transitional device lock / fallback — Firestore
+// rules, not this UI check, are the security boundary). On success this
+// sets role=manager; _ensureExternalEventsListener() then subscribes to
+// externalEvents, which the Phase 2 rules allow only for the manager
+// allowlist email. No manager email is hard-coded here.
+async function managerEmailLogin() {
+  var errEl = document.getElementById('mgr-auth-error');
+  var email = (document.getElementById('mgr-email').value || '').trim();
+  var pass = document.getElementById('mgr-pass').value || '';
+  if (!email || !pass) { if (errEl) errEl.textContent = 'Enter email and password.'; return; }
+  try {
+    if (!window._fbAuth || !window._fbAuthMod) await gsLoad();
+    if (!window._fbAuth) throw new Error('Firebase not ready — check connection and try again.');
+    var cred = await window._fbAuthMod.signInWithEmailAndPassword(window._fbAuth, email, pass);
+    if (cred.user && !cred.user.emailVerified) {
+      // Phase 2 rules require a verified manager email; send the link once per attempt.
+      try { await window._fbAuthMod.sendEmailVerification(cred.user); } catch (e2) {}
+      if (errEl) errEl.textContent = 'Verify your email (link sent), then sign in again.';
+      return;
+    }
+    window._managerAuthEmail = cred.user && cred.user.email;
+    closeOverlay('login-overlay');
+    applyRole('manager');
+    if (typeof _ensureExternalEventsListener === 'function') _ensureExternalEventsListener();
+  } catch (e) {
+    console.warn('Manager email sign-in failed:', e && e.message);
+    if (errEl) errEl.textContent = '✕ Sign-in failed — check email/password.';
+  }
+}
+
 function startManagerLogin() {
   document.getElementById('login-who').style.display = 'none';
   document.getElementById('login-manager-pin').style.display = 'flex';
   // render numpad properly
   document.getElementById('login-manager-pin').innerHTML = `
-    <div style="font-size:13px;color:var(--text3);text-align:center;margin-bottom:4px;">Enter Manager PIN</div>
+    <div style="font-size:13px;color:var(--text3);text-align:center;margin-bottom:4px;">Manager sign-in</div>
+    <input id="mgr-email" type="email" autocomplete="username" placeholder="Manager email" class="inp" style="margin-bottom:8px;"/>
+    <input id="mgr-pass" type="password" autocomplete="current-password" placeholder="Password" class="inp" style="margin-bottom:8px;"/>
+    <div id="mgr-auth-error" style="font-size:12px;color:var(--red);text-align:center;min-height:16px;margin-bottom:4px;"></div>
+    <button class="btn btn-green" style="width:100%;margin-bottom:14px;" onclick="managerEmailLogin()">Sign in as Manager</button>
+    <div style="font-size:13px;color:var(--text3);text-align:center;margin-bottom:4px;">— or enter Manager PIN (transition) —</div>
     <div style="display:flex;justify-content:center;gap:12px;margin-bottom:4px;" id="pin-dots">
       <div class="pin-dot" id="pd1"></div><div class="pin-dot" id="pd2"></div>
       <div class="pin-dot" id="pd3"></div><div class="pin-dot" id="pd4"></div>
@@ -9031,6 +9068,9 @@ function _renderActiveTab() {
 // on any switch to crew/guest. Firestore rules must still enforce this —
 // hiding in the UI is not access control (see PATCH-SUMMARY).
 function _ensureExternalEventsListener() {
+  // Phase 2 rules allow this read only for the manager allowlist email
+  // (or the sync identity); PIN-only sessions will soft-fail once those
+  // rules deploy — manager email sign-in above is the supported path.
   if (state.role !== 'manager' || !_db || _listeners['externalEvents']) return;
   _listenCollection('externalEvents');
 }
@@ -9165,9 +9205,18 @@ function gsLoad() {
       // security rules can check request.auth != null.
       // Collections start AFTER auth so all reads are authenticated.
       var fbAuth = authMod.getAuth(fbApp);
-      authMod.signInAnonymously(fbAuth)
+      window._fbAuth = fbAuth; window._fbAuthMod = authMod;
+      authMod.onAuthStateChanged(fbAuth, function(u) {
+        if (u && !u.isAnonymous) window._managerAuthEmail = u.email;
+      });
+      // Prefer an already-restored manager (email/password) session;
+      // anonymous sign-in is the transitional fallback for crew/portal.
+      var _initialAuth = (fbAuth.currentUser && !fbAuth.currentUser.isAnonymous)
+        ? Promise.resolve(fbAuth.currentUser)
+        : authMod.signInAnonymously(fbAuth);
+      _initialAuth
         .then(function() {
-          console.log('Firebase: signed in anonymously');
+          console.log('Firebase: auth ready');
           window._authReady = true;
           loadManagerPinHash();
           flushPendingWrites();
