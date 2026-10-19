@@ -1692,7 +1692,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-18-v62'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-19-v63'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -1718,7 +1718,7 @@ let state = {
   attendance: [],
   customerRequests: [],
   propEvents: [],
-  externalEvents: [], // iCloud (manager-only, display-only; populated lazily in manager calendar)
+  externalEvents: [], // iCloud (manager-only; populated lazily in manager calendar). done/doneAt are the only fields the app writes.
   propertyPrivate: [], // RATE SPLIT: always kept empty in state/cache — rates live only in _propPrivateById (manager memory)
   crewPrivate: [], // PAY SPLIT: always kept empty in state/cache — daily rates live only in _crewPrivateById (manager memory)
   wetChecks: [],
@@ -9098,14 +9098,17 @@ function _renderActiveTab() {
     attendance: renderAttendance,
     reports:    renderReports,
     schedule:   renderSchedule,
+    calendar:   renderCalendar, // so externalEvents snapshots re-render the checklist from doc.done
   };
   try { if (renders[tab]) renders[tab](); } catch(e) { console.warn('render error:', e); }
   if (tab !== 'dashboard') try { renderDashboard(); } catch(e) {}
 }
 
-// ── iCloud externalEvents (manager-only, display-only) ───────────────────
+// ── iCloud externalEvents (manager-only) ─────────────────────────────────
 // Deliberately NOT in the CRITICAL/SECONDARY gsLoad lists: crew devices
 // never subscribe to (or download) the owner's personal iPhone events.
+// The manager calendar can mark a card done; that write is only done/doneAt
+// (see extToggleDone). Sync-owned fields are never rewritten from here.
 // Subscribed lazily when the manager opens Calendar; cleared+unsubscribed
 // on any switch to crew/guest. Firestore rules must still enforce this —
 // hiding in the UI is not access control (see PATCH-SUMMARY).
@@ -12959,6 +12962,56 @@ function _isoFromDisplay(str) {
   return isNaN(d.getTime()) ? '' : _pcIso(d);
 }
 
+// Completed iPhone cards read doc.done (boolean). doneAt is an ISO string when
+// completed and '' when cleared — same empty-string clear as contactedAt.
+function _extIsDone(e) { return !!(e && e.done === true); }
+
+function _extEventCard(it) {
+  // Crew never receives these items (_calItemsForDate). Still refuse the control
+  // if role is not manager so a stale card cannot offer the write.
+  if (state.role !== 'manager') {
+    return '<div class="card-flat" style="margin-bottom:6px;border-left:3px solid var(--yellow);opacity:.92;">'
+      + '<div style="font-size:13px;font-weight:700;">' + it.icon + ' ' + _pcEsc(it.title) + '</div>'
+      + (it.sub ? '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _pcEsc(it.sub) + '</div>' : '')
+    + '</div>';
+  }
+  var done = !!it.done;
+  var label = done ? 'Mark incomplete' : 'Mark complete';
+  return '<div class="card-flat" style="margin-bottom:6px;border-left:3px solid var(--yellow);' + (done ? 'opacity:.5;' : 'opacity:.92;') + '">'
+    + '<div style="display:flex;align-items:flex-start;gap:8px;">'
+      + '<button type="button" data-ext-id="' + _pcEsc(it.id) + '" onclick="extToggleDone(this, event)" aria-label="' + label + '" aria-pressed="' + (done ? 'true' : 'false') + '" '
+        + 'style="flex-shrink:0;width:44px;height:44px;margin:-2px 0 -2px -4px;padding:0;border-radius:10px;cursor:pointer;font-size:22px;line-height:44px;text-align:center;'
+        + 'border:1px solid ' + (done ? 'rgba(63,185,80,.55)' : 'rgba(210,153,34,.5)') + ';'
+        + 'background:' + (done ? 'rgba(63,185,80,.16)' : 'rgba(210,153,34,.14)') + ';'
+        + 'color:' + (done ? 'var(--green)' : 'var(--yellow)') + ';">' + (done ? '☑' : '☐') + '</button>'
+      + '<div style="min-width:0;flex:1;padding-top:2px;">'
+        + '<div style="font-size:13px;font-weight:700;' + (done ? 'text-decoration:line-through;color:var(--text3);' : '') + '">' + it.icon + ' ' + _pcEsc(it.title) + '</div>'
+        + (it.sub ? '<div style="font-size:11px;color:var(--text3);margin-top:2px;' + (done ? 'text-decoration:line-through;' : '') + '">' + _pcEsc(it.sub) + '</div>' : '')
+      + '</div>'
+    + '</div></div>';
+}
+
+// Toggle done on an iCloud externalEvents doc. Payload is ONLY id + done + doneAt.
+// gsSave writes with setDoc(..., {merge:true}), so title/date/source and the rest
+// of the sync-owned doc are left as they are on the server.
+function extToggleDone(btn, domEv) {
+  if (domEv && domEv.stopPropagation) domEv.stopPropagation();
+  if (domEv && domEv.preventDefault) domEv.preventDefault();
+  if (state.role !== 'manager' || !window._managerSessionUnlocked) return;
+  var id = btn && btn.getAttribute ? btn.getAttribute('data-ext-id') : '';
+  if (!id) return;
+  var ev = (state.externalEvents || []).find(function(e) {
+    return e && String(e.id) === String(id) && e.source === 'icloud';
+  });
+  if (!ev) return;
+  var next = !_extIsDone(ev);
+  ev.done = next;
+  ev.doneAt = next ? new Date().toISOString() : '';
+  gsSave('externalEvents', { id: ev.id, done: next, doneAt: ev.doneAt });
+  save();
+  try { if (state.currentTab === 'calendar') renderCalendar(); } catch (err) {}
+}
+
 function _calItemsForDate(iso) {
   var items = [];
   var today = _pcToday();
@@ -12997,7 +13050,9 @@ function _calItemsForDate(iso) {
     (state.externalEvents || []).forEach(function(e) {
       if (!e || e.source !== 'icloud' || e.date !== iso) return;
       // Single start-day display in this preview (multi-day spanning: see PATCH-SUMMARY)
-      items.push({ kind:'external', color:'yellow', icon:'📅', title:e.title || '(no title)',
+      // done comes from the externalEvents doc so a listener re-render keeps the check.
+      items.push({ kind:'external', color:'yellow', icon:'📅', id:e.id, done:_extIsDone(e),
+        title:e.title || '(no title)',
         sub:'iPhone · ' + (e.calendar || 'iCloud') + (e.allDay ? ' · All day' : (e.time ? ' · ' + _pcFmtTime(e.time) : '')) + (e.location ? ' · ' + e.location : ''),
         onclick:'' });
     });
@@ -13075,12 +13130,7 @@ function renderCalendar() {
       + '<button class="btn-sm btn-green" onclick="calAddEvent()">+ Add Event</button>'
     + '</div>'
     + (selItems.length ? selItems.map(function(it) {
-        if (it.kind === 'external') { // 📅 iPhone: view-only — no openEventSheet, no edit/delete
-          return '<div class="card-flat" style="margin-bottom:6px;border-left:3px solid var(--yellow);opacity:.92;">'
-            + '<div style="font-size:13px;font-weight:700;">' + it.icon + ' ' + _pcEsc(it.title) + '</div>'
-            + (it.sub ? '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _pcEsc(it.sub) + '</div>' : '')
-          + '</div>';
-        }
+        if (it.kind === 'external') return _extEventCard(it); // 📅 iPhone: checklist only — no openEventSheet, no edit/delete
         return '<div class="card-flat" style="margin-bottom:6px;cursor:pointer;border-left:3px solid var(--' + it.color + ');" onclick="' + it.onclick + '">'
           + '<div style="font-size:13px;font-weight:700;">' + it.icon + ' ' + _pcEsc(it.title) + '</div>'
           + (it.sub ? '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _pcEsc(it.sub) + '</div>' : '')
