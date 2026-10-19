@@ -1692,7 +1692,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-19-v63'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-19-v64'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -1718,7 +1718,7 @@ let state = {
   attendance: [],
   customerRequests: [],
   propEvents: [],
-  externalEvents: [], // iCloud (manager-only; populated lazily in manager calendar). done/doneAt are the only fields the app writes.
+  externalEvents: [], // iCloud (manager-only; populated lazily in manager calendar). App writes are done/doneAt and the movedTo/movedAt override — never the synced date.
   propertyPrivate: [], // RATE SPLIT: always kept empty in state/cache — rates live only in _propPrivateById (manager memory)
   crewPrivate: [], // PAY SPLIT: always kept empty in state/cache — daily rates live only in _crewPrivateById (manager memory)
   wetChecks: [],
@@ -9107,8 +9107,9 @@ function _renderActiveTab() {
 // ── iCloud externalEvents (manager-only) ─────────────────────────────────
 // Deliberately NOT in the CRITICAL/SECONDARY gsLoad lists: crew devices
 // never subscribe to (or download) the owner's personal iPhone events.
-// The manager calendar can mark a card done; that write is only done/doneAt
-// (see extToggleDone). Sync-owned fields are never rewritten from here.
+// The manager calendar can mark a card done (extToggleDone: done/doneAt only)
+// or move which day it shows on (movedTo/movedAt only). The synced date is
+// never rewritten from here — iCloud replaces that field on each sync.
 // Subscribed lazily when the manager opens Calendar; cleared+unsubscribed
 // on any switch to crew/guest. Firestore rules must still enforce this —
 // hiding in the UI is not access control (see PATCH-SUMMARY).
@@ -12966,8 +12967,38 @@ function _isoFromDisplay(str) {
 // completed and '' when cleared — same empty-string clear as contactedAt.
 function _extIsDone(e) { return !!(e && e.done === true); }
 
+// Strict YYYY-MM-DD. Date-only ISO strings must round-trip through parseLocalDate
+// so a value like 2026-02-31 (which Date rolls forward) is not treated as real.
+function _isoDateOk(s) {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  return _pcIso(parseLocalDate(s)) === s;
+}
+
+// iCloud rewrites `date` every sync, so a manager move is stored separately.
+// Everywhere an iPhone item is matched or shown, the day is movedTo || date.
+function _extEffectiveDate(e) {
+  if (!e) return '';
+  if (_isoDateOk(e.movedTo)) return e.movedTo;
+  return e.date || '';
+}
+
+// <input type="date"> wants YYYY-MM-DD. formatDateForInput (the route reschedule
+// helper) parses other display formats; a date-only ISO string is already valid
+// and must not go through new Date(str), which reads it as UTC.
+function _dateInputValue(iso) {
+  if (_isoDateOk(iso)) return iso;
+  return formatDateForInput(iso || '');
+}
+
+function _calMoveBtn(kind, id) {
+  if (state.role !== 'manager') return '';
+  return '<button type="button" class="btn-sm" data-move-kind="' + _pcEsc(kind) + '" data-move-id="' + _pcEsc(id) + '" '
+    + 'onclick="openCalItemMoveBtn(this, event)" aria-label="Move to another day" '
+    + 'style="flex-shrink:0;background:rgba(96,165,250,.12);color:var(--blue);border:1px solid rgba(96,165,250,.3);">Move</button>';
+}
+
 function _extEventCard(it) {
-  // Crew never receives these items (_calItemsForDate). Still refuse the control
+  // Crew never receives these items (_calItemsForDate). Still refuse the controls
   // if role is not manager so a stale card cannot offer the write.
   if (state.role !== 'manager') {
     return '<div class="card-flat" style="margin-bottom:6px;border-left:3px solid var(--yellow);opacity:.92;">'
@@ -12977,23 +13008,46 @@ function _extEventCard(it) {
   }
   var done = !!it.done;
   var label = done ? 'Mark incomplete' : 'Mark complete';
+  var movedNote = it.movedFrom
+    ? '<div style="font-size:11px;color:var(--text3);margin-top:3px;">moved from ' + _pcEsc(_pcFmt(it.movedFrom)) + '</div>'
+    : '';
   return '<div class="card-flat" style="margin-bottom:6px;border-left:3px solid var(--yellow);' + (done ? 'opacity:.5;' : 'opacity:.92;') + '">'
     + '<div style="display:flex;align-items:flex-start;gap:8px;">'
-      + '<button type="button" data-ext-id="' + _pcEsc(it.id) + '" onclick="extToggleDone(this, event)" aria-label="' + label + '" aria-pressed="' + (done ? 'true' : 'false') + '" '
-        + 'style="flex-shrink:0;width:44px;height:44px;margin:-2px 0 -2px -4px;padding:0;border-radius:10px;cursor:pointer;font-size:22px;line-height:44px;text-align:center;'
-        + 'border:1px solid ' + (done ? 'rgba(63,185,80,.55)' : 'rgba(210,153,34,.5)') + ';'
-        + 'background:' + (done ? 'rgba(63,185,80,.16)' : 'rgba(210,153,34,.14)') + ';'
-        + 'color:' + (done ? 'var(--green)' : 'var(--yellow)') + ';">' + (done ? '☑' : '☐') + '</button>'
+      + '<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">'
+        + '<button type="button" data-ext-id="' + _pcEsc(it.id) + '" onclick="extToggleDone(this, event)" aria-label="' + label + '" aria-pressed="' + (done ? 'true' : 'false') + '" '
+          + 'style="flex-shrink:0;width:44px;height:44px;margin:-2px 0 -2px -4px;padding:0;border-radius:10px;cursor:pointer;font-size:22px;line-height:44px;text-align:center;'
+          + 'border:1px solid ' + (done ? 'rgba(63,185,80,.55)' : 'rgba(210,153,34,.5)') + ';'
+          + 'background:' + (done ? 'rgba(63,185,80,.16)' : 'rgba(210,153,34,.14)') + ';'
+          + 'color:' + (done ? 'var(--green)' : 'var(--yellow)') + ';">' + (done ? '☑' : '☐') + '</button>'
+        + _calMoveBtn('external', it.id)
+      + '</div>'
       + '<div style="min-width:0;flex:1;padding-top:2px;">'
         + '<div style="font-size:13px;font-weight:700;' + (done ? 'text-decoration:line-through;color:var(--text3);' : '') + '">' + it.icon + ' ' + _pcEsc(it.title) + '</div>'
         + (it.sub ? '<div style="font-size:11px;color:var(--text3);margin-top:2px;' + (done ? 'text-decoration:line-through;' : '') + '">' + _pcEsc(it.sub) + '</div>' : '')
+        + movedNote
       + '</div>'
     + '</div></div>';
 }
 
+// App-owned event cards. Crew keeps the original tap-to-edit card. Managers
+// also get Move, which stops at the button so the card click still opens the editor.
+function _propEventDayCard(it) {
+  var title = '<div style="font-size:13px;font-weight:700;">' + it.icon + ' ' + _pcEsc(it.title) + '</div>';
+  var sub = it.sub ? '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _pcEsc(it.sub) + '</div>' : '';
+  var shell = 'margin-bottom:6px;cursor:pointer;border-left:3px solid var(--' + it.color + ');';
+  if (state.role !== 'manager') {
+    return '<div class="card-flat" style="' + shell + '" onclick="' + it.onclick + '">' + title + sub + '</div>';
+  }
+  return '<div class="card-flat" style="' + shell + '" onclick="' + it.onclick + '">'
+    + '<div style="display:flex;align-items:flex-start;gap:8px;">'
+      + '<div style="min-width:0;flex:1;">' + title + sub + '</div>'
+      + _calMoveBtn('event', it.id)
+    + '</div></div>';
+}
+
 // Toggle done on an iCloud externalEvents doc. Payload is ONLY id + done + doneAt.
-// gsSave writes with setDoc(..., {merge:true}), so title/date/source and the rest
-// of the sync-owned doc are left as they are on the server.
+// gsSave writes with setDoc(..., {merge:true}), so title/date/source/movedTo and
+// the rest of the sync-owned doc are left as they are on the server.
 function extToggleDone(btn, domEv) {
   if (domEv && domEv.stopPropagation) domEv.stopPropagation();
   if (domEv && domEv.preventDefault) domEv.preventDefault();
@@ -13010,6 +13064,132 @@ function extToggleDone(btn, domEv) {
   gsSave('externalEvents', { id: ev.id, done: next, doneAt: ev.doneAt });
   save();
   try { if (state.currentTab === 'calendar') renderCalendar(); } catch (err) {}
+}
+
+function _calMoveTarget(kind, id) {
+  if (kind === 'external') {
+    return (state.externalEvents || []).find(function(e) {
+      return e && String(e.id) === String(id) && e.source === 'icloud';
+    }) || null;
+  }
+  if (kind === 'event') {
+    return (state.propEvents || []).find(function(e) {
+      return e && String(e.id) === String(id);
+    }) || null;
+  }
+  return null;
+}
+
+// Manager-only, same gate as the iPhone tick (role + this page's unlock).
+function openCalItemMoveBtn(btn, domEv) {
+  if (domEv && domEv.stopPropagation) domEv.stopPropagation();
+  if (domEv && domEv.preventDefault) domEv.preventDefault();
+  if (state.role !== 'manager' || !window._managerSessionUnlocked) return;
+  var kind = btn && btn.getAttribute ? btn.getAttribute('data-move-kind') : '';
+  var id = btn && btn.getAttribute ? btn.getAttribute('data-move-id') : '';
+  if (kind !== 'external' && kind !== 'event') return;
+  if (!id) return;
+  openCalItemMove(kind, id);
+}
+
+function openCalItemMove(kind, id) {
+  if (state.role !== 'manager' || !window._managerSessionUnlocked) return;
+  var ev = _calMoveTarget(kind, id);
+  if (!ev) return;
+  var ex = document.getElementById('cal-move-sheet'); if (ex) ex.remove();
+  var current = kind === 'external' ? _extEffectiveDate(ev) : (ev.date || '');
+  var overrideOn = kind === 'external' && _isoDateOk(ev.movedTo);
+  var sheet = document.createElement('div');
+  sheet.id = 'cal-move-sheet';
+  sheet.className = 'overlay open';
+  sheet.innerHTML = '<div class="sheet">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+      + '<div class="sheet-title" style="margin-bottom:0;">Move</div>'
+      + '<button type="button" onclick="document.getElementById(\'cal-move-sheet\').remove()" style="background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;">✕</button>'
+    + '</div>'
+    + '<div style="font-size:13px;color:var(--text3);margin-bottom:12px;"><strong style="color:var(--text);">' + _pcEsc(ev.title || '(no title)') + '</strong></div>'
+    + '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;">' + (kind === 'external'
+        ? 'Shows on the new day. The iCloud date is left alone, so sync will not put it back.'
+        : 'Moves this event to the new day and re-arms its reminder.') + '</div>'
+    + (overrideOn && _isoDateOk(ev.date) ? '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;">Currently moved from ' + _pcEsc(_pcFmt(ev.date)) + '.</div>' : '')
+    + '<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">NEW DATE</div>'
+    + '<input type="date" class="inp" id="cal-move-date" value="' + _dateInputValue(current) + '" style="color-scheme:dark;margin-bottom:14px;"/>'
+    + '<button type="button" class="btn btn-green" style="width:100%;" onclick="saveCalItemMove()">Move</button>'
+    + (overrideOn ? '<button type="button" class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="clearCalItemMove()">Back to original date</button>' : '')
+    + '<button type="button" class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="document.getElementById(\'cal-move-sheet\').remove()">Cancel</button>'
+  + '</div>';
+  window._calMove = { kind: kind, id: String(ev.id) };
+  document.body.appendChild(sheet);
+}
+
+function _closeCalMoveSheet() {
+  var sh = document.getElementById('cal-move-sheet'); if (sh) sh.remove();
+  window._calMove = null;
+}
+
+function _readCalMoveDate() {
+  var el = document.getElementById('cal-move-date');
+  var raw = el ? String(el.value || '').trim() : '';
+  if (!_isoDateOk(raw)) return '';
+  var d = parseLocalDate(raw);
+  return _pcIso(d) === raw ? raw : '';
+}
+
+function saveCalItemMove() {
+  if (state.role !== 'manager' || !window._managerSessionUnlocked) return;
+  var pending = window._calMove;
+  if (!pending) return;
+  var iso = _readCalMoveDate();
+  if (!iso) { toast('Pick a date'); return; }
+  var ev = _calMoveTarget(pending.kind, pending.id);
+  if (!ev) { _closeCalMoveSheet(); return; }
+  if (pending.kind === 'external') {
+    if (iso === (ev.date || '')) {
+      if (_isoDateOk(ev.movedTo)) { clearCalItemMove(); return; }
+      toast('Already on that day');
+      return;
+    }
+    if (iso === _extEffectiveDate(ev)) { toast('Already on that day'); return; }
+    var movedAt = new Date().toISOString();
+    ev.movedTo = iso;
+    ev.movedAt = movedAt;
+    // Payload is ONLY these fields. date, done, and doneAt are not written.
+    gsSave('externalEvents', { id: ev.id, movedTo: iso, movedAt: movedAt });
+    save();
+    _closeCalMoveSheet();
+    try { if (state.currentTab === 'calendar') renderCalendar(); } catch (err) {}
+    toast('✓ Moved to ' + _pcFmt(iso));
+    return;
+  }
+  if (pending.kind === 'event') {
+    if ((ev.date || '') === iso) { toast('Already on that day'); return; }
+    ev.date = iso;
+    ev.contactedAt = '';
+    gsSave('propEvents', { id: ev.id, date: iso, contactedAt: '' });
+    save();
+    _closeCalMoveSheet();
+    _evRefresh(ev.propId);
+    toast('✓ Moved to ' + _pcFmt(iso));
+  }
+}
+
+// Clear an iPhone override. movedTo '' falls back to the synced date.
+// done and doneAt are left exactly as they are.
+function clearCalItemMove() {
+  if (state.role !== 'manager' || !window._managerSessionUnlocked) return;
+  var pending = window._calMove;
+  if (!pending || pending.kind !== 'external') return;
+  var ev = _calMoveTarget('external', pending.id);
+  if (!ev) { _closeCalMoveSheet(); return; }
+  var movedAt = new Date().toISOString();
+  var orig = ev.date || '';
+  ev.movedTo = '';
+  ev.movedAt = movedAt;
+  gsSave('externalEvents', { id: ev.id, movedTo: '', movedAt: movedAt });
+  save();
+  _closeCalMoveSheet();
+  try { if (state.currentTab === 'calendar') renderCalendar(); } catch (err) {}
+  toast('Back on ' + (_isoDateOk(orig) ? _pcFmt(orig) : 'its original day'));
 }
 
 function _calItemsForDate(iso) {
@@ -13029,10 +13209,10 @@ function _calItemsForDate(iso) {
   });
 
   (state.propEvents || []).forEach(function(e) {
-    if (e.date !== iso) return;
+    if (!e || e.date !== iso) return;
     var prop = (state.properties || []).find(function(p){ return p.id === e.propId; });
     var t = _evType(e.type);
-    items.push({ kind:'event', color: e.status === 'done' ? 'green' : 'orange', icon:t.icon,
+    items.push({ kind:'event', id:e.id, color: e.status === 'done' ? 'green' : 'orange', icon:t.icon,
       title:(e.status === 'done' ? '✓ ' : '') + e.title,
       sub:(prop ? prop.name : 'Property') + (e.time ? ' · ' + _pcFmtTime(e.time) : ''),
       onclick:"openEventSheet('" + e.propId + "','" + e.id + "')" });
@@ -13048,10 +13228,12 @@ function _calItemsForDate(iso) {
 
   if (state.role === 'manager') {
     (state.externalEvents || []).forEach(function(e) {
-      if (!e || e.source !== 'icloud' || e.date !== iso) return;
+      // Effective day is the manager override when set; the synced date is not edited.
+      if (!e || e.source !== 'icloud' || _extEffectiveDate(e) !== iso) return;
       // Single start-day display in this preview (multi-day spanning: see PATCH-SUMMARY)
       // done comes from the externalEvents doc so a listener re-render keeps the check.
-      items.push({ kind:'external', color:'yellow', icon:'📅', id:e.id, done:_extIsDone(e),
+      var movedFrom = (_isoDateOk(e.movedTo) && _isoDateOk(e.date) && e.movedTo !== e.date) ? e.date : '';
+      items.push({ kind:'external', color:'yellow', icon:'📅', id:e.id, done:_extIsDone(e), movedFrom:movedFrom,
         title:e.title || '(no title)',
         sub:'iPhone · ' + (e.calendar || 'iCloud') + (e.allDay ? ' · All day' : (e.time ? ' · ' + _pcFmtTime(e.time) : '')) + (e.location ? ' · ' + e.location : ''),
         onclick:'' });
@@ -13130,7 +13312,8 @@ function renderCalendar() {
       + '<button class="btn-sm btn-green" onclick="calAddEvent()">+ Add Event</button>'
     + '</div>'
     + (selItems.length ? selItems.map(function(it) {
-        if (it.kind === 'external') return _extEventCard(it); // 📅 iPhone: checklist only — no openEventSheet, no edit/delete
+        if (it.kind === 'external') return _extEventCard(it); // 📅 iPhone: tick + Move only — no openEventSheet, no edit/delete
+        if (it.kind === 'event') return _propEventDayCard(it); // app event: tap to edit, manager Move beside it
         return '<div class="card-flat" style="margin-bottom:6px;cursor:pointer;border-left:3px solid var(--' + it.color + ');" onclick="' + it.onclick + '">'
           + '<div style="font-size:13px;font-weight:700;">' + it.icon + ' ' + _pcEsc(it.title) + '</div>'
           + (it.sub ? '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _pcEsc(it.sub) + '</div>' : '')
