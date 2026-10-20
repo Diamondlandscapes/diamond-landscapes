@@ -6454,8 +6454,12 @@ function openEditFlag(flagId) {
   inner.className = 'sheet';
   sheet.appendChild(inner);
 
-  var SERVICES = ['Mow & Edge','Blow & Clean','Trim Shrubs','Weed Control','Irrigation Check','Mulch','Tree Work','Pest Control','General','Other'];
+  var editServices = FLAG_SERVICES.slice();
+  if (f.service && editServices.indexOf(f.service) === -1) editServices.push(f.service);
   var PRIORITIES = ['Low','Medium','High','Urgent'];
+  function escOpt(s) {
+    return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
 
   inner.innerHTML =
     '<div class="sheet-hdr">' +
@@ -6466,7 +6470,7 @@ function openEditFlag(flagId) {
     '<div style="font-size:14px;font-weight:700;margin-bottom:12px;">' + (prop ? prop.name : 'Unknown') + '</div>' +
     '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">SERVICE</div>' +
     '<select id="ef-service" class="inp" style="margin-bottom:10px;">' +
-      SERVICES.map(function(s) { return '<option value="'+s+'"'+(f.service===s?' selected':'')+'>'+t(s)+'</option>'; }).join('') +
+      editServices.map(function(s) { return '<option value="'+escOpt(s)+'"'+(f.service===s?' selected':'')+'>'+escOpt(t(s))+'</option>'; }).join('') +
     '</select>' +
     '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">PRIORITY</div>' +
     '<select id="ef-priority" class="inp" style="margin-bottom:10px;">' +
