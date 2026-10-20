@@ -32,7 +32,7 @@ button,a{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
   --border:#2d333b; --border2:#373e47;
   --green:#3fb950; --green2:#238636; --green3:#196127;
   --lime:#a3e635; --yellow:#e3b341; --orange:#f0883e;
-  --red:#f85149; --blue:#58a6ff; --teal:#39d353;
+  --red:#f85149; --blue:#58a6ff; --teal:#39d353; --purple:#c084fc;
   --text:#e6edf3; --text2:#adbac7; --text3:#545d68; --text4:#2d333b;
   /* Premium accent */
   --accent:#3fb950; --accent2:#238636;
@@ -822,6 +822,8 @@ select.inp{cursor:pointer;}
   html, body { height:auto !important; overflow:visible !important; background:#fff !important; }
   body.wc-printing > *:not(#wc-report-overlay) { display:none !important; }
   body.wc-printing #wc-report-overlay { display:block !important; position:static !important; overflow:visible !important; height:auto !important; }
+  body.tx-printing > *:not(#tx-report-overlay) { display:none !important; }
+  body.tx-printing #tx-report-overlay { display:block !important; position:static !important; overflow:visible !important; height:auto !important; }
   .no-print { display:none !important; }
 }
 </style>
@@ -1692,7 +1694,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-19-v64'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-20-v65'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -1722,6 +1724,7 @@ let state = {
   propertyPrivate: [], // RATE SPLIT: always kept empty in state/cache — rates live only in _propPrivateById (manager memory)
   crewPrivate: [], // PAY SPLIT: always kept empty in state/cache — daily rates live only in _crewPrivateById (manager memory)
   wetChecks: [],
+  treatments: [], // pest & fertilization service reports. Collection: treatments.
   routeWeeks: {},
   eqCategory: 'All',
   routeDay: 'Monday',
@@ -1803,6 +1806,7 @@ async function load() {
     }
   } catch(e) { console.warn('load() failed:', e); }
   if(!Array.isArray(state.attendance)) state.attendance=[];
+  if(!Array.isArray(state.treatments)) state.treatments=[];
   // PAY SPLIT: a previous cache must never revive crew pay. Rates live only
   // in _crewPrivateById after a verified manager listener, never in IndexedDB.
   state.crewPrivate = [];
@@ -5882,6 +5886,7 @@ function openPropDetail(id) {
 
     ${state.role === 'manager' ? renderPropEventsCard(id) : ''}
     ${renderWetCheckCard(id)}
+    ${renderTreatmentCard(id)}
 
     <div class="card" style="margin-bottom:12px;">
       <div class="sec-title">Service History</div>
@@ -9540,7 +9545,7 @@ function gsLoad() {
 
           // Start live listeners — critical first, then defer secondary
           var CRITICAL = ['crew','routes','flags'];
-          var SECONDARY = ['properties','workOrders','inventory','equipment','attendance','customerRequests','propEvents','wetChecks'];
+          var SECONDARY = ['properties','workOrders','inventory','equipment','attendance','customerRequests','propEvents','wetChecks','treatments'];
           CRITICAL.forEach(function(name) { _listenCollection(name); });
           // Private rate/pay listeners start from managerEmailLogin after
           // password sign-in on this load. A restored session is not one.
@@ -9558,7 +9563,7 @@ function gsLoad() {
           console.warn('Firebase anon auth failed:', err.message);
           window._authReady = true;
           var CRITICAL = ['crew','routes','flags'];
-          var SECONDARY = ['properties','workOrders','inventory','equipment','attendance','customerRequests','propEvents','wetChecks'];
+          var SECONDARY = ['properties','workOrders','inventory','equipment','attendance','customerRequests','propEvents','wetChecks','treatments'];
           CRITICAL.forEach(function(name) { _listenCollection(name); });
           setTimeout(function() {
             SECONDARY.forEach(function(name) { _listenCollection(name); });
@@ -12664,7 +12669,8 @@ function creqFlagSubmit(id) {
 //               follow-ups…) with optional "repeat in N months" follow-up and
 //               an "alert N days before" reminder. Collection: propEvents.
 // wetChecks   — timed irrigation wet-check reports. Collection: wetChecks.
-// Both sync through the same saveAndSync/_listenCollection plumbing as every
+// treatments  — timed pest & fertilization service reports. Collection: treatments.
+// All sync through the same saveAndSync/_listenCollection plumbing as every
 // other collection. Events carry id/title/date/time/notes so they can be
 // published as an iPhone-subscribable calendar feed later without reshaping.
 
@@ -13226,6 +13232,15 @@ function _calItemsForDate(iso) {
       onclick: w.status === 'inprogress' ? "wcOpenForm('" + w.id + "')" : "wcViewReport('" + w.id + "')" });
   });
 
+  (state.treatments || []).forEach(function(t) {
+    if (!t || !t.startedAt || _pcIso(new Date(t.startedAt)) !== iso) return;
+    var prop = (state.properties || []).find(function(p){ return p.id === t.propId; });
+    var svc = _txServiceLabel(t);
+    items.push({ kind:'treat', color:'purple', icon:'🌿', title:'Pest & Fert' + (t.status === 'inprogress' ? ' (in progress)' : ''),
+      sub:(prop ? prop.name : 'Property') + (svc ? ' · ' + svc : '') + (t.durationMin ? ' · ' + _wcDur(t.durationMin) : ''),
+      onclick: t.status === 'inprogress' ? "txOpenForm('" + t.id + "')" : "txViewReport('" + t.id + "')" });
+  });
+
   if (state.role === 'manager') {
     (state.externalEvents || []).forEach(function(e) {
       // Effective day is the manager override when set; the synced date is not edited.
@@ -13279,7 +13294,7 @@ function renderCalendar() {
     var items = _calItemsForDate(iso);
     var dots = '';
     var seen = {};
-    items.forEach(function(it){ if (!seen[it.color] && Object.keys(seen).length < 4) { seen[it.color] = 1; dots += '<span style="width:6px;height:6px;border-radius:50%;background:var(--' + it.color + ');display:inline-block;"></span>'; } });
+    items.forEach(function(it){ if (!seen[it.color] && Object.keys(seen).length < 5) { seen[it.color] = 1; dots += '<span style="width:6px;height:6px;border-radius:50%;background:var(--' + it.color + ');display:inline-block;"></span>'; } });
     var isSel = iso === _calSel, isToday = iso === today;
     cells += '<div onclick="calSelect(\'' + iso + '\')" style="cursor:pointer;min-height:48px;border-radius:10px;padding:5px 2px;text-align:center;'
       + 'background:' + (isSel ? 'rgba(63,185,80,.18)' : 'var(--bg2)') + ';'
@@ -13289,10 +13304,10 @@ function renderCalendar() {
   }
 
   var selItems = _calItemsForDate(_calSel);
-  var order = { route:0, event:1, wet:2, wo:3, external:4 };
+  var order = { route:0, event:1, wet:2, treat:3, wo:4, external:5 };
   selItems.sort(function(a,b){ return order[a.kind] - order[b.kind]; });
 
-  var legend = [['blue','Routes'],['orange','Scheduled'],['green','Done'],['teal','Wet checks']].concat(state.role === 'manager' ? [['yellow','📅 iPhone (manager only)']] : []).map(function(l){
+  var legend = [['blue','Routes'],['orange','Scheduled'],['green','Done'],['teal','Wet checks'],['purple','Pest & Fert']].concat(state.role === 'manager' ? [['yellow','📅 iPhone (manager only)']] : []).map(function(l){
     return '<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--' + l[0] + ');"></span>' + l[1] + '</span>';
   }).join('');
 
@@ -13716,6 +13731,615 @@ function wcDeleteReport(id) {
   try { gsDelete('wetChecks', id); } catch(e) {}
   var o = document.getElementById('wc-report-overlay'); if (o) o.remove();
   _evRefresh(wc.propId);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PEST & FERTILIZATION SERVICE REPORTS
+// ═══════════════════════════════════════════════════════════════════════
+// Same session shape as a wet check: start a timer on the property, log the
+// visit, end it to create the customer report. Collection: treatments.
+var TX_SERVICES = ['Fertilization','Insect/Pest control','Weed control','Fungicide','Other'];
+var TX_ISSUE_TYPES = ['Pest activity','Weed pressure','Disease / fungus','Nutrient deficiency','Plant stress','Irrigation noticed','Other'];
+var TX_ACTIONS = ['Treated','Needs Follow-up','Recommended'];
+var _txPhotoCache = {};
+var _txTimer = null;
+
+function _txFind(id) { return (state.treatments || []).find(function(t){ return t.id === id; }); }
+function _txPhoto(iss) { return iss.photo || _txPhotoCache[iss.id] || ''; }
+function _txServiceLabel(t) {
+  if (!t) return '';
+  var types = (t.serviceTypes || []).slice();
+  var i = types.indexOf('Other');
+  if (i >= 0) types[i] = t.serviceOther ? t.serviceOther : 'Other';
+  return types.join(', ');
+}
+function _txTemp(v) {
+  v = String(v || '').trim();
+  if (!v) return '';
+  if (/°|f$|c$/i.test(v)) return v;
+  if (/^-?\d+(\.\d+)?$/.test(v)) return v + '°F';
+  return v;
+}
+function _txWind(v) {
+  v = String(v || '').trim();
+  if (!v) return '';
+  if (/mph|gust|calm/i.test(v)) return v;
+  if (/^\d+(\.\d+)?$/.test(v)) return v + ' mph';
+  return v;
+}
+function _txWeatherLine(t) {
+  var parts = [];
+  if (t.weatherTemp) parts.push(_txTemp(t.weatherTemp));
+  if (t.weatherWind) {
+    var w = _txWind(t.weatherWind);
+    parts.push(/^wind\b/i.test(w) ? w : 'wind ' + w);
+  }
+  return parts.join(', ');
+}
+function _txInstructions(t) {
+  var lines = [];
+  if (t.stayOffUntilDry) lines.push('Please stay off treated areas until they are completely dry.');
+  if (t.irrigMode === 'water-in') {
+    lines.push('Please water in the application' + (t.irrigHours ? ' within ' + String(t.irrigHours).trim() + ' hours' : '') + ' so the product can move into the soil.');
+  } else if (t.irrigMode === 'hold') {
+    lines.push('Please hold irrigation and do not water treated areas' + (t.irrigHours ? ' for ' + String(t.irrigHours).trim() + ' hours' : '') + '.');
+  }
+  if (t.nextVisit) lines.push('Next visit: ' + t.nextVisit);
+  return lines;
+}
+
+function renderTreatmentCard(propId) {
+  var all = (state.treatments || []).filter(function(t){ return t.propId === propId; });
+  var active = all.find(function(t){ return t.status === 'inprogress'; });
+  var done = all.filter(function(t){ return t.status === 'done'; }).sort(function(a,b){ return a.startedAt < b.startedAt ? 1 : -1; });
+  return '<div class="card" style="margin-bottom:12px;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;">'
+      + '<div class="sec-title" style="margin-bottom:0;">🌿 Pest &amp; Fertilization</div>'
+      + '<button class="btn-sm" onclick="txStart(\'' + propId + '\')" style="background:rgba(192,132,252,.15);color:var(--purple);border:1px solid rgba(192,132,252,.4);flex-shrink:0;">' + (active ? '▶ Resume Service' : '▶ Start Service') + '</button>'
+    + '</div>'
+    + (done.length ? done.map(function(t) {
+        var label = _txServiceLabel(t);
+        return '<div class="card-flat" style="margin-bottom:6px;cursor:pointer;" onclick="txViewReport(\'' + t.id + '\')">'
+          + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+            + '<div style="min-width:0;"><div style="font-size:13px;font-weight:700;">' + _pcFmt(_pcIso(new Date(t.startedAt))) + '</div>'
+            + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _wcDur(t.durationMin) + (label ? ' · ' + _pcEsc(label) : '') + ' · ' + (t.issues || []).length + ' issue' + ((t.issues || []).length === 1 ? '' : 's') + ' · ' + _pcEsc(t.by || '') + '</div></div>'
+            + '<span style="color:var(--text3);">›</span>'
+          + '</div></div>';
+      }).join('') : '<div style="font-size:13px;color:var(--text4);">No pest or fertilization reports yet</div>')
+  + '</div>';
+}
+
+function txStart(propId) {
+  state.treatments = state.treatments || [];
+  var active = state.treatments.find(function(t){ return t.propId === propId && t.status === 'inprogress'; });
+  if (active) { txOpenForm(active.id); return; }
+  var tx = {
+    id: uid(), propId: propId, status: 'inprogress',
+    startedAt: new Date().toISOString(), endedAt: '', durationMin: 0,
+    by: _wcWho(), serviceTypes: [], serviceOther: '',
+    products: [], weatherTemp: '', weatherWind: '',
+    stayOffUntilDry: true, irrigMode: '', irrigHours: '', nextVisit: '',
+    issues: []
+  };
+  state.treatments.push(tx);
+  saveAndSync('treatments', tx);
+  txOpenForm(tx.id);
+}
+
+function txCloseForm() {
+  var f = document.getElementById('tx-form');
+  var propId = '';
+  if (f && f.dataset.id) {
+    var openId = f.dataset.id;
+    var openTx = _txFind(openId);
+    if (openTx && openTx.status === 'inprogress') {
+      txReadForm(openId);
+      saveAndSync('treatments', openTx);
+      propId = openTx.propId;
+    }
+  }
+  if (_txTimer) { clearInterval(_txTimer); _txTimer = null; }
+  if (f) f.remove();
+  // Hiding the timer should leave the property card on Resume, same as a fresh render.
+  if (propId) _evRefresh(propId);
+}
+
+function txField(id, field, val) {
+  var tx = _txFind(id); if (!tx) return;
+  tx[field] = val;
+  saveAndSync('treatments', tx);
+}
+
+function txOpenForm(id) {
+  var tx = _txFind(id); if (!tx) return;
+  txCloseForm();
+  var f = document.createElement('div');
+  f.id = 'tx-form';
+  f.dataset.id = id;
+  f.style.cssText = 'position:fixed;inset:0;z-index:320;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 14px calc(30px + var(--safe-bottom));';
+  document.body.appendChild(f);
+  txRenderForm(id);
+  _txTimer = setInterval(function() {
+    var el = document.getElementById('tx-timer'); var t = _txFind(id);
+    if (!el || !t || t.status !== 'inprogress') return;
+    var s = Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000);
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    el.textContent = (h ? h + ':' : '') + (m < 10 && h ? '0' : '') + m + ':' + (sec < 10 ? '0' : '') + sec;
+  }, 1000);
+}
+
+function txToggleType(id, btn) {
+  var on = btn.getAttribute('data-on') !== '1';
+  btn.setAttribute('data-on', on ? '1' : '0');
+  btn.style.background = on ? 'rgba(192,132,252,.2)' : 'var(--bg4)';
+  btn.style.color = on ? 'var(--purple)' : 'var(--text3)';
+  btn.style.borderColor = on ? 'rgba(192,132,252,.55)' : 'var(--border2)';
+  var tx = _txFind(id); if (!tx) return;
+  var types = [];
+  document.querySelectorAll('#tx-svc button').forEach(function(b) {
+    if (b.getAttribute('data-on') === '1') types.push(b.getAttribute('data-k'));
+  });
+  tx.serviceTypes = types;
+  var wrap = document.getElementById('tx-other-wrap');
+  if (wrap) wrap.style.display = types.indexOf('Other') >= 0 ? '' : 'none';
+  saveAndSync('treatments', tx);
+}
+
+function txIrrigChange(id, val) {
+  var tx = _txFind(id); if (!tx) return;
+  tx.irrigMode = val;
+  var h = document.getElementById('tx-hours-wrap');
+  if (h) h.style.display = (val === 'water-in' || val === 'hold') ? '' : 'none';
+  saveAndSync('treatments', tx);
+}
+
+function txReadForm(id) {
+  var tx = _txFind(id); if (!tx) return;
+  var by = document.getElementById('tx-by'); if (by) tx.by = by.value.trim();
+  if (document.getElementById('tx-svc')) {
+    var types = [];
+    document.querySelectorAll('#tx-svc button').forEach(function(b) {
+      if (b.getAttribute('data-on') === '1') types.push(b.getAttribute('data-k'));
+    });
+    tx.serviceTypes = types;
+  }
+  var other = document.getElementById('tx-other'); if (other) tx.serviceOther = other.value.trim();
+  if (document.getElementById('tx-products')) {
+    var products = [];
+    document.querySelectorAll('#tx-products .tx-prod').forEach(function(r) {
+      products.push({
+        id: r.getAttribute('data-id'),
+        name: (r.querySelector('.tx-name').value || '').trim(),
+        epa: (r.querySelector('.tx-epa').value || '').trim(),
+        npk: (r.querySelector('.tx-npk').value || '').trim(),
+        rate: (r.querySelector('.tx-rate').value || '').trim(),
+        area: (r.querySelector('.tx-area').value || '').trim(),
+        target: (r.querySelector('.tx-target').value || '').trim()
+      });
+    });
+    tx.products = products;
+  }
+  var temp = document.getElementById('tx-temp'); if (temp) tx.weatherTemp = temp.value.trim();
+  var wind = document.getElementById('tx-wind'); if (wind) tx.weatherWind = wind.value.trim();
+  var stay = document.getElementById('tx-stay'); if (stay) tx.stayOffUntilDry = !!stay.checked;
+  var irrig = document.getElementById('tx-irrig'); if (irrig) tx.irrigMode = irrig.value;
+  var hours = document.getElementById('tx-hours'); if (hours) tx.irrigHours = hours.value.trim();
+  var next = document.getElementById('tx-next'); if (next) tx.nextVisit = next.value.trim();
+}
+
+function txProdField(id, prodId, field, val) {
+  txReadForm(id);
+  var tx = _txFind(id); if (!tx) return;
+  var p = (tx.products || []).find(function(x){ return x.id === prodId; });
+  if (p) p[field] = val;
+  saveAndSync('treatments', tx);
+}
+
+function txAddProduct(id) {
+  txReadForm(id);
+  var tx = _txFind(id); if (!tx) return;
+  tx.products = tx.products || [];
+  tx.products.push({ id: uid(), name: '', epa: '', npk: '', rate: '', area: '', target: '' });
+  saveAndSync('treatments', tx);
+  txRenderForm(id);
+  var names = document.querySelectorAll('#tx-products .tx-name');
+  if (names.length) { try { names[names.length - 1].focus(); } catch (e) {} }
+}
+
+function txRemoveProduct(id, prodId) {
+  txReadForm(id);
+  var tx = _txFind(id); if (!tx) return;
+  tx.products = (tx.products || []).filter(function(p){ return p.id !== prodId; });
+  saveAndSync('treatments', tx);
+  txRenderForm(id);
+}
+
+function txRenderForm(id) {
+  var f = document.getElementById('tx-form'); var tx = _txFind(id);
+  if (!f || !tx) return;
+  var prop = (state.properties || []).find(function(p){ return p.id === tx.propId; });
+  var types = tx.serviceTypes || [];
+  var showHours = tx.irrigMode === 'water-in' || tx.irrigMode === 'hold';
+  function chip(label) {
+    var on = types.indexOf(label) >= 0;
+    return '<button type="button" data-k="' + _pcEsc(label) + '" data-on="' + (on ? '1' : '0') + '" onclick="txToggleType(\'' + id + '\',this)" class="btn-sm" style="background:' + (on ? 'rgba(192,132,252,.2)' : 'var(--bg4)') + ';color:' + (on ? 'var(--purple)' : 'var(--text3)') + ';border:1px solid ' + (on ? 'rgba(192,132,252,.55)' : 'var(--border2)') + ';">' + _pcEsc(label) + '</button>';
+  }
+  function prodRow(p) {
+    return '<div class="tx-prod card-flat" data-id="' + _pcEsc(p.id) + '" style="margin-bottom:8px;">'
+      + '<input class="inp tx-name" placeholder="Product name" value="' + _pcEsc(p.name || '') + '" onchange="txProdField(\'' + id + '\',\'' + p.id + '\',\'name\',this.value)" style="margin-bottom:6px;"/>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">'
+        + '<input class="inp tx-epa" placeholder="EPA reg # (optional)" value="' + _pcEsc(p.epa || '') + '" onchange="txProdField(\'' + id + '\',\'' + p.id + '\',\'epa\',this.value)"/>'
+        + '<input class="inp tx-npk" placeholder="N-P-K (fertilizer)" value="' + _pcEsc(p.npk || '') + '" onchange="txProdField(\'' + id + '\',\'' + p.id + '\',\'npk\',this.value)"/>'
+      + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">'
+        + '<input class="inp tx-rate" placeholder="Amount / rate" value="' + _pcEsc(p.rate || '') + '" onchange="txProdField(\'' + id + '\',\'' + p.id + '\',\'rate\',this.value)"/>'
+        + '<input class="inp tx-area" list="tx-area-dl" placeholder="Area treated" value="' + _pcEsc(p.area || '') + '" onchange="txProdField(\'' + id + '\',\'' + p.id + '\',\'area\',this.value)"/>'
+      + '</div>'
+      + '<div style="display:flex;gap:6px;">'
+        + '<input class="inp tx-target" placeholder="Target pest, weed, or purpose" value="' + _pcEsc(p.target || '') + '" onchange="txProdField(\'' + id + '\',\'' + p.id + '\',\'target\',this.value)" style="flex:1;min-width:0;"/>'
+        + '<button type="button" class="btn-sm" onclick="txRemoveProduct(\'' + id + '\',\'' + p.id + '\')" style="background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);">✕</button>'
+      + '</div></div>';
+  }
+  f.innerHTML =
+    '<datalist id="tx-area-dl">'
+      + ['Front lawn','Back lawn','Side yards','Beds','Palms','Shrubs','Entire property'].map(function(a){ return '<option value="' + a + '">'; }).join('')
+    + '</datalist>'
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">'
+      + '<div><div style="font-size:18px;font-weight:800;">🌿 Pest &amp; Fertilization</div>'
+      + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">' + _pcEsc(prop ? prop.name : '') + (prop && prop.address ? ' · ' + _pcEsc(prop.address) : '') + '</div>'
+      + '<div style="font-size:11px;color:var(--text4);margin-top:2px;">Started ' + _wcFmtT(tx.startedAt) + '</div></div>'
+      + '<button class="btn-sm" onclick="txCloseForm()" style="background:var(--bg4);color:var(--text3);border:1px solid var(--border2);">Hide</button>'
+    + '</div>'
+    + '<div class="card" style="text-align:center;margin-bottom:12px;"><div style="font-size:11px;color:var(--text3);font-weight:700;">ELAPSED</div>'
+      + '<div id="tx-timer" style="font-size:34px;font-weight:800;color:var(--purple);font-variant-numeric:tabular-nums;">0:00</div>'
+      + '<div style="font-size:11px;color:var(--text4);">The timer keeps running if you hide this screen.</div></div>'
+    + '<div class="card" style="margin-bottom:12px;">'
+      + '<div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:6px;">TECHNICIAN</div>'
+      + '<input class="inp" id="tx-by" placeholder="Who applied it" value="' + _pcEsc(tx.by || '') + '" onchange="txField(\'' + id + '\',\'by\',this.value.trim())"/>'
+      + '<div style="font-size:11px;color:var(--text3);font-weight:700;margin:12px 0 6px;">SERVICE TYPE</div>'
+      + '<div id="tx-svc" style="display:flex;flex-wrap:wrap;gap:6px;">' + TX_SERVICES.map(chip).join('') + '</div>'
+      + '<div id="tx-other-wrap" style="margin-top:8px;' + (types.indexOf('Other') >= 0 ? '' : 'display:none;') + '">'
+        + '<input class="inp" id="tx-other" placeholder="Other service" value="' + _pcEsc(tx.serviceOther || '') + '" onchange="txField(\'' + id + '\',\'serviceOther\',this.value.trim())"/>'
+      + '</div>'
+    + '</div>'
+    + '<div class="card" style="margin-bottom:12px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+        + '<div class="sec-title" style="margin-bottom:0;">Products (' + (tx.products || []).length + ')</div>'
+        + '<button class="btn-sm" onclick="txAddProduct(\'' + id + '\')" style="background:rgba(192,132,252,.15);color:var(--purple);border:1px solid rgba(192,132,252,.4);">+ Add Product</button></div>'
+      + '<div id="tx-products">' + ((tx.products || []).length ? tx.products.map(prodRow).join('') : '<div style="font-size:13px;color:var(--text4);">No products yet. Add each product you applied.</div>') + '</div>'
+    + '</div>'
+    + '<div class="card" style="margin-bottom:12px;">'
+      + '<div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:6px;">WEATHER AT APPLICATION (optional)</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+        + '<input class="inp" id="tx-temp" inputmode="decimal" placeholder="Temp (°F)" value="' + _pcEsc(tx.weatherTemp || '') + '" onchange="txField(\'' + id + '\',\'weatherTemp\',this.value.trim())"/>'
+        + '<input class="inp" id="tx-wind" placeholder="Wind" value="' + _pcEsc(tx.weatherWind || '') + '" onchange="txField(\'' + id + '\',\'weatherWind\',this.value.trim())"/>'
+      + '</div></div>'
+    + '<div class="card" style="margin-bottom:12px;display:flex;flex-direction:column;gap:10px;">'
+      + '<div class="sec-title" style="margin-bottom:0;">Customer instructions</div>'
+      + '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--text);"><input type="checkbox" id="tx-stay" style="-webkit-appearance:checkbox;appearance:auto;width:18px;height:18px;accent-color:var(--purple);flex-shrink:0;margin-top:1px;"' + (tx.stayOffUntilDry ? ' checked' : '') + ' onchange="txField(\'' + id + '\',\'stayOffUntilDry\',this.checked)"/> Stay off treated areas until dry</label>'
+      + '<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px;">IRRIGATION</div>'
+        + '<select class="inp" id="tx-irrig" onchange="txIrrigChange(\'' + id + '\',this.value)">'
+          + '<option value=""' + (!tx.irrigMode ? ' selected' : '') + '>No irrigation change</option>'
+          + '<option value="water-in"' + (tx.irrigMode === 'water-in' ? ' selected' : '') + '>Water in after application</option>'
+          + '<option value="hold"' + (tx.irrigMode === 'hold' ? ' selected' : '') + '>Hold watering</option>'
+        + '</select></div>'
+      + '<div id="tx-hours-wrap"' + (showHours ? '' : ' style="display:none;"') + '><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px;">HOURS</div>'
+        + '<input class="inp" id="tx-hours" inputmode="decimal" placeholder="e.g. 24" value="' + _pcEsc(tx.irrigHours || '') + '" onchange="txField(\'' + id + '\',\'irrigHours\',this.value.trim())"/></div>'
+      + '<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px;">NEXT VISIT</div>'
+        + '<textarea class="inp" id="tx-next" rows="2" placeholder="e.g. Follow-up in 6 weeks for chinch bugs" onchange="txField(\'' + id + '\',\'nextVisit\',this.value.trim())">' + _pcEsc(tx.nextVisit || '') + '</textarea></div>'
+    + '</div>'
+    + '<div class="card" style="margin-bottom:12px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+        + '<div class="sec-title" style="margin-bottom:0;">Observations (' + (tx.issues || []).length + ')</div>'
+        + '<button class="btn-sm" onclick="txIssueSheet(\'' + id + '\')" style="background:rgba(192,132,252,.15);color:var(--purple);border:1px solid rgba(192,132,252,.4);">+ Add Issue</button></div>'
+      + ((tx.issues || []).length ? tx.issues.map(function(iss) {
+          var ph = _txPhoto(iss);
+          return '<div class="card-flat" style="margin-bottom:8px;cursor:pointer;" onclick="txIssueSheet(\'' + id + '\',\'' + iss.id + '\')">'
+            + '<div style="display:flex;gap:10px;align-items:flex-start;">'
+              + '<div style="flex:1;min-width:0;">'
+                + '<div style="font-size:13px;font-weight:700;">' + (iss.area ? _pcEsc(iss.area) + ' — ' : '') + _pcEsc(iss.type || '') + '</div>'
+                + '<div style="font-size:11px;color:var(--purple);margin-top:2px;">' + _pcEsc(iss.action || '') + '</div>'
+                + (iss.desc ? '<div style="font-size:12px;color:var(--text2);margin-top:4px;">' + _pcEsc(iss.desc) + '</div>' : '')
+              + '</div>'
+              + (ph ? '<img src="' + ph + '" referrerpolicy="no-referrer" style="width:56px;height:56px;border-radius:8px;object-fit:cover;"/>' : '')
+            + '</div></div>';
+        }).join('') : '<div style="font-size:13px;color:var(--text4);">No issues logged. If the property looks fine, just end the service.</div>')
+    + '</div>'
+    + '<button class="btn btn-green" style="width:100%;" onclick="txEnd(\'' + id + '\')">■ End Service</button>'
+    + '<button class="btn btn-outline" style="width:100%;margin-top:8px;color:var(--red);" onclick="txDiscard(\'' + id + '\')">Discard this service</button>';
+  var el = document.getElementById('tx-timer');
+  if (el) {
+    var s = Math.floor((Date.now() - new Date(tx.startedAt).getTime()) / 1000);
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    el.textContent = (h ? h + ':' : '') + (m < 10 && h ? '0' : '') + m + ':' + (sec < 10 ? '0' : '') + sec;
+  }
+}
+
+function txDiscard(id) {
+  if (!confirm('Discard this service? Nothing will be saved.')) return;
+  var tx = _txFind(id); if (!tx) return;
+  state.treatments = state.treatments.filter(function(t){ return t.id !== id; });
+  save();
+  try { gsDelete('treatments', id); } catch(e) {}
+  txCloseForm();
+  _evRefresh(tx.propId);
+}
+
+function txIssueSheet(txId, issId) {
+  txReadForm(txId);
+  var tx = _txFind(txId); if (!tx) return;
+  var iss = issId ? (tx.issues || []).find(function(x){ return x.id === issId; }) : null;
+  var old = document.getElementById('tx-issue-sheet'); if (old) old.remove();
+  function opt(v, cur) { return '<option' + (v === cur ? ' selected' : '') + '>' + v + '</option>'; }
+  var sheet = document.createElement('div');
+  sheet.id = 'tx-issue-sheet';
+  sheet.className = 'overlay open';
+  sheet.style.zIndex = '340';
+  sheet.innerHTML = '<div class="sheet">'
+    + '<div class="sheet-title">' + (iss ? 'Edit Observation' : 'Add Observation') + '</div>'
+    + '<div style="display:flex;flex-direction:column;gap:10px;">'
+      + '<input class="inp" id="txi-area" list="tx-area-dl" placeholder="Area (optional) — front lawn, palms…" value="' + _pcEsc(iss ? iss.area : '') + '"/>'
+      + '<select class="inp" id="txi-type">' + TX_ISSUE_TYPES.map(function(t){ return opt(t, iss ? iss.type : ''); }).join('') + '</select>'
+      + '<select class="inp" id="txi-action">' + TX_ACTIONS.map(function(t){ return opt(t, iss ? iss.action : 'Treated'); }).join('') + '</select>'
+      + '<textarea class="inp" id="txi-desc" rows="2" placeholder="What did you see / do?">' + _pcEsc(iss ? iss.desc : '') + '</textarea>'
+      + '<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:6px;">PHOTO</div>'
+        + '<label class="photo-zone" for="txi-photo-input" id="txi-photo-zone"><div style="font-size:26px;">📷</div><div style="font-size:13px;color:var(--text3);">Tap to take/choose photo</div>'
+        + '<input type="file" id="txi-photo-input" accept="image/*" style="display:none;"/></label>'
+        + '<img id="txi-photo-preview" style="display:none;width:100%;border-radius:10px;margin-top:8px;max-height:200px;object-fit:cover;"/></div>'
+      + '<button class="btn btn-green" onclick="txIssueSave(\'' + txId + '\',' + (iss ? '\'' + iss.id + '\'' : 'null') + ')">' + (iss ? 'Save Observation' : 'Add Observation') + '</button>'
+      + (iss ? '<button class="btn btn-outline" style="color:var(--red);" onclick="txIssueDelete(\'' + txId + '\',\'' + iss.id + '\')">🗑 Delete Observation</button>' : '')
+      + '<button class="btn btn-outline" onclick="document.getElementById(\'tx-issue-sheet\').remove()">Cancel</button>'
+    + '</div></div>';
+  document.body.appendChild(sheet);
+  var existingPhoto = iss ? _txPhoto(iss) : '';
+  var prev = document.getElementById('txi-photo-preview');
+  if (existingPhoto) { prev.src = existingPhoto; prev.style.display = 'block'; }
+  document.getElementById('txi-photo-input').onchange = function() {
+    var file = this.files[0]; if (!file) return;
+    var zone = document.getElementById('txi-photo-zone');
+    if (zone) zone.querySelector('div:nth-child(2)').textContent = '⏳ Processing photo…';
+    readFileAsDataUrl(file, function(dataUrl) {
+      if (!dataUrl) { toast('Could not read photo'); return; }
+      compressPhoto(dataUrl, 1000, 0.82, function(compressed) {
+        prev.src = compressed; prev.style.display = 'block'; prev.dataset.compressed = compressed;
+        if (zone) zone.style.display = 'none';
+      });
+    });
+  };
+}
+
+function txIssueSave(txId, issId) {
+  var tx = _txFind(txId); if (!tx) return;
+  tx.issues = tx.issues || [];
+  var iss = issId ? tx.issues.find(function(x){ return x.id === issId; }) : null;
+  if (!iss) { iss = { id: uid(), photo: '' }; tx.issues.push(iss); }
+  iss.area = (document.getElementById('txi-area').value || '').trim();
+  iss.type = document.getElementById('txi-type').value;
+  iss.action = document.getElementById('txi-action').value;
+  iss.desc = (document.getElementById('txi-desc').value || '').trim();
+  var prev = document.getElementById('txi-photo-preview');
+  var newPhoto = prev && prev.dataset.compressed;
+  if (newPhoto) {
+    _txPhotoCache[iss.id] = newPhoto;
+    iss.photo = '';
+  }
+  save();
+  gsSave('treatments', tx);
+  var sh = document.getElementById('tx-issue-sheet'); if (sh) sh.remove();
+  txRenderForm(txId);
+  if (newPhoto) {
+    toast('📤 Uploading photo…');
+    uploadPhotoToStorage(newPhoto, 'photos/treatments/' + tx.id + '_' + iss.id + '_' + Date.now() + '.jpg',
+      function(url) { iss.photo = url; save(); gsSave('treatments', tx); toast('Photo uploaded ✓'); },
+      function(err) { console.warn('treatment photo upload failed:', err); toast('Photo kept on this device only'); });
+  } else toast('Observation saved ✓');
+}
+
+function txIssueDelete(txId, issId) {
+  var tx = _txFind(txId); if (!tx) return;
+  if (!confirm('Delete this observation?')) return;
+  tx.issues = (tx.issues || []).filter(function(x){ return x.id !== issId; });
+  save(); gsSave('treatments', tx);
+  var sh = document.getElementById('tx-issue-sheet'); if (sh) sh.remove();
+  txRenderForm(txId);
+}
+
+function txEnd(id) {
+  var tx = _txFind(id); if (!tx) return;
+  txReadForm(id);
+  if (!confirm('End this service now? The clock stops and the report is created.')) return;
+  tx.products = (tx.products || []).filter(function(p) {
+    return p.name || p.epa || p.npk || p.rate || p.area || p.target;
+  });
+  tx.endedAt = new Date().toISOString();
+  tx.durationMin = Math.max(1, Math.round((new Date(tx.endedAt) - new Date(tx.startedAt)) / 60000));
+  tx.status = 'done';
+  saveAndSync('treatments', tx);
+  txCloseForm();
+  toast('Service report complete ✓');
+  _evRefresh(tx.propId);
+  txViewReport(id);
+}
+
+function txSummaryText(tx) {
+  var prop = (state.properties || []).find(function(p){ return p.id === tx.propId; }) || {};
+  var lines = [];
+  lines.push('Pest & Fertilization Service Report — ' + (prop.name || ''));
+  if (prop.address) lines.push(prop.address);
+  lines.push('Date: ' + _pcFmt(_pcIso(new Date(tx.startedAt))) + '   Time on site: ' + _wcFmtT(tx.startedAt) + ' – ' + _wcFmtT(tx.endedAt) + ' (' + _wcDur(tx.durationMin) + ')');
+  lines.push('Technician: ' + (tx.by || ''));
+  var svc = _txServiceLabel(tx);
+  if (svc) lines.push('Services: ' + svc);
+  var weather = _txWeatherLine(tx);
+  if (weather) lines.push('Weather: ' + weather);
+  lines.push('');
+  var products = (tx.products || []).filter(function(p){ return p.name || p.rate || p.area || p.target; });
+  if (products.length) {
+    lines.push('Products applied:');
+    products.forEach(function(p, n) {
+      var bits = [];
+      if (p.rate) bits.push(p.rate);
+      if (p.area) bits.push(p.area);
+      if (p.target) bits.push(p.target);
+      if (p.npk) bits.push('N-P-K ' + p.npk);
+      if (p.epa) bits.push('EPA ' + p.epa);
+      lines.push((n + 1) + '. ' + (p.name || 'Product') + (bits.length ? ' — ' + bits.join(' · ') : ''));
+    });
+  } else lines.push('No products recorded.');
+  var instr = _txInstructions(tx);
+  lines.push('');
+  lines.push('Instructions:');
+  if (instr.length) instr.forEach(function(l){ lines.push('- ' + l); });
+  else lines.push('- None.');
+  lines.push('');
+  if ((tx.issues || []).length) {
+    lines.push('Observations:');
+    tx.issues.forEach(function(i, n) {
+      lines.push((n + 1) + '. ' + (i.area ? i.area + ' — ' : '') + (i.type || '') + (i.action ? ' (' + i.action + ')' : '') + (i.desc ? ': ' + i.desc : ''));
+    });
+  } else lines.push('No issues noted on this visit.');
+  lines.push('');
+  lines.push('— Diamond Landscapes');
+  return lines.join('\n');
+}
+
+function txMailtoHref(id) {
+  var tx = _txFind(id); if (!tx) return '';
+  var prop = (state.properties || []).find(function(p){ return p.id === tx.propId; }) || {};
+  return 'mailto:' + encodeURIComponent(prop.email || '') + '?subject=' + encodeURIComponent('Pest & Fertilization Report — ' + (prop.name || '')) + '&body=' + encodeURIComponent(txSummaryText(tx));
+}
+
+function txReportHtml(tx) {
+  var prop = (state.properties || []).find(function(p){ return p.id === tx.propId; }) || {};
+  var issues = tx.issues || [];
+  var products = (tx.products || []).filter(function(p){ return p.name || p.rate || p.area || p.target; });
+  var treated = issues.filter(function(i){ return i.action === 'Treated'; }).length;
+  var followup = issues.length - treated;
+  var green = '#2f7d32';
+  var instr = _txInstructions(tx);
+  var weather = _txWeatherLine(tx);
+  var svc = _txServiceLabel(tx);
+  return '<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;color:#1a1a1a;max-width:760px;margin:0 auto;padding:24px 20px;">'
+    + '<div style="border-bottom:3px solid ' + green + ';padding-bottom:10px;margin-bottom:16px;">'
+      + '<div style="font-size:12px;letter-spacing:2px;color:' + green + ';font-weight:800;">DIAMOND LANDSCAPES</div>'
+      + '<div style="font-size:24px;font-weight:800;margin-top:2px;">Pest &amp; Fertilization Service Report</div></div>'
+    + '<table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:16px;">'
+      + '<tr><td style="padding:3px 0;color:#666;width:130px;">Property</td><td style="font-weight:700;">' + _pcEsc(prop.name || '') + '</td></tr>'
+      + '<tr><td style="padding:3px 0;color:#666;">Address</td><td>' + _pcEsc(prop.address || '') + '</td></tr>'
+      + '<tr><td style="padding:3px 0;color:#666;">Date</td><td>' + _pcFmt(_pcIso(new Date(tx.startedAt))) + '</td></tr>'
+      + '<tr><td style="padding:3px 0;color:#666;">Time on site</td><td>' + _wcFmtT(tx.startedAt) + ' – ' + _wcFmtT(tx.endedAt) + ' (' + _wcDur(tx.durationMin) + ')</td></tr>'
+      + '<tr><td style="padding:3px 0;color:#666;">Technician</td><td>' + _pcEsc(tx.by || '') + '</td></tr>'
+      + (svc ? '<tr><td style="padding:3px 0;color:#666;">Services</td><td>' + _pcEsc(svc) + '</td></tr>' : '')
+      + (weather ? '<tr><td style="padding:3px 0;color:#666;">Weather</td><td>' + _pcEsc(weather) + '</td></tr>' : '')
+    + '</table>'
+    + '<div style="display:flex;gap:10px;margin-bottom:18px;">'
+      + [['Products', products.length], ['Treated', treated], ['Follow-up / recommended', followup]].map(function(s){
+          return '<div style="flex:1;background:#f3f7f3;border:1px solid #d6e4d6;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:22px;font-weight:800;color:' + green + ';">' + s[1] + '</div><div style="font-size:11px;color:#555;">' + s[0] + '</div></div>';
+        }).join('')
+    + '</div>'
+    + '<div style="font-size:15px;font-weight:800;margin-bottom:8px;">Products applied</div>'
+    + (products.length ? products.map(function(p, n) {
+        var meta = [];
+        if (p.epa) meta.push('EPA ' + _pcEsc(p.epa));
+        if (p.npk) meta.push('N-P-K ' + _pcEsc(p.npk));
+        return '<div style="border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:8px;page-break-inside:avoid;">'
+          + '<div style="font-size:14px;font-weight:800;">' + (n + 1) + '. ' + _pcEsc(p.name || 'Product') + '</div>'
+          + (meta.length ? '<div style="font-size:12px;color:#555;margin-top:2px;">' + meta.join(' · ') + '</div>' : '')
+          + '<div style="font-size:13px;margin-top:4px;">'
+            + (p.rate ? '<div><b>Rate:</b> ' + _pcEsc(p.rate) + '</div>' : '')
+            + (p.area ? '<div><b>Area:</b> ' + _pcEsc(p.area) + '</div>' : '')
+            + (p.target ? '<div><b>Target:</b> ' + _pcEsc(p.target) + '</div>' : '')
+          + '</div></div>';
+      }).join('') : '<div style="font-size:13px;color:#555;margin-bottom:14px;">No products recorded.</div>')
+    + '<div style="font-size:15px;font-weight:800;margin:16px 0 8px;">For the homeowner</div>'
+    + '<div style="background:#f3f7f3;border:1px solid #d6e4d6;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px;line-height:1.45;">'
+      + (instr.length ? instr.map(function(l){ return '<div style="margin-bottom:4px;">• ' + _pcEsc(l) + '</div>'; }).join('') : '<div style="color:#555;">No special instructions for this visit.</div>')
+    + '</div>'
+    + '<div style="font-size:15px;font-weight:800;margin-bottom:8px;">Observations</div>'
+    + (issues.length ? issues.map(function(i, n) {
+        var ph = _txPhoto(i);
+        return '<div style="border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:10px;page-break-inside:avoid;">'
+          + '<div style="display:flex;gap:12px;">'
+            + '<div style="flex:1;">'
+              + '<div style="font-size:14px;font-weight:800;">' + (n + 1) + '. ' + (i.area ? _pcEsc(i.area) + ' — ' : '') + _pcEsc(i.type || '') + '</div>'
+              + '<div style="font-size:12px;font-weight:700;color:' + (i.action === 'Treated' ? green : '#b45309') + ';margin:2px 0 4px;">' + _pcEsc(i.action || '') + '</div>'
+              + (i.desc ? '<div style="font-size:13px;">' + _pcEsc(i.desc) + '</div>' : '')
+            + '</div>'
+            + (ph ? '<img src="' + ph + '" style="width:150px;height:150px;object-fit:cover;border-radius:6px;"/>' : '')
+          + '</div></div>';
+      }).join('') : '<div style="font-size:13px;color:#555;margin-bottom:14px;">No issues noted on this visit.</div>')
+    + '<div style="margin-top:24px;font-size:11px;color:#888;border-top:1px solid #ddd;padding-top:8px;">Diamond Landscapes · Report generated ' + _wcFmtDT(tx.endedAt) + '</div>'
+  + '</div>';
+}
+
+function txViewReport(id) {
+  var tx = _txFind(id); if (!tx) return;
+  var old = document.getElementById('tx-report-overlay'); if (old) old.remove();
+  var o = document.createElement('div');
+  o.id = 'tx-report-overlay';
+  o.style.cssText = 'position:fixed;inset:0;z-index:330;background:#fff;overflow-y:auto;-webkit-overflow-scrolling:touch;';
+  o.innerHTML =
+    '<div class="no-print" style="position:sticky;top:0;z-index:5;background:#16181d;padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
+      + '<button class="btn-sm btn-green" onclick="txPrint()">⬇ Download PDF</button>'
+      + '<button class="btn-sm" onclick="txEmailSummary(\'' + id + '\')" style="background:rgba(96,165,250,.15);color:#60a5fa;border:1px solid rgba(96,165,250,.3);">✉ Email summary</button>'
+      + '<button class="btn-sm" onclick="txCopyShare(\'' + id + '\')" style="background:rgba(192,132,252,.15);color:#c084fc;border:1px solid rgba(192,132,252,.4);">Copy / Share</button>'
+      + (state.role === 'manager' ? '<button class="btn-sm" onclick="txDeleteReport(\'' + id + '\')" style="background:rgba(248,113,113,.15);color:#f87171;border:1px solid rgba(248,113,113,.3);">🗑</button>' : '')
+      + '<button class="btn-sm" onclick="document.getElementById(\'tx-report-overlay\').remove()" style="margin-left:auto;background:#2a2d35;color:#ccc;border:1px solid #444;">Close</button>'
+    + '</div>'
+    + txReportHtml(tx);
+  document.body.appendChild(o);
+}
+
+function txPrint() {
+  document.body.classList.add('tx-printing');
+  var cleanup = function() { document.body.classList.remove('tx-printing'); window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(function() { window.print(); }, 100);
+}
+
+function txEmailSummary(id) {
+  var href = txMailtoHref(id);
+  if (href) window.location.href = href;
+}
+
+function txCopyShare(id) {
+  var tx = _txFind(id); if (!tx) return;
+  var text = txSummaryText(tx);
+  var prop = (state.properties || []).find(function(p){ return p.id === tx.propId; }) || {};
+  var title = 'Pest & Fertilization Report — ' + (prop.name || '');
+  function copied() { toast('Summary copied'); }
+  function fallback() {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', 'readonly');
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); copied(); }
+    catch (e) { toast('Could not copy summary'); }
+    ta.remove();
+  }
+  function copy() {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(copied, fallback);
+    } else fallback();
+  }
+  if (navigator.share) {
+    navigator.share({ title: title, text: text }).catch(function(err) {
+      if (err && err.name === 'AbortError') return;
+      copy();
+    });
+  } else copy();
+}
+
+function txDeleteReport(id) {
+  var tx = _txFind(id); if (!tx) return;
+  if (!confirm('Delete this pest & fertilization report permanently?')) return;
+  state.treatments = state.treatments.filter(function(t){ return t.id !== id; });
+  save();
+  try { gsDelete('treatments', id); } catch(e) {}
+  var o = document.getElementById('tx-report-overlay'); if (o) o.remove();
+  _evRefresh(tx.propId);
 }
 
 function markCreqStatus(id, status) {
