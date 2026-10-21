@@ -1702,7 +1702,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-20-v66'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-21-v67'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -13251,7 +13251,7 @@ function _calItemsForDate(iso) {
     var prop = (state.properties || []).find(function(p){ return p.id === t.propId; });
     var svc = _txServiceLabel(t);
     items.push({ kind:'treat', color:'purple', icon:'🌿', title:'Pest & Fert' + (t.status === 'inprogress' ? ' (in progress)' : ''),
-      sub:(prop ? prop.name : 'Property') + (svc ? ' · ' + svc : '') + (t.durationMin ? ' · ' + _wcDur(t.durationMin) : ''),
+      sub:(prop ? prop.name : 'Property') + (svc ? ' · ' + svc : '') + (t.durationMin ? ' · ' + _wcDur(t.durationMin) : '') + _txBaitListBit(t),
       onclick: t.status === 'inprogress' ? "txOpenForm('" + t.id + "')" : "txViewReport('" + t.id + "')" });
   });
 
@@ -13790,6 +13790,25 @@ function _txWeatherLine(t) {
   }
   return parts.join(', ');
 }
+// Whole-number count of bait stations refilled on a pest visit.
+// Blank / missing stays off the report so older treatments (no key) look unchanged.
+// 0 is a real entry and is shown. Stored on the treatment doc as baitStationsRefilled.
+function _txParseBait(raw) {
+  if (typeof raw === 'number' && isFinite(raw)) return raw < 0 ? '' : Math.floor(raw);
+  var s = String(raw == null ? '' : raw).trim();
+  if (s === '' || !/^\d+(\.\d+)?$/.test(s)) return '';
+  return Math.floor(Number(s));
+}
+function _txBaitCount(t) {
+  if (!t || t.baitStationsRefilled === '' || t.baitStationsRefilled == null) return null;
+  var n = _txParseBait(t.baitStationsRefilled);
+  return n === '' ? null : n;
+}
+function _txBaitListBit(t) {
+  var n = _txBaitCount(t);
+  if (n == null) return '';
+  return ' · ' + n + ' bait station' + (n === 1 ? '' : 's') + ' refilled';
+}
 function _txInstructions(t) {
   var lines = [];
   if (t.stayOffUntilDry) lines.push('Please stay off treated areas until they are completely dry.');
@@ -13816,7 +13835,7 @@ function renderTreatmentCard(propId) {
         return '<div class="card-flat" style="margin-bottom:6px;cursor:pointer;" onclick="txViewReport(\'' + t.id + '\')">'
           + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
             + '<div style="min-width:0;"><div style="font-size:13px;font-weight:700;">' + _pcFmt(_pcIso(new Date(t.startedAt))) + '</div>'
-            + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _wcDur(t.durationMin) + (label ? ' · ' + _pcEsc(label) : '') + ' · ' + (t.issues || []).length + ' issue' + ((t.issues || []).length === 1 ? '' : 's') + ' · ' + _pcEsc(t.by || '') + '</div></div>'
+            + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _wcDur(t.durationMin) + (label ? ' · ' + _pcEsc(label) : '') + _txBaitListBit(t) + ' · ' + (t.issues || []).length + ' issue' + ((t.issues || []).length === 1 ? '' : 's') + ' · ' + _pcEsc(t.by || '') + '</div></div>'
             + '<span style="color:var(--text3);">›</span>'
           + '</div></div>';
       }).join('') : '<div style="font-size:13px;color:var(--text4);">No pest or fertilization reports yet</div>')
@@ -13833,6 +13852,7 @@ function txStart(propId) {
     by: _wcWho(), serviceTypes: [], serviceOther: '',
     products: [], weatherTemp: '', weatherWind: '',
     stayOffUntilDry: true, irrigMode: '', irrigHours: '', nextVisit: '',
+    baitStationsRefilled: '',
     issues: []
   };
   state.treatments.push(tx);
@@ -13861,6 +13881,17 @@ function txCloseForm() {
 function txField(id, field, val) {
   var tx = _txFind(id); if (!tx) return;
   tx[field] = val;
+  saveAndSync('treatments', tx);
+}
+
+function txBaitChange(id, raw) {
+  var tx = _txFind(id); if (!tx) return;
+  tx.baitStationsRefilled = _txParseBait(raw);
+  var el = document.getElementById('tx-bait');
+  if (el) {
+    var shown = tx.baitStationsRefilled === '' ? '' : String(tx.baitStationsRefilled);
+    if (el.value !== shown) el.value = shown;
+  }
   saveAndSync('treatments', tx);
 }
 
@@ -13939,6 +13970,8 @@ function txReadForm(id) {
   var irrig = document.getElementById('tx-irrig'); if (irrig) tx.irrigMode = irrig.value;
   var hours = document.getElementById('tx-hours'); if (hours) tx.irrigHours = hours.value.trim();
   var next = document.getElementById('tx-next'); if (next) tx.nextVisit = next.value.trim();
+  var bait = document.getElementById('tx-bait');
+  if (bait) tx.baitStationsRefilled = _txParseBait(bait.value);
 }
 
 function txProdField(id, prodId, field, val) {
@@ -13971,7 +14004,12 @@ function txRemoveProduct(id, prodId) {
 function txRenderForm(id) {
   var f = document.getElementById('tx-form'); var tx = _txFind(id);
   if (!f || !tx) return;
+  // Keep a count typed but not yet blurred. Do not re-read the whole form:
+  // callers such as txAddProduct have already changed tx.products in memory.
+  var baitEl = document.getElementById('tx-bait');
+  if (baitEl) tx.baitStationsRefilled = _txParseBait(baitEl.value);
   var prop = (state.properties || []).find(function(p){ return p.id === tx.propId; });
+  var baitShown = _txBaitCount(tx);
   var types = tx.serviceTypes || [];
   var showHours = tx.irrigMode === 'water-in' || tx.irrigMode === 'hold';
   function chip(label) {
@@ -14015,6 +14053,12 @@ function txRenderForm(id) {
       + '<div id="tx-other-wrap" style="margin-top:8px;' + (types.indexOf('Other') >= 0 ? '' : 'display:none;') + '">'
         + '<input class="inp" id="tx-other" placeholder="Other service" value="' + _pcEsc(tx.serviceOther || '') + '" onchange="txField(\'' + id + '\',\'serviceOther\',this.value.trim())"/>'
       + '</div>'
+    + '</div>'
+    + '<div class="card" style="margin-bottom:12px;">'
+      + '<div class="sec-title" style="margin-bottom:8px;">Pest control checks</div>'
+      + '<div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px;">BAIT STATIONS REFILLED</div>'
+      + '<input class="inp" id="tx-bait" type="number" min="0" step="1" inputmode="numeric" placeholder="0" value="' + (baitShown == null ? '' : String(baitShown)) + '" onchange="txBaitChange(\'' + id + '\',this.value)"/>'
+      + '<div style="font-size:11px;color:var(--text4);margin-top:4px;">Optional. Whole number, 0 or more. Leave blank if none were refilled.</div>'
     + '</div>'
     + '<div class="card" style="margin-bottom:12px;">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
@@ -14186,6 +14230,8 @@ function txSummaryText(tx) {
   if (svc) lines.push('Services: ' + svc);
   var weather = _txWeatherLine(tx);
   if (weather) lines.push('Weather: ' + weather);
+  var baitN = _txBaitCount(tx);
+  if (baitN != null) lines.push('Bait stations refilled: ' + baitN);
   lines.push('');
   var products = (tx.products || []).filter(function(p){ return p.name || p.rate || p.area || p.target; });
   if (products.length) {
@@ -14233,18 +14279,20 @@ function txReportHtml(tx) {
   var instr = _txInstructions(tx);
   var weather = _txWeatherLine(tx);
   var svc = _txServiceLabel(tx);
+  var baitN = _txBaitCount(tx);
   return '<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;color:#1a1a1a;max-width:760px;margin:0 auto;padding:24px 20px;">'
     + '<div style="border-bottom:3px solid ' + green + ';padding-bottom:10px;margin-bottom:16px;">'
       + '<div style="font-size:12px;letter-spacing:2px;color:' + green + ';font-weight:800;">DIAMOND LANDSCAPES</div>'
       + '<div style="font-size:24px;font-weight:800;margin-top:2px;">Pest &amp; Fertilization Service Report</div></div>'
     + '<table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:16px;">'
-      + '<tr><td style="padding:3px 0;color:#666;width:130px;">Property</td><td style="font-weight:700;">' + _pcEsc(prop.name || '') + '</td></tr>'
+      + '<tr><td style="padding:3px 0;color:#666;width:168px;">Property</td><td style="font-weight:700;">' + _pcEsc(prop.name || '') + '</td></tr>'
       + '<tr><td style="padding:3px 0;color:#666;">Address</td><td>' + _pcEsc(prop.address || '') + '</td></tr>'
       + '<tr><td style="padding:3px 0;color:#666;">Date</td><td>' + _pcFmt(_pcIso(new Date(tx.startedAt))) + '</td></tr>'
       + '<tr><td style="padding:3px 0;color:#666;">Time on site</td><td>' + _wcFmtT(tx.startedAt) + ' – ' + _wcFmtT(tx.endedAt) + ' (' + _wcDur(tx.durationMin) + ')</td></tr>'
       + '<tr><td style="padding:3px 0;color:#666;">Technician</td><td>' + _pcEsc(tx.by || '') + '</td></tr>'
       + (svc ? '<tr><td style="padding:3px 0;color:#666;">Services</td><td>' + _pcEsc(svc) + '</td></tr>' : '')
       + (weather ? '<tr><td style="padding:3px 0;color:#666;">Weather</td><td>' + _pcEsc(weather) + '</td></tr>' : '')
+      + (baitN != null ? '<tr><td style="padding:3px 0;color:#666;">Bait stations refilled</td><td>' + baitN + '</td></tr>' : '')
     + '</table>'
     + '<div style="display:flex;gap:10px;margin-bottom:18px;">'
       + [['Products', products.length], ['Treated', treated], ['Follow-up / recommended', followup]].map(function(s){
