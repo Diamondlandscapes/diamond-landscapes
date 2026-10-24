@@ -1702,8 +1702,16 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-21-v67'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-24-v68'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
+// Local fixture for tests. Only localhost, and only with ?fixture=lexington.
+// Never set on the live GitHub Pages host, so a test cannot publish a version.
+window._dlFixture = false;
+try {
+  var _dlHost = location.hostname;
+  var _dlQs = new URLSearchParams(location.search);
+  window._dlFixture = (_dlHost === 'localhost' || _dlHost === '127.0.0.1') && _dlQs.get('fixture') === 'lexington';
+} catch (eFix) { window._dlFixture = false; }
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
 // plain string comparison breaks once N reaches double digits, e.g. 'v9' > 'v10' as text).
@@ -2737,7 +2745,7 @@ function openRouteDetail(id) {
       html += '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:12px;border:1px solid var(--border);">';
       html += '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">ADD STOP</div>';
       const existingIds = new Set((r.stops||[]).map(s=>s.propId));
-      const addableProps = (state.properties||[]).filter(p=>!existingIds.has(p.id));
+      const addableProps = (state.properties||[]).filter(p=>!existingIds.has(p.id) && isListedCustomer(p));
       let optHtml = '<option value="">— Search & select property —</option>';
       addableProps.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(p => {
         optHtml += '<option value="' + p.id + '">' + p.name + (p.address?' · '+p.address:'')+'</option>';
@@ -2765,6 +2773,7 @@ function openRouteDetail(id) {
                 ${s.completed?'<span style="font-size:10px;color:var(--green);font-weight:700;">✓</span>':''}
               </div>
               ${prop?.address ? `<a href="https://maps.google.com/?q=${encodeURIComponent(prop.address)}" target="_blank" onclick="event.stopPropagation();" style="font-size:11px;color:var(--blue);text-decoration:none;display:flex;align-items:center;gap:3px;"><i class="ti ti-map-pin" style="font-size:11px;"></i>${prop.address}</a>` : ''}
+              ${_cuCommunity(prop) ? `<div style="font-size:11px;color:var(--teal);margin-top:2px;">${_cuCounts(prop).villages} villages · ${_cuCounts(prop).addresses} units</div>` : ''}
               ${flags.length ? `<button onclick="event.stopPropagation();openManagerFlagDetail('${s.propId}')" style="display:inline-flex;align-items:center;gap:4px;margin-top:4px;background:rgba(248,81,73,.12);border:1px solid rgba(248,81,73,.3);border-radius:20px;padding:2px 8px;color:var(--red);font-size:11px;font-weight:700;cursor:pointer;">⚑ ${flags.length} open flag${flags.length>1?'s':''} — tap to view</button>` : ''}
             </div>
           </div>
@@ -2787,6 +2796,7 @@ function openRouteDetail(id) {
                   style="width:18px;height:18px;accent-color:var(--green);cursor:pointer;"/>
               </div>`).join('')}
             ${prop?.notes?`<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.2);border-radius:8px;padding:10px;margin-top:8px;font-size:12px;color:var(--yellow);">📝 ${prop.notes}</div>`:''}
+            ${communityFieldButtons(s.propId)}
             ${s.completed
               ? `<div style="margin-top:10px;background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25);border-radius:10px;padding:10px;">
                   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
@@ -4778,7 +4788,7 @@ async function renderPropertyMap() {
     });
   }
 
-  var props = (state.properties||[]).filter(function(p){ return p.address && !p.archived; });
+  var props = (state.properties||[]).filter(function(p){ return isListedCustomer(p) && p.address && !p.archived; });
   if (!props.length) {
     if (statusEl) statusEl.textContent = 'No properties with addresses yet';
     return;
@@ -5486,7 +5496,7 @@ function openAddRoute() {
   // Selection state — persists across searches
   const _selectedIds = new Set();
 
-  const sortedProps = [...state.properties].sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  const sortedProps = [...state.properties].filter(isListedCustomer).sort((a,b) => (a.name||'').localeCompare(b.name||''));
 
   function renderChips() {
     const el = document.getElementById('nr-selected-chips');
@@ -5631,6 +5641,7 @@ function renderProperties() {
   document.getElementById('prop-view-active')?.classList.toggle('active', propView==='active');
   document.getElementById('prop-view-archived')?.classList.toggle('active', propView==='archived');
   const filtered = state.properties
+    .filter(isListedCustomer)
     .filter(p => propView==='archived' ? !!p.archived : !p.archived)
     .filter(p => p.name.toLowerCase().includes(q) || (p.address||'').toLowerCase().includes(q))
     .sort((a,b) => (a.name||'').localeCompare(b.name||''));
@@ -5641,7 +5652,7 @@ function renderProperties() {
   }
   // Count display
   const countEl = document.getElementById('prop-count');
-  const totalInView = state.properties.filter(p => propView==='archived' ? !!p.archived : !p.archived).length;
+  const totalInView = state.properties.filter(isListedCustomer).filter(p => propView==='archived' ? !!p.archived : !p.archived).length;
   if (countEl) countEl.textContent = filtered.length + ' of ' + totalInView + ' properties' + (propView==='archived' ? ' (archived)' : '');
   el.innerHTML = filtered.map(p => {
     const flags = state.flags.filter(f => f.propId === p.id && !f.resolved);
@@ -5663,6 +5674,7 @@ function renderProperties() {
       <div style="flex:1;min-width:0;padding:10px 10px;">
         <div style="display:flex;align-items:center;gap:8px;">
           <div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</div>
+          ${_cuCommunity(p)?`<span class="badge badge-blue" style="flex-shrink:0;font-size:9px;">${_cuCounts(p).villages} villages</span>`:''}
           ${flags.length?`<span class="badge badge-red" style="flex-shrink:0;font-size:9px;">⚑ ${flags.length}</span>`:''}
         </div>
         <div style="font-size:11px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.address||'No address'}${p.frequency?` · <span style="color:var(--teal);">${p.frequency}</span>`:''}</div>
@@ -5894,6 +5906,7 @@ function openPropDetail(id) {
     </div>
 
 
+    ${renderCommunityCard(id)}
     ${state.role === 'manager' ? renderPropEventsCard(id) : ''}
     ${renderWetCheckCard(id)}
     ${renderTreatmentCard(id)}
@@ -7601,6 +7614,7 @@ function loadFieldView() {
             </div>`).join('')}
           </div>` : ''}
 
+          ${communityFieldButtons(s.propId)}
           <button onclick="openStopCompletion('${route.id}','${s.propId}')"
             style="width:100%;padding:16px;background:var(--green2);border:none;border-radius:12px;color:#fff;font-size:16px;font-weight:700;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:8px;">
             <i class="ti ti-camera" style="font-size:20px;"></i> ${t('Complete Job')}
@@ -8140,7 +8154,7 @@ function csvCell(val) {
 }
 
 function exportPropertiesCSV() {
-  var props = (state.properties || []).filter(function(p){ return !p.archived; }).sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); });
+  var props = (state.properties || []).filter(function(p){ return isListedCustomer(p) && !p.archived; }).sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); });
   if (!props.length) { toast('No properties to export'); return; }
 
   var headers = ['Name','Address','Phone','Email','Frequency','Monthly Rate','Last Service','Next Service','Services','Route Assigned','Notes'];
@@ -9414,6 +9428,10 @@ function _useInMemoryAuth(auth, authMod) {
 
 // ── Initialize Firebase and start all real-time listeners ─────────────────
 function gsLoad() {
+  if (window._dlFixture) {
+    if (!window._gsLoadPromise) window._gsLoadPromise = Promise.resolve(false);
+    return window._gsLoadPromise;
+  }
   // One in-flight init. A second caller (fast manager sign-in, crew list)
   // must wait for the same auth startup instead of signing in anonymously
   // again or resolving before the persisted-manager sign-out finishes.
@@ -9651,6 +9669,7 @@ function flushPendingWrites() {
 }
 
 function gsSave(table, record, _attempt) {
+  if (window._dlFixture) return;
   if (!_fbReady || !_db) {
     setTimeout(function() { gsSave(table, record, (_attempt||0)+1); }, 2000);
     return;
@@ -9705,6 +9724,7 @@ setTimeout(flushPendingWrites, 5000);
 
 // ── Delete one record from Firestore ──────────────────────────────────────
 function gsDelete(table, id, _attempt) {
+  if (window._dlFixture) return;
   if (!_fbReady || !_db) {
     setTimeout(function() { gsDelete(table, id, (_attempt||0)+1); }, 2000);
     return;
@@ -9728,6 +9748,7 @@ function gsDelete(table, id, _attempt) {
 
 // ── Bulk-write an array of records in Firestore batches ───────────────────
 async function gsPushAll(table, records) {
+  if (window._dlFixture) return;
   if (!_fbReady || !_db) { console.warn('gsPushAll: Firebase not ready'); return; }
   var BATCH_SIZE = 400;
   try {
@@ -9840,6 +9861,7 @@ function showUploadError(msg, path) {
 }
 
 function uploadPhotoToStorage(base64Data, storagePath, onSuccess, onError, quiet) {
+  if (window._dlFixture) { if (onError) onError('fixture'); return; }
   if (!_fbReady || !_storage) {
     // Fallback: keep photo local if storage not ready
     if (!quiet) showUploadError('Firebase Storage not ready (still connecting, or offline). Try again in a moment.', storagePath);
@@ -11242,7 +11264,7 @@ function togglePropCheckbox(id, checked) {
 
 function selectAllProps() {
   const q = document.getElementById('prop-search')?.value?.toLowerCase() || '';
-  const filtered = state.properties.filter(p =>
+  const filtered = state.properties.filter(isListedCustomer).filter(p =>
     p.name.toLowerCase().includes(q) || (p.address||'').toLowerCase().includes(q)
   );
   const allSelected = filtered.every(p => selectedPropIds.has(p.id));
@@ -11856,6 +11878,7 @@ function openCrewPropSnapshot(propId, routeId) {
       + '<div style="font-size:13px;color:var(--text2);line-height:1.5;">' + tf(prop.notes) + '</div>'
     + '</div>' : '')
 
+    + communityFieldButtons(propId)
     + (flags.length ? '' : '<div style="font-size:12px;color:var(--text4);text-align:center;padding:4px;">✓ ' + t('No open flags') + '</div>')
 
   + '</div>';
@@ -13352,7 +13375,7 @@ function renderCalendar() {
 
 function calAddEvent() {
   var old = document.getElementById('cal-prop-sheet'); if (old) old.remove();
-  var props = (state.properties || []).filter(function(p){ return !p.archived; }).sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); });
+  var props = (state.properties || []).filter(function(p){ return isListedCustomer(p) && !p.archived; }).sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); });
   var sheet = document.createElement('div');
   sheet.id = 'cal-prop-sheet';
   sheet.className = 'overlay open';
@@ -13365,6 +13388,599 @@ function calAddEvent() {
   document.body.appendChild(sheet);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// MULTI-UNIT COMMUNITIES (Lexington Club, and later HOAs)
+// ═══════════════════════════════════════════════════════════════════════
+// One customer property holds the whole community. Villages and unit
+// addresses live on that property as property.community — they are NOT
+// extra properties, so they never appear in the customer list, route
+// builder, property map, or customer portal.
+//
+// property.community = {
+//   enabled: true,
+//   importedAt, source,
+//   villages: [{ name, sort, addresses: [{ id, streetNumber, unit, street,
+//     fullAddress, parcelId, label }] }]
+// }
+// A pest visit or wet check stores villagesChecked: ["Village 1", ...]
+// on the existing treatments / wetChecks document. Flagged issues reuse
+// the current issue shape (note in desc, photo) and add village, unitId,
+// address, and label. Every other address in a checked village is
+// serviced. No new Firestore collection, so pay-rate and crewPrivate
+// rules are unchanged.
+// Keep buildCommunityFromCsvText in sync with scripts/community-model.mjs.
+
+function isListedCustomer(p) {
+  // Unit rows are never their own customers. A future mistake that stored
+  // one (communityUnit or parentPropId) stays out of customer and route lists.
+  return !!p && !p.communityUnit && !p.parentPropId;
+}
+
+function _cuProp(propId) {
+  return (state.properties || []).find(function(p) { return p.id === propId; }) || null;
+}
+
+function _cuCommunity(prop) {
+  var c = prop && prop.community;
+  if (!c || c.enabled === false || !Array.isArray(c.villages) || !c.villages.length) return null;
+  return c;
+}
+
+function _cuCounts(prop) {
+  var c = _cuCommunity(prop);
+  if (!c) return { villages: 0, addresses: 0 };
+  var addresses = 0;
+  c.villages.forEach(function(v) { addresses += (v.addresses || []).length; });
+  return { villages: c.villages.length, addresses: addresses };
+}
+
+function _cuAddresses(prop, villageName) {
+  var c = _cuCommunity(prop);
+  if (!c) return [];
+  var v = c.villages.find(function(x) { return x.name === villageName; });
+  return v && Array.isArray(v.addresses) ? v.addresses : [];
+}
+
+function _cuAddressById(prop, unitId) {
+  var c = _cuCommunity(prop);
+  if (!c || !unitId) return null;
+  for (var i = 0; i < c.villages.length; i++) {
+    var list = c.villages[i].addresses || [];
+    for (var j = 0; j < list.length; j++) if (list[j].id === unitId) return list[j];
+  }
+  return null;
+}
+
+function _cuReportVillages(prop, record) {
+  var c = _cuCommunity(prop);
+  if (!c || !record) return [];
+  var names = (record.villagesChecked || []).slice();
+  (record.issues || []).forEach(function(iss) {
+    if (iss && iss.village && names.indexOf(iss.village) < 0) names.push(iss.village);
+  });
+  return c.villages.filter(function(v) { return names.indexOf(v.name) >= 0; });
+}
+
+function _cuIssuesForUnit(record, unitId) {
+  return (record && record.issues || []).filter(function(iss) { return iss && iss.unitId === unitId; });
+}
+
+function cuEnsureVillage(rec, villageName) {
+  if (!rec || !villageName) return;
+  rec.villagesChecked = rec.villagesChecked || [];
+  if (rec.villagesChecked.indexOf(villageName) < 0) rec.villagesChecked.push(villageName);
+}
+
+function cuParseCsvLine(line) {
+  var result = [];
+  var cur = '';
+  var inQ = false;
+  for (var i = 0; i < line.length; i++) {
+    var ch = line[i];
+    if (ch === '"') {
+      if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQ = !inQ;
+    } else if (ch === ',' && !inQ) { result.push(cur.trim()); cur = ''; }
+    else cur += ch;
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+function buildCommunityFromCsvText(text) {
+  var raw = String(text || '').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  var lines = raw.split('\n').filter(function(l) { return l.trim(); });
+  if (lines.length < 2) return { enabled: true, source: '', villages: [], skipped: 0 };
+  var headers = cuParseCsvLine(lines[0]).map(function(h) {
+    return String(h || '').trim().toLowerCase().replace(/[\s\-]+/g, '_');
+  });
+  var rows = [];
+  for (var i = 1; i < lines.length; i++) {
+    var cols = cuParseCsvLine(lines[i]);
+    if (!cols.some(function(c) { return String(c || '').trim(); })) continue;
+    var row = {};
+    headers.forEach(function(h, idx) { row[h] = String(cols[idx] == null ? '' : cols[idx]).trim(); });
+    rows.push(row);
+  }
+  var byVillage = {};
+  var order = [];
+  var seen = {};
+  var skipped = 0;
+  rows.forEach(function(r) {
+    var village = String(r.village || '').trim();
+    if (!village) { skipped++; return; }
+    var streetNumber = String(r.street_number || '').trim();
+    var unit = String(r.unit || '').trim();
+    var street = String(r.street || '').trim();
+    var full = String(r.full_address || '').trim();
+    var parcel = String(r.parcel_id || '').trim();
+    var id = parcel || [village, streetNumber, unit, street].join('|');
+    if (seen[id]) { skipped++; return; }
+    seen[id] = 1;
+    if (!byVillage[village]) { byVillage[village] = []; order.push(village); }
+    var label = (streetNumber + (unit ? ' Unit ' + unit : '')).trim();
+    byVillage[village].push({
+      id: id,
+      streetNumber: streetNumber,
+      unit: unit,
+      street: street,
+      fullAddress: full || [streetNumber, street, unit ? 'Unit ' + unit : ''].filter(Boolean).join(' '),
+      parcelId: parcel,
+      label: label || full || id
+    });
+  });
+  var source = '';
+  rows.some(function(r) { if (r.source) { source = String(r.source).slice(0, 300); return true; } return false; });
+  function sortKey(name) { var n = parseInt(String(name).replace(/\D/g, ''), 10); return isNaN(n) ? 9999 : n; }
+  var villages = order.map(function(name) {
+    var addresses = byVillage[name].slice().sort(function(a, b) {
+      var dn = (parseInt(a.streetNumber, 10) || 0) - (parseInt(b.streetNumber, 10) || 0);
+      if (dn) return dn;
+      var street = String(a.street || '').localeCompare(String(b.street || ''));
+      if (street) return street;
+      return String(a.unit || '').localeCompare(String(b.unit || ''));
+    });
+    return { name: name, sort: sortKey(name), addresses: addresses };
+  }).sort(function(a, b) { return a.sort - b.sort || a.name.localeCompare(b.name); });
+  return { enabled: true, source: source, villages: villages, skipped: skipped, importedAt: new Date().toISOString() };
+}
+
+function renderCommunityCard(propId) {
+  var prop = _cuProp(propId);
+  if (!prop) return '';
+  var c = _cuCommunity(prop);
+  var manager = state.role === 'manager';
+  if (!c) {
+    if (!manager) return '';
+    return '<div class="card" id="cu-card-' + propId + '" style="margin-bottom:12px;">'
+      + '<div class="sec-title">Villages &amp; unit addresses</div>'
+      + '<div style="font-size:13px;color:var(--text2);line-height:1.45;margin-bottom:10px;">For an HOA or other multi-unit community, import every unit here. They stay under this property (village, then address) and are not added as customers or route stops.</div>'
+      + '<button class="btn btn-outline" style="width:100%;min-height:44px;" onclick="openCommunityImport(\'' + propId + '\')">Import village CSV</button>'
+      + '</div>';
+  }
+  var counts = _cuCounts(prop);
+  return '<div class="card" id="cu-card-' + propId + '" style="margin-bottom:12px;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px;">'
+      + '<div class="sec-title" style="margin-bottom:0;">Villages &amp; units</div>'
+      + (manager ? '<button class="btn-sm" onclick="openCommunityImport(\'' + propId + '\')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);flex-shrink:0;">Replace CSV</button>' : '')
+    + '</div>'
+    + '<div style="font-size:13px;font-weight:700;margin-bottom:4px;">' + counts.villages + ' villages · ' + counts.addresses + ' addresses</div>'
+    + '<div style="font-size:12px;color:var(--text3);line-height:1.4;margin-bottom:10px;">Part of this property only. They do not show up as separate customers or route stops. Pest and wet checks run village by village.</div>'
+    + '<div id="cu-browse-' + propId + '">' + cuBrowseHtml(propId) + '</div>'
+    + '</div>';
+}
+
+function cuBrowseHtml(propId) {
+  var prop = _cuProp(propId);
+  var c = _cuCommunity(prop);
+  if (!c) return '';
+  var open = window._cuBrowse || '';
+  return c.villages.map(function(v, index) {
+    var key = propId + ':' + index;
+    var isOpen = open === key;
+    var n = (v.addresses || []).length;
+    var rows = '';
+    if (isOpen) {
+      rows = '<div style="padding:0 4px 8px 8px;">'
+        + '<input class="inp" placeholder="Filter addresses" oninput="cuFilterAddr(this)" style="margin:6px 0;"/>'
+        + (v.addresses || []).map(function(a) {
+            return '<div data-cu-addr="' + _pcEsc((a.label || '') + ' ' + (a.fullAddress || '') + ' ' + (a.street || '')) + '" style="padding:8px 0;border-bottom:1px solid var(--border);">'
+              + '<div style="font-size:14px;font-weight:700;">' + _pcEsc(a.label || a.fullAddress) + '</div>'
+              + '<div style="font-size:12px;color:var(--text3);margin-top:2px;">' + _pcEsc(a.fullAddress || a.street || '') + '</div>'
+            + '</div>';
+          }).join('')
+        + '</div>';
+    }
+    return '<div data-cu-village="1" style="border:1px solid var(--border);border-radius:10px;margin-bottom:6px;background:' + (isOpen ? 'var(--bg3)' : 'transparent') + ';">'
+      + '<button type="button" onclick="cuBrowseToggle(\'' + propId + '\',' + index + ')" style="width:100%;text-align:left;background:none;border:none;color:var(--text);padding:12px;min-height:48px;display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;">'
+        + '<span style="font-size:15px;font-weight:700;">' + (isOpen ? '▾' : '▸') + ' ' + _pcEsc(v.name) + '</span>'
+        + '<span style="font-size:12px;color:var(--text3);flex-shrink:0;">' + n + ' address' + (n === 1 ? '' : 'es') + '</span>'
+      + '</button>'
+      + rows
+    + '</div>';
+  }).join('');
+}
+
+function cuBrowseToggle(propId, index) {
+  var key = propId + ':' + index;
+  window._cuBrowse = window._cuBrowse === key ? '' : key;
+  var host = document.getElementById('cu-browse-' + propId);
+  if (host) host.innerHTML = cuBrowseHtml(propId);
+  else openPropDetail(propId);
+}
+
+function cuFilterAddr(input) {
+  var q = String(input.value || '').toLowerCase();
+  var box = input.closest('[data-cu-village]');
+  if (!box) return;
+  box.querySelectorAll('[data-cu-addr]').forEach(function(row) {
+    var t = String(row.getAttribute('data-cu-addr') || '').toLowerCase();
+    row.style.display = !q || t.indexOf(q) >= 0 ? '' : 'none';
+  });
+}
+
+function openCommunityImport(propId) {
+  if (state.role !== 'manager') { toast('Manager access only'); return; }
+  var prop = _cuProp(propId);
+  if (!prop) return;
+  var old = document.getElementById('cu-import-sheet'); if (old) old.remove();
+  window._cuImportDraft = null;
+  var sheet = document.createElement('div');
+  sheet.id = 'cu-import-sheet';
+  sheet.className = 'overlay open';
+  sheet.style.zIndex = '360';
+  sheet.innerHTML = '<div class="sheet">'
+    + '<div class="sheet-title">Import unit addresses</div>'
+    + '<div style="font-size:13px;color:var(--text2);line-height:1.45;margin:-6px 0 12px;">These rows are saved under <b>' + _pcEsc(prop.name) + '</b>, grouped by village. They are not created as customers and they are not added to routes.</div>'
+    + '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">CSV columns: village, street_number, unit, street, full_address, parcel_id, source.</div>'
+    + '<input class="inp" id="cu-import-file" type="file" accept=".csv,text/csv" style="margin-bottom:10px;"/>'
+    + '<div id="cu-import-preview" style="font-size:13px;color:var(--text2);margin-bottom:10px;"></div>'
+    + '<button class="btn btn-green" id="cu-import-save" disabled onclick="commitCommunityImport(\'' + propId + '\')" style="min-height:48px;">Save under this property</button>'
+    + '<button class="btn btn-outline" style="margin-top:8px;min-height:44px;" onclick="document.getElementById(\'cu-import-sheet\').remove()">Cancel</button>'
+    + '</div>';
+  document.body.appendChild(sheet);
+  document.getElementById('cu-import-file').onchange = function() {
+    var file = this.files && this.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function() {
+      var built = buildCommunityFromCsvText(String(reader.result || ''));
+      window._cuImportDraft = built;
+      var addresses = 0;
+      (built.villages || []).forEach(function(v) { addresses += (v.addresses || []).length; });
+      var preview = document.getElementById('cu-import-preview');
+      var btn = document.getElementById('cu-import-save');
+      if (!built.villages.length) {
+        if (preview) preview.textContent = 'No village rows found. Check the column headers.';
+        if (btn) btn.disabled = true;
+        return;
+      }
+      if (preview) {
+        preview.innerHTML = '<b>' + built.villages.length + ' villages · ' + addresses + ' addresses</b>'
+          + (built.skipped ? '<div style="color:var(--text3);margin-top:4px;">' + built.skipped + ' row' + (built.skipped === 1 ? '' : 's') + ' skipped (blank or duplicate).</div>' : '')
+          + '<div style="margin-top:6px;color:var(--text3);">' + built.villages.map(function(v) {
+              return _pcEsc(v.name) + ' (' + v.addresses.length + ')';
+            }).join(' · ') + '</div>';
+      }
+      if (btn) btn.disabled = false;
+    };
+    reader.readAsText(file);
+  };
+}
+
+function commitCommunityImport(propId) {
+  if (state.role !== 'manager') { toast('Manager access only'); return; }
+  var prop = _cuProp(propId);
+  var built = window._cuImportDraft;
+  if (!prop || !built || !(built.villages || []).length) { toast('Choose a CSV first'); return; }
+  var addresses = 0;
+  built.villages.forEach(function(v) { addresses += (v.addresses || []).length; });
+  var bytes = JSON.stringify(built).length;
+  if (bytes > 700000) { toast('That list is too large to store on one property'); return; }
+  if (!confirm('Save ' + addresses + ' addresses in ' + built.villages.length + ' villages under ' + prop.name + '?\n\nThey will not be added as customers or route stops.')) return;
+  built.importedAt = new Date().toISOString();
+  delete built.skipped;
+  prop.community = built;
+  saveAndSync('properties', prop);
+  window._cuImportDraft = null;
+  var sh = document.getElementById('cu-import-sheet'); if (sh) sh.remove();
+  openPropDetail(propId);
+  renderProperties();
+  toast('Saved ' + built.villages.length + ' villages under ' + prop.name);
+}
+
+function communityFieldButtons(propId) {
+  var prop = _cuProp(propId);
+  var c = _cuCommunity(prop);
+  if (!c) return '';
+  var counts = _cuCounts(prop);
+  var wcActive = (state.wetChecks || []).some(function(w) { return w.propId === propId && w.status === 'inprogress'; });
+  var txActive = (state.treatments || []).some(function(t) { return t.propId === propId && t.status === 'inprogress'; });
+  return '<div style="background:var(--bg3);border:1px solid var(--border2);border-radius:12px;padding:12px;margin-bottom:10px;">'
+    + '<div style="font-size:13px;font-weight:800;margin-bottom:2px;">🏘️ ' + _pcEsc(prop.name) + '</div>'
+    + '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">' + counts.villages + ' villages · ' + counts.addresses + ' addresses. Check a village, then flag any unit that has a problem.</div>'
+    + '<div style="display:flex;gap:8px;">'
+      + '<button type="button" onclick="event.stopPropagation();wcStart(\'' + propId + '\')" style="flex:1;min-height:48px;border-radius:10px;border:1px solid rgba(45,212,191,.4);background:rgba(45,212,191,.15);color:var(--teal);font-weight:800;font-size:14px;cursor:pointer;">' + (wcActive ? 'Resume wet check' : 'Wet check') + '</button>'
+      + '<button type="button" onclick="event.stopPropagation();txStart(\'' + propId + '\')" style="flex:1;min-height:48px;border-radius:10px;border:1px solid rgba(192,132,252,.45);background:rgba(192,132,252,.15);color:var(--purple);font-weight:800;font-size:14px;cursor:pointer;">' + (txActive ? 'Resume pest check' : 'Pest check') + '</button>'
+    + '</div></div>';
+}
+
+function communityCheckHtml(kind, id, prop, rec) {
+  var c = _cuCommunity(prop);
+  if (!c || !rec || !Array.isArray(rec.villagesChecked)) return '';
+  var checked = rec.villagesChecked || [];
+  var chips = c.villages.map(function(v, index) {
+    var on = checked.indexOf(v.name) >= 0;
+    var n = (v.addresses || []).length;
+    return '<button type="button" onclick="cuToggleVillage(\'' + kind + '\',\'' + id + '\',' + index + ')" style="min-height:44px;padding:8px 12px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;text-align:left;'
+      + 'background:' + (on ? 'rgba(63,185,80,.18)' : 'var(--bg4)') + ';'
+      + 'color:' + (on ? 'var(--green)' : 'var(--text2)') + ';'
+      + 'border:1px solid ' + (on ? 'var(--green)' : 'var(--border2)') + ';">'
+      + _pcEsc(v.name) + ' · ' + n + '</button>';
+  }).join('');
+  var openPrefix = kind + ':' + id + ':';
+  if (window._cuOpenKey && window._cuOpenKey.indexOf(openPrefix) !== 0) window._cuOpenKey = null;
+  if (checked.length === 1 && window._cuOpenKey == null) window._cuOpenKey = openPrefix + checked[0];
+  var sections = c.villages.filter(function(v) { return checked.indexOf(v.name) >= 0; }).map(function(v) {
+    var index = c.villages.indexOf(v);
+    var key = openPrefix + v.name;
+    var isOpen = window._cuOpenKey === key;
+    var flagged = 0;
+    (v.addresses || []).forEach(function(a) { if (_cuIssuesForUnit(rec, a.id).length) flagged++; });
+    var body = '';
+    if (isOpen) {
+      body = '<div style="padding:0 10px 10px;">'
+        + '<input class="inp" placeholder="Filter this village" oninput="cuFilterAddr(this)" style="margin-bottom:8px;"/>'
+        + (v.addresses || []).map(function(a) {
+            var hits = _cuIssuesForUnit(rec, a.id);
+            var note = hits.length ? (hits[0].desc || hits[0].type || 'Flagged') : '';
+            return '<div data-cu-addr="' + _pcEsc((a.label || '') + ' ' + (a.fullAddress || '')) + '" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);min-height:52px;">'
+              + '<div style="flex:1;min-width:0;">'
+                + '<div style="font-size:15px;font-weight:700;">' + _pcEsc(a.label) + '</div>'
+                + '<div style="font-size:12px;color:' + (hits.length ? 'var(--red)' : 'var(--text3)') + ';margin-top:2px;">' + (hits.length ? ('⚑ ' + _pcEsc(note)) : 'Will be marked serviced') + '</div>'
+              + '</div>'
+              + '<button type="button" onclick="cuFlagAddress(\'' + kind + '\',\'' + id + '\',' + index + ',\'' + _pcEsc(a.id) + '\')" style="flex-shrink:0;min-height:44px;padding:8px 12px;border-radius:8px;font-weight:800;font-size:13px;cursor:pointer;border:1px solid ' + (hits.length ? 'rgba(248,81,73,.45)' : 'var(--border2)') + ';background:' + (hits.length ? 'rgba(248,81,73,.15)' : 'var(--bg4)') + ';color:' + (hits.length ? 'var(--red)' : 'var(--text)') + ';">' + (hits.length ? 'Edit' : 'Flag') + '</button>'
+            + '</div>';
+          }).join('')
+        + '</div>';
+    }
+    return '<div data-cu-village="1" style="border:1px solid var(--border);border-radius:10px;margin-top:8px;background:var(--bg3);">'
+      + '<button type="button" onclick="cuToggleOpen(\'' + kind + '\',\'' + id + '\',' + index + ')" style="width:100%;text-align:left;background:none;border:none;color:var(--text);padding:12px;min-height:48px;display:flex;justify-content:space-between;gap:8px;cursor:pointer;">'
+        + '<span style="font-size:14px;font-weight:800;">' + (isOpen ? '▾' : '▸') + ' ' + _pcEsc(v.name) + '</span>'
+        + '<span style="font-size:12px;color:var(--text3);">' + (v.addresses || []).length + (flagged ? ' · ' + flagged + ' flagged' : '') + '</span>'
+      + '</button>'
+      + body
+    + '</div>';
+  }).join('');
+  return '<div class="card" style="margin-bottom:12px;">'
+    + '<div class="sec-title">Villages on this check</div>'
+    + '<div style="font-size:12px;color:var(--text3);line-height:1.4;margin-bottom:8px;">Tap a village to include it. Every address in that village is marked serviced unless you flag an issue (note and photo).</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + chips + '</div>'
+    + sections
+    + '</div>';
+}
+
+function cuToggleVillage(kind, id, index) {
+  var rec = kind === 'wc' ? _wcFind(id) : _txFind(id);
+  if (!rec) return;
+  if (kind === 'tx') txReadForm(id); else wcCaptureFields(id);
+  var prop = _cuProp(rec.propId);
+  var c = _cuCommunity(prop);
+  if (!c || !c.villages[index]) return;
+  var name = c.villages[index].name;
+  var key = kind + ':' + id + ':' + name;
+  rec.villagesChecked = rec.villagesChecked || [];
+  var at = rec.villagesChecked.indexOf(name);
+  if (at >= 0) {
+    rec.villagesChecked.splice(at, 1);
+    if (window._cuOpenKey === key) window._cuOpenKey = '';
+  } else {
+    rec.villagesChecked.push(name);
+    window._cuOpenKey = key;
+  }
+  saveAndSync(kind === 'wc' ? 'wetChecks' : 'treatments', rec);
+  if (kind === 'wc') wcRenderForm(id); else txRenderForm(id);
+}
+
+function cuToggleOpen(kind, id, index) {
+  var rec = kind === 'wc' ? _wcFind(id) : _txFind(id);
+  if (!rec) return;
+  if (kind === 'tx') txReadForm(id); else wcCaptureFields(id);
+  var prop = _cuProp(rec.propId);
+  var c = _cuCommunity(prop);
+  if (!c || !c.villages[index]) return;
+  var key = kind + ':' + id + ':' + c.villages[index].name;
+  window._cuOpenKey = window._cuOpenKey === key ? '' : key;
+  if (kind === 'wc') wcRenderForm(id); else txRenderForm(id);
+}
+
+function cuFlagAddress(kind, id, villageIndex, unitId) {
+  var rec = kind === 'wc' ? _wcFind(id) : _txFind(id);
+  if (!rec) return;
+  var prop = _cuProp(rec.propId);
+  var c = _cuCommunity(prop);
+  var village = c && c.villages[villageIndex] ? c.villages[villageIndex].name : '';
+  var existing = (rec.issues || []).filter(function(iss) { return iss.unitId === unitId; })[0];
+  var preset = { village: village, unitId: unitId };
+  if (kind === 'wc') wcIssueSheet(id, existing ? existing.id : null, preset);
+  else txIssueSheet(id, existing ? existing.id : null, preset);
+}
+
+function wcCaptureFields(id) {
+  var wc = _wcFind(id); if (!wc) return;
+  var z = document.getElementById('wc-zones');
+  var n = document.getElementById('wc-notes');
+  if (z) wc.zonesChecked = z.value;
+  if (n) wc.notes = n.value;
+}
+
+function cuIssueFieldsHtml(prefix, prop, iss, preset) {
+  var c = _cuCommunity(prop);
+  if (!c) return '';
+  var village = (preset && preset.village) || (iss && iss.village) || (c.villages[0] && c.villages[0].name) || '';
+  var unitId = (preset && preset.unitId) || (iss && iss.unitId) || '';
+  var vOpts = c.villages.map(function(v) {
+    return '<option value="' + _pcEsc(v.name) + '"' + (v.name === village ? ' selected' : '') + '>' + _pcEsc(v.name) + ' (' + (v.addresses || []).length + ')</option>';
+  }).join('');
+  var addrs = _cuAddresses(prop, village);
+  if (unitId && !addrs.some(function(a) { return a.id === unitId; })) unitId = '';
+  var aOpts = (unitId ? '' : '<option value="">Select an address</option>') + addrs.map(function(a) {
+    return '<option value="' + _pcEsc(a.id) + '"' + (a.id === unitId ? ' selected' : '') + '>' + _pcEsc(a.label) + '</option>';
+  }).join('');
+  return '<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px;">VILLAGE</div>'
+    + '<select class="inp" id="' + prefix + '-village" onchange="cuIssueVillageChange(\'' + prefix + '\',\'' + prop.id + '\')">' + vOpts + '</select></div>'
+    + '<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px;">ADDRESS</div>'
+    + '<select class="inp" id="' + prefix + '-unit">' + aOpts + '</select></div>';
+}
+
+function cuIssueVillageChange(prefix, propId) {
+  var prop = _cuProp(propId);
+  var vEl = document.getElementById(prefix + '-village');
+  var sel = document.getElementById(prefix + '-unit');
+  if (!vEl || !sel || !prop) return;
+  var addrs = _cuAddresses(prop, vEl.value);
+  sel.innerHTML = addrs.map(function(a) {
+    return '<option value="' + _pcEsc(a.id) + '">' + _pcEsc(a.label) + '</option>';
+  }).join('');
+}
+
+function cuReadIssuePlace(prefix, prop) {
+  var vEl = document.getElementById(prefix + '-village');
+  var uEl = document.getElementById(prefix + '-unit');
+  if (!vEl || !uEl) return null;
+  var addr = _cuAddressById(prop, uEl.value);
+  return {
+    village: vEl.value,
+    unitId: uEl.value,
+    address: addr ? addr.fullAddress : '',
+    label: addr ? (addr.label || '') : ''
+  };
+}
+
+function cuApplyIssuePlace(iss, prefix, prop, rec) {
+  var place = cuReadIssuePlace(prefix, prop);
+  // A blank address means this is a normal zone/area note, not a unit flag.
+  if (!place || !place.unitId) return;
+  iss.village = place.village;
+  iss.unitId = place.unitId;
+  iss.address = place.address;
+  iss.label = place.label;
+  cuEnsureVillage(rec, place.village);
+}
+
+function cuIssueHeading(iss) {
+  if (!iss) return '';
+  if (iss.village || iss.label || iss.address) {
+    return (iss.village ? iss.village : '') + ((iss.label || iss.address) ? ((iss.village ? ' — ' : '') + (iss.label || iss.address)) : '');
+  }
+  return '';
+}
+
+function communityReportOn(prop, record) {
+  if (!_cuCommunity(prop) || !record) return false;
+  if ((record.villagesChecked || []).length) return true;
+  return (record.issues || []).some(function(i) { return i && (i.unitId || i.village); });
+}
+
+function communityReportHtml(prop, record, photoFn) {
+  if (!communityReportOn(prop, record)) return '';
+  var villages = _cuReportVillages(prop, record);
+  var issues = (record.issues || []).filter(function(i) { return i && (i.unitId || i.village); });
+  var green = '#2f7d32';
+  var top = '';
+  if (issues.length) {
+    top = '<div style="background:#fff5f5;border:2px solid #f85149;border-radius:10px;padding:12px;margin:0 0 16px;">'
+      + '<div style="font-size:16px;font-weight:800;color:#b42318;margin-bottom:8px;">Flagged issues (' + issues.length + ')</div>'
+      + issues.map(function(i, n) {
+          var ph = photoFn ? photoFn(i) : '';
+          return '<div style="background:#fff;border:1px solid #f3c0bd;border-radius:8px;padding:10px;margin-bottom:8px;page-break-inside:avoid;">'
+            + '<div style="display:flex;gap:10px;">'
+              + '<div style="flex:1;">'
+                + '<div style="font-size:14px;font-weight:800;">' + (n + 1) + '. ' + _pcEsc(cuIssueHeading(i) || 'Issue') + '</div>'
+                + (i.address ? '<div style="font-size:12px;color:#555;margin-top:2px;">' + _pcEsc(i.address) + '</div>' : '')
+                + (i.type ? '<div style="font-size:12px;font-weight:700;color:#b45309;margin-top:4px;">' + _pcEsc(i.type) + (i.action ? ' · ' + _pcEsc(i.action) : '') + '</div>' : '')
+                + (i.desc ? '<div style="font-size:13px;margin-top:4px;">' + _pcEsc(i.desc) + '</div>' : '')
+              + '</div>'
+              + (ph ? '<img src="' + ph + '" style="width:96px;height:96px;object-fit:cover;border-radius:6px;"/>' : '')
+            + '</div></div>';
+        }).join('')
+      + '</div>';
+  } else {
+    top = '<div style="background:#f3f7f3;border:1px solid #d6e4d6;border-radius:10px;padding:12px;margin:0 0 16px;font-size:13px;color:#1a1a1a;">No issues flagged. Every address in the villages below was serviced.</div>';
+  }
+  var body = '<div style="font-size:16px;font-weight:800;margin:4px 0 8px;">Villages checked</div>';
+  if (!villages.length) {
+    body += '<div style="font-size:13px;color:#555;margin-bottom:14px;">No village was selected on this visit.</div>';
+  }
+  villages.forEach(function(v) {
+    var addrs = v.addresses || [];
+    body += '<div style="font-size:14px;font-weight:800;margin:12px 0 4px;">' + _pcEsc(v.name) + ' · ' + addrs.length + ' address' + (addrs.length === 1 ? '' : 'es') + '</div>';
+    body += addrs.map(function(a) {
+      var hit = _cuIssuesForUnit(record, a.id).length > 0;
+      return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px solid #eee;font-size:12px;page-break-inside:avoid;">'
+        + '<div style="min-width:0;"><div style="font-weight:700;">' + _pcEsc(a.label) + '</div>'
+          + '<div style="color:#666;">' + _pcEsc(a.fullAddress || '') + '</div></div>'
+        + '<div style="flex-shrink:0;font-weight:800;color:' + (hit ? '#b42318' : green) + ';">' + (hit ? 'Issue' : 'Serviced') + '</div>'
+      + '</div>';
+    }).join('');
+  });
+  return top + body;
+}
+
+function communityReportText(prop, record) {
+  if (!communityReportOn(prop, record)) return [];
+  var lines = [];
+  var issues = (record.issues || []).filter(function(i) { return i && (i.unitId || i.village); });
+  if (issues.length) {
+    lines.push('FLAGGED ISSUES:');
+    issues.forEach(function(i, n) {
+      lines.push((n + 1) + '. ' + (cuIssueHeading(i) || 'Issue') + (i.address ? ' — ' + i.address : '') + (i.desc ? ': ' + i.desc : '') + (i.type ? ' (' + i.type + (i.action ? ', ' + i.action : '') + ')' : ''));
+    });
+  } else lines.push('No issues flagged.');
+  lines.push('');
+  lines.push('Villages checked:');
+  _cuReportVillages(prop, record).forEach(function(v) {
+    var flagged = (v.addresses || []).filter(function(a) { return _cuIssuesForUnit(record, a.id).length; }).length;
+    lines.push(v.name + ': ' + (v.addresses || []).length + ' addresses serviced' + (flagged ? ' (' + flagged + ' flagged — see above)' : ''));
+  });
+  lines.push('Every address is listed on the PDF report.');
+  return lines;
+}
+
+// Local-only fixture (?fixture=lexington on localhost). Never starts Firebase,
+// so a test cannot write the production project or the live app version.
+function startLexingtonFixture() {
+  if (!window._dlFixture) return;
+  fetch('data/lexington-addresses.csv').then(function(r) { return r.text(); }).then(function(text) {
+    var community = buildCommunityFromCsvText(text);
+    delete community.skipped;
+    var todayISO = new Date().toISOString().slice(0, 10);
+    var dayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+    state.properties = [
+      { id: 'fix-oak', name: 'Oak Lane Residence', address: '142 Oak Lane, Delray Beach, FL', phone: '555-0100', services: ['Mow & Edge'], frequency: 'Weekly' },
+      { id: 'fix-smith', name: 'Smith Commercial', address: '800 Business Blvd, Delray Beach, FL', phone: '555-0101', services: ['Blow & Clean'] },
+      { id: 'lexington-club', name: 'Lexington Club', address: '7799 Lexington Club Blvd, Delray Beach, FL 33446', phone: '', notes: 'Commercial HOA. Unit addresses are villages on this property.', services: ['Weed Control', 'Irrigation Check'], community: community }
+    ];
+    state.crew = [{ id: 'fix-crew', name: 'Alex Crew', role: 'Crew Lead', phone: '555-0199', canViewRoutes: true }];
+    state.routes = [{
+      id: 'fix-route', name: 'Saturday route', date: todayISO, day: dayName, crewId: 'fix-crew', status: 'Scheduled',
+      stops: [
+        { propId: 'lexington-club', completed: false, completedServices: [] },
+        { propId: 'fix-oak', completed: false, completedServices: [] }
+      ]
+    }];
+    state.wetChecks = [];
+    state.treatments = [];
+    state.flags = [];
+    state.role = 'manager';
+    window._dlFixtureReady = true;
+    window._dlFixtureCounts = _cuCounts(_cuProp('lexington-club'));
+    try { dismissLoginScreen('manager'); } catch (e) { console.warn(e); }
+  }).catch(function(err) {
+    console.error('Fixture CSV failed', err);
+    window._dlFixtureError = String(err && err.message || err);
+  });
+}
 // ═══════════════════════════════════════════════════════════════════════
 // IRRIGATION WET CHECKS
 // ═══════════════════════════════════════════════════════════════════════
@@ -13409,7 +14025,7 @@ function renderWetCheckCard(propId) {
         return '<div class="card-flat" style="margin-bottom:6px;cursor:pointer;" onclick="wcViewReport(\'' + w.id + '\')">'
           + '<div style="display:flex;justify-content:space-between;align-items:center;">'
             + '<div><div style="font-size:13px;font-weight:700;">' + _pcFmt(_pcIso(new Date(w.startedAt))) + '</div>'
-            + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _wcDur(w.durationMin) + ' · ' + (w.issues || []).length + ' issue' + ((w.issues || []).length === 1 ? '' : 's') + ' · ' + _pcEsc(w.by || '') + '</div></div>'
+            + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _wcDur(w.durationMin) + ((w.villagesChecked || []).length ? ' · ' + w.villagesChecked.length + ' village' + (w.villagesChecked.length === 1 ? '' : 's') : '') + ' · ' + (w.issues || []).length + ' issue' + ((w.issues || []).length === 1 ? '' : 's') + ' · ' + _pcEsc(w.by || '') + '</div></div>'
             + '<span style="color:var(--text3);">›</span>'
           + '</div></div>';
       }).join('') : '<div style="font-size:13px;color:var(--text4);">No wet checks yet</div>')
@@ -13422,6 +14038,7 @@ function wcStart(propId) {
   if (active) { wcOpenForm(active.id); return; }
   var wc = { id: uid(), propId: propId, status: 'inprogress', startedAt: new Date().toISOString(), endedAt: '', durationMin: 0,
              by: _wcWho(), issues: [], notes: '', zonesChecked: '' };
+  if (_cuCommunity(_cuProp(propId))) wc.villagesChecked = [];
   state.wetChecks.push(wc);
   saveAndSync('wetChecks', wc);
   wcOpenForm(wc.id);
@@ -13470,6 +14087,7 @@ function wcRenderForm(id) {
     + '<div class="card" style="text-align:center;margin-bottom:12px;"><div style="font-size:11px;color:var(--text3);font-weight:700;">ELAPSED</div>'
       + '<div id="wc-timer" style="font-size:34px;font-weight:800;color:var(--teal);font-variant-numeric:tabular-nums;">0:00</div>'
       + '<div style="font-size:11px;color:var(--text4);">The timer keeps running if you hide this screen.</div></div>'
+    + communityCheckHtml('wc', id, prop, wc)
     + '<div class="card" style="margin-bottom:12px;">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
         + '<div class="sec-title" style="margin-bottom:0;">Issues Found (' + wc.issues.length + ')</div>'
@@ -13479,7 +14097,7 @@ function wcRenderForm(id) {
           return '<div class="card-flat" style="margin-bottom:8px;cursor:pointer;" onclick="wcIssueSheet(\'' + id + '\',\'' + iss.id + '\')">'
             + '<div style="display:flex;gap:10px;align-items:flex-start;">'
               + '<div style="flex:1;min-width:0;">'
-                + '<div style="font-size:13px;font-weight:700;">Zone ' + _pcEsc(iss.zone || '?') + ' — ' + _pcEsc(iss.type) + '</div>'
+                + '<div style="font-size:13px;font-weight:700;">' + (cuIssueHeading(iss) ? _pcEsc(cuIssueHeading(iss)) : ('Zone ' + _pcEsc(iss.zone || '?') + ' — ' + _pcEsc(iss.type))) + '</div>'
                 + '<div style="font-size:11px;color:var(--teal);margin-top:2px;">' + _pcEsc(iss.action) + '</div>'
                 + (iss.desc ? '<div style="font-size:12px;color:var(--text2);margin-top:4px;">' + _pcEsc(iss.desc) + '</div>' : '')
                 + ((iss.parts || []).length ? '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Parts: ' + iss.parts.map(function(p){ return _pcEsc(p.name) + ' ×' + p.qty; }).join(', ') + '</div>' : '')
@@ -13516,9 +14134,10 @@ function wcDiscard(id) {
 }
 
 // ── Add/edit one issue ──────────────────────────────────────────────────
-function wcIssueSheet(wcId, issId) {
+function wcIssueSheet(wcId, issId, preset) {
   var wc = _wcFind(wcId); if (!wc) return;
   var iss = issId ? wc.issues.find(function(x){ return x.id === issId; }) : null;
+  var prop = _cuProp(wc.propId);
   var old = document.getElementById('wc-issue-sheet'); if (old) old.remove();
   function opt(v, cur) { return '<option' + (v === cur ? ' selected' : '') + '>' + v + '</option>'; }
   var invNames = (state.inventory || []).map(function(i){ return i.name; }).filter(Boolean);
@@ -13530,7 +14149,8 @@ function wcIssueSheet(wcId, issId) {
     + '<div class="sheet-title">' + (iss ? 'Edit Issue' : 'Add Issue') + '</div>'
     + '<datalist id="wc-parts-dl">' + invNames.map(function(n){ return '<option value="' + _pcEsc(n) + '">'; }).join('') + '</datalist>'
     + '<div style="display:flex;flex-direction:column;gap:10px;">'
-      + '<input class="inp" id="wci-zone" placeholder="Zone # (e.g. 4)" value="' + _pcEsc(iss ? iss.zone : '') + '"/>'
+      + cuIssueFieldsHtml('wci', prop, iss, preset)
+      + '<input class="inp" id="wci-zone" placeholder="' + (_cuCommunity(prop) ? 'Zone # (optional when a unit address is selected)' : 'Zone # (e.g. 4)') + '" value="' + _pcEsc(iss ? iss.zone : '') + '"/>'
       + '<select class="inp" id="wci-type">' + WC_ISSUE_TYPES.map(function(t){ return opt(t, iss ? iss.type : ''); }).join('') + '</select>'
       + '<select class="inp" id="wci-action">' + WC_ACTIONS.map(function(t){ return opt(t, iss ? iss.action : 'Repaired'); }).join('') + '</select>'
       + '<textarea class="inp" id="wci-desc" rows="2" placeholder="What did you find / do?">' + _pcEsc(iss ? iss.desc : '') + '</textarea>'
@@ -13581,8 +14201,10 @@ function wcAddPartRow(name, qty) {
 
 function wcIssueSave(wcId, issId) {
   var wc = _wcFind(wcId); if (!wc) return;
+  var prop = _cuProp(wc.propId);
+  var place = cuReadIssuePlace('wci', prop);
   var zone = (document.getElementById('wci-zone').value || '').trim();
-  if (!zone) { toast('Please enter the zone'); return; }
+  if (!zone && !(place && place.unitId)) { toast('Enter a zone, or pick the unit address'); return; }
   var parts = [];
   document.querySelectorAll('#wci-parts .wci-part-row').forEach(function(r) {
     var n = (r.querySelector('.wci-pname').value || '').trim();
@@ -13596,6 +14218,7 @@ function wcIssueSave(wcId, issId) {
   iss.action = document.getElementById('wci-action').value;
   iss.desc = (document.getElementById('wci-desc').value || '').trim();
   iss.parts = parts;
+  cuApplyIssuePlace(iss, 'wci', prop, wc);
 
   var prev = document.getElementById('wci-photo-preview');
   var newPhoto = prev && prev.dataset.compressed;
@@ -13644,6 +14267,8 @@ function wcEnd(id) {
 function wcReportHtml(wc) {
   var prop = (state.properties || []).find(function(p){ return p.id === wc.propId; }) || {};
   var issues = wc.issues || [];
+  var cuOn = communityReportOn(prop, wc);
+  var otherIssues = cuOn ? issues.filter(function(i){ return !(i && (i.unitId || i.village)); }) : issues;
   var repaired = issues.filter(function(i){ return i.action === 'Repaired'; }).length;
   var followup = issues.length - repaired;
   var partTotals = {};
@@ -13663,13 +14288,15 @@ function wcReportHtml(wc) {
       + '<tr><td style="padding:3px 0;color:#666;">Technician</td><td>' + _pcEsc(wc.by || '') + '</td></tr>'
       + (wc.zonesChecked ? '<tr><td style="padding:3px 0;color:#666;">Zones checked</td><td>' + _pcEsc(wc.zonesChecked) + '</td></tr>' : '')
     + '</table>'
+    + communityReportHtml(prop, wc, _wcPhoto)
     + '<div style="display:flex;gap:10px;margin-bottom:18px;">'
       + [['Issues found', issues.length], ['Repaired', repaired], ['Follow-up / recommended', followup]].map(function(s){
           return '<div style="flex:1;background:#f3f7f3;border:1px solid #d6e4d6;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:22px;font-weight:800;color:' + green + ';">' + s[1] + '</div><div style="font-size:11px;color:#555;">' + s[0] + '</div></div>';
         }).join('')
     + '</div>'
-    + '<div style="font-size:15px;font-weight:800;margin-bottom:8px;">Findings</div>'
-    + (issues.length ? issues.map(function(i, n) {
+    + (cuOn && !otherIssues.length ? '' :
+      '<div style="font-size:15px;font-weight:800;margin-bottom:8px;">Findings</div>'
+      + (otherIssues.length ? otherIssues.map(function(i, n) {
         var ph = _wcPhoto(i);
         return '<div style="border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:10px;page-break-inside:avoid;">'
           + '<div style="display:flex;gap:12px;">'
@@ -13681,7 +14308,7 @@ function wcReportHtml(wc) {
             + '</div>'
             + (ph ? '<img src="' + ph + '" style="width:150px;height:150px;object-fit:cover;border-radius:6px;"/>' : '')
           + '</div></div>';
-      }).join('') : '<div style="font-size:13px;color:#555;margin-bottom:14px;">No issues found — system operating normally.</div>')
+      }).join('') : '<div style="font-size:13px;color:#555;margin-bottom:14px;">No issues found — system operating normally.</div>'))
     + (partKeys.length ? '<div style="font-size:15px;font-weight:800;margin:16px 0 6px;">Parts Used (Total)</div>'
         + '<table style="width:100%;font-size:13px;border-collapse:collapse;">' + partKeys.map(function(k){
             return '<tr><td style="padding:4px 0;border-bottom:1px solid #eee;">' + _pcEsc(k) + '</td><td style="padding:4px 0;border-bottom:1px solid #eee;text-align:right;font-weight:700;">' + partTotals[k] + '</td></tr>';
@@ -13723,13 +14350,16 @@ function wcEmailSummary(id) {
   lines.push('Date: ' + _pcFmt(_pcIso(new Date(wc.startedAt))) + '   Time on site: ' + _wcFmtT(wc.startedAt) + ' – ' + _wcFmtT(wc.endedAt) + ' (' + _wcDur(wc.durationMin) + ')');
   lines.push('Technician: ' + (wc.by || ''));
   lines.push('');
-  if ((wc.issues || []).length) {
-    lines.push('Findings:');
-    wc.issues.forEach(function(i, n) {
-      lines.push((n + 1) + '. Zone ' + i.zone + ' — ' + i.type + ' (' + i.action + ')' + (i.desc ? ': ' + i.desc : '')
+  var cuLines = communityReportText(prop, wc);
+  var otherIssues = cuLines.length ? (wc.issues || []).filter(function(i){ return !(i && (i.unitId || i.village)); }) : (wc.issues || []);
+  if (cuLines.length) { cuLines.forEach(function(l){ lines.push(l); }); lines.push(''); }
+  if (otherIssues.length) {
+    lines.push(cuLines.length ? 'Other findings:' : 'Findings:');
+    otherIssues.forEach(function(i, n) {
+      lines.push((n + 1) + '. Zone ' + (i.zone || '') + ' — ' + i.type + ' (' + i.action + ')' + (i.desc ? ': ' + i.desc : '')
         + ((i.parts || []).length ? ' [Parts: ' + i.parts.map(function(p){ return p.name + ' x' + p.qty; }).join(', ') + ']' : ''));
     });
-  } else lines.push('No issues found — system operating normally.');
+  } else if (!cuLines.length) lines.push('No issues found — system operating normally.');
   if (wc.notes) { lines.push(''); lines.push('Notes: ' + wc.notes); }
   lines.push('');
   lines.push('— Diamond Landscapes');
@@ -13835,7 +14465,7 @@ function renderTreatmentCard(propId) {
         return '<div class="card-flat" style="margin-bottom:6px;cursor:pointer;" onclick="txViewReport(\'' + t.id + '\')">'
           + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
             + '<div style="min-width:0;"><div style="font-size:13px;font-weight:700;">' + _pcFmt(_pcIso(new Date(t.startedAt))) + '</div>'
-            + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _wcDur(t.durationMin) + (label ? ' · ' + _pcEsc(label) : '') + _txBaitListBit(t) + ' · ' + (t.issues || []).length + ' issue' + ((t.issues || []).length === 1 ? '' : 's') + ' · ' + _pcEsc(t.by || '') + '</div></div>'
+            + '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + _wcDur(t.durationMin) + ((t.villagesChecked || []).length ? ' · ' + t.villagesChecked.length + ' village' + (t.villagesChecked.length === 1 ? '' : 's') : '') + (label ? ' · ' + _pcEsc(label) : '') + _txBaitListBit(t) + ' · ' + (t.issues || []).length + ' issue' + ((t.issues || []).length === 1 ? '' : 's') + ' · ' + _pcEsc(t.by || '') + '</div></div>'
             + '<span style="color:var(--text3);">›</span>'
           + '</div></div>';
       }).join('') : '<div style="font-size:13px;color:var(--text4);">No pest or fertilization reports yet</div>')
@@ -13855,6 +14485,7 @@ function txStart(propId) {
     baitStationsRefilled: '',
     issues: []
   };
+  if (_cuCommunity(_cuProp(propId))) tx.villagesChecked = [];
   state.treatments.push(tx);
   saveAndSync('treatments', tx);
   txOpenForm(tx.id);
@@ -14045,6 +14676,7 @@ function txRenderForm(id) {
     + '<div class="card" style="text-align:center;margin-bottom:12px;"><div style="font-size:11px;color:var(--text3);font-weight:700;">ELAPSED</div>'
       + '<div id="tx-timer" style="font-size:34px;font-weight:800;color:var(--purple);font-variant-numeric:tabular-nums;">0:00</div>'
       + '<div style="font-size:11px;color:var(--text4);">The timer keeps running if you hide this screen.</div></div>'
+    + communityCheckHtml('tx', id, prop, tx)
     + '<div class="card" style="margin-bottom:12px;">'
       + '<div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:6px;">TECHNICIAN</div>'
       + '<input class="inp" id="tx-by" placeholder="Who applied it" value="' + _pcEsc(tx.by || '') + '" onchange="txField(\'' + id + '\',\'by\',this.value.trim())"/>'
@@ -14095,7 +14727,7 @@ function txRenderForm(id) {
           return '<div class="card-flat" style="margin-bottom:8px;cursor:pointer;" onclick="txIssueSheet(\'' + id + '\',\'' + iss.id + '\')">'
             + '<div style="display:flex;gap:10px;align-items:flex-start;">'
               + '<div style="flex:1;min-width:0;">'
-                + '<div style="font-size:13px;font-weight:700;">' + (iss.area ? _pcEsc(iss.area) + ' — ' : '') + _pcEsc(iss.type || '') + '</div>'
+                + '<div style="font-size:13px;font-weight:700;">' + (cuIssueHeading(iss) ? _pcEsc(cuIssueHeading(iss)) : ((iss.area ? _pcEsc(iss.area) + ' — ' : '') + _pcEsc(iss.type || ''))) + '</div>'
                 + '<div style="font-size:11px;color:var(--purple);margin-top:2px;">' + _pcEsc(iss.action || '') + '</div>'
                 + (iss.desc ? '<div style="font-size:12px;color:var(--text2);margin-top:4px;">' + _pcEsc(iss.desc) + '</div>' : '')
               + '</div>'
@@ -14123,10 +14755,11 @@ function txDiscard(id) {
   _evRefresh(tx.propId);
 }
 
-function txIssueSheet(txId, issId) {
+function txIssueSheet(txId, issId, preset) {
   txReadForm(txId);
   var tx = _txFind(txId); if (!tx) return;
   var iss = issId ? (tx.issues || []).find(function(x){ return x.id === issId; }) : null;
+  var prop = _cuProp(tx.propId);
   var old = document.getElementById('tx-issue-sheet'); if (old) old.remove();
   function opt(v, cur) { return '<option' + (v === cur ? ' selected' : '') + '>' + v + '</option>'; }
   var sheet = document.createElement('div');
@@ -14136,6 +14769,7 @@ function txIssueSheet(txId, issId) {
   sheet.innerHTML = '<div class="sheet">'
     + '<div class="sheet-title">' + (iss ? 'Edit Observation' : 'Add Observation') + '</div>'
     + '<div style="display:flex;flex-direction:column;gap:10px;">'
+      + cuIssueFieldsHtml('txi', prop, iss, preset)
       + '<input class="inp" id="txi-area" list="tx-area-dl" placeholder="Area (optional) — front lawn, palms…" value="' + _pcEsc(iss ? iss.area : '') + '"/>'
       + '<select class="inp" id="txi-type">' + TX_ISSUE_TYPES.map(function(t){ return opt(t, iss ? iss.type : ''); }).join('') + '</select>'
       + '<select class="inp" id="txi-action">' + TX_ACTIONS.map(function(t){ return opt(t, iss ? iss.action : 'Treated'); }).join('') + '</select>'
@@ -14175,6 +14809,7 @@ function txIssueSave(txId, issId) {
   iss.type = document.getElementById('txi-type').value;
   iss.action = document.getElementById('txi-action').value;
   iss.desc = (document.getElementById('txi-desc').value || '').trim();
+  cuApplyIssuePlace(iss, 'txi', _cuProp(tx.propId), tx);
   var prev = document.getElementById('txi-photo-preview');
   var newPhoto = prev && prev.dataset.compressed;
   if (newPhoto) {
@@ -14233,6 +14868,8 @@ function txSummaryText(tx) {
   var baitN = _txBaitCount(tx);
   if (baitN != null) lines.push('Bait stations refilled: ' + baitN);
   lines.push('');
+  var cuLines = communityReportText(prop, tx);
+  if (cuLines.length) { cuLines.forEach(function(l){ lines.push(l); }); lines.push(''); }
   var products = (tx.products || []).filter(function(p){ return p.name || p.rate || p.area || p.target; });
   if (products.length) {
     lines.push('Products applied:');
@@ -14252,12 +14889,14 @@ function txSummaryText(tx) {
   if (instr.length) instr.forEach(function(l){ lines.push('- ' + l); });
   else lines.push('- None.');
   lines.push('');
-  if ((tx.issues || []).length) {
+  var cuOn = communityReportOn(prop, tx);
+  var obs = cuOn ? (tx.issues || []).filter(function(i){ return !(i && (i.unitId || i.village)); }) : (tx.issues || []);
+  if (obs.length) {
     lines.push('Observations:');
-    tx.issues.forEach(function(i, n) {
+    obs.forEach(function(i, n) {
       lines.push((n + 1) + '. ' + (i.area ? i.area + ' — ' : '') + (i.type || '') + (i.action ? ' (' + i.action + ')' : '') + (i.desc ? ': ' + i.desc : ''));
     });
-  } else lines.push('No issues noted on this visit.');
+  } else if (!cuOn) lines.push('No issues noted on this visit.');
   lines.push('');
   lines.push('— Diamond Landscapes');
   return lines.join('\n');
@@ -14272,6 +14911,8 @@ function txMailtoHref(id) {
 function txReportHtml(tx) {
   var prop = (state.properties || []).find(function(p){ return p.id === tx.propId; }) || {};
   var issues = tx.issues || [];
+  var cuOn = communityReportOn(prop, tx);
+  var otherIssues = cuOn ? issues.filter(function(i){ return !(i && (i.unitId || i.village)); }) : issues;
   var products = (tx.products || []).filter(function(p){ return p.name || p.rate || p.area || p.target; });
   var treated = issues.filter(function(i){ return i.action === 'Treated'; }).length;
   var followup = issues.length - treated;
@@ -14294,6 +14935,7 @@ function txReportHtml(tx) {
       + (weather ? '<tr><td style="padding:3px 0;color:#666;">Weather</td><td>' + _pcEsc(weather) + '</td></tr>' : '')
       + (baitN != null ? '<tr><td style="padding:3px 0;color:#666;">Bait stations refilled</td><td>' + baitN + '</td></tr>' : '')
     + '</table>'
+    + communityReportHtml(prop, tx, _txPhoto)
     + '<div style="display:flex;gap:10px;margin-bottom:18px;">'
       + [['Products', products.length], ['Treated', treated], ['Follow-up / recommended', followup]].map(function(s){
           return '<div style="flex:1;background:#f3f7f3;border:1px solid #d6e4d6;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:22px;font-weight:800;color:' + green + ';">' + s[1] + '</div><div style="font-size:11px;color:#555;">' + s[0] + '</div></div>';
@@ -14317,8 +14959,9 @@ function txReportHtml(tx) {
     + '<div style="background:#f3f7f3;border:1px solid #d6e4d6;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px;line-height:1.45;">'
       + (instr.length ? instr.map(function(l){ return '<div style="margin-bottom:4px;">• ' + _pcEsc(l) + '</div>'; }).join('') : '<div style="color:#555;">No special instructions for this visit.</div>')
     + '</div>'
-    + '<div style="font-size:15px;font-weight:800;margin-bottom:8px;">Observations</div>'
-    + (issues.length ? issues.map(function(i, n) {
+    + (cuOn && !otherIssues.length ? '' :
+      '<div style="font-size:15px;font-weight:800;margin-bottom:8px;">Observations</div>'
+      + (otherIssues.length ? otherIssues.map(function(i, n) {
         var ph = _txPhoto(i);
         return '<div style="border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:10px;page-break-inside:avoid;">'
           + '<div style="display:flex;gap:12px;">'
@@ -14329,7 +14972,7 @@ function txReportHtml(tx) {
             + '</div>'
             + (ph ? '<img src="' + ph + '" style="width:150px;height:150px;object-fit:cover;border-radius:6px;"/>' : '')
           + '</div></div>';
-      }).join('') : '<div style="font-size:13px;color:#555;margin-bottom:14px;">No issues noted on this visit.</div>')
+      }).join('') : '<div style="font-size:13px;color:#555;margin-bottom:14px;">No issues noted on this visit.</div>'))
     + '<div style="margin-top:24px;font-size:11px;color:#888;border-top:1px solid #ddd;padding-top:8px;">Diamond Landscapes · Report generated ' + _wcFmtDT(tx.endedAt) + '</div>'
   + '</div>';
 }
@@ -17467,6 +18110,7 @@ load().then(function() {
   var screen = document.getElementById('login-screen');
   if (screen) { screen.style.display = 'flex'; screen.style.opacity = '1'; }
   ls_showWho();
+  if (window._dlFixture) startLexingtonFixture();
 });
 // load live data from Google Sheets
 
