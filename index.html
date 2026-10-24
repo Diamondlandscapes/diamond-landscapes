@@ -32,7 +32,7 @@ button,a{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
   --border:#2d333b; --border2:#373e47;
   --green:#3fb950; --green2:#238636; --green3:#196127;
   --lime:#a3e635; --yellow:#e3b341; --orange:#f0883e;
-  --red:#f85149; --blue:#58a6ff; --teal:#39d353; --purple:#c084fc;
+  --red:#f85149; --blue:#58a6ff; --teal:#39d353; --purple:#c084fc; --rose:#f778ba;
   --text:#e6edf3; --text2:#adbac7; --text3:#545d68; --text4:#2d333b;
   /* Premium accent */
   --accent:#3fb950; --accent2:#238636;
@@ -146,6 +146,7 @@ select.inp{cursor:pointer;}
 .badge-red{background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.2);}
 .badge-blue{background:rgba(88,166,255,.1);color:var(--blue);border:1px solid rgba(88,166,255,.2);}
 .badge-orange{background:rgba(240,136,62,.1);color:var(--orange);border:1px solid rgba(240,136,62,.2);}
+.call-urgent{color:#fff;background:var(--red);font-weight:800;font-size:10px;letter-spacing:.6px;padding:1px 5px;border-radius:4px;vertical-align:1px;}
 
 /* pills */
 .pills{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;margin-bottom:12px;}
@@ -603,6 +604,24 @@ select.inp{cursor:pointer;}
   border-radius: 2px;
   transition: all .25s ease;
 }
+#hamburger-btn span#hamburger-calls-count {
+  display: none;
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: auto;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 20px;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
 #hamburger-btn.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
 #hamburger-btn.open span:nth-child(2) { opacity: 0; }
 #hamburger-btn.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
@@ -885,6 +904,7 @@ select.inp{cursor:pointer;}
       <div class="topbar-role" id="role-badge" style="background:#1a2e1a;border-color:#2e4d2e;">MANAGER</div>
       <button id="hamburger-btn" onclick="toggleDrawer()" aria-label="Menu">
         <span></span><span></span><span></span>
+        <span id="hamburger-calls-count"></span>
       </button>
     </div>
   </div>
@@ -1088,6 +1108,14 @@ select.inp{cursor:pointer;}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;" id="creq-filter-pills"></div>
       <div id="creq-list"></div>
+    </div>
+
+    <div id="screen-calls" class="screen">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-size:20px;font-weight:800;">Calls</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;" id="calls-filter-pills"></div>
+      <div id="calls-list"></div>
     </div>
 
 
@@ -1702,16 +1730,19 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-24-v68'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-24-v69'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
-// Local fixture for tests. Only localhost, and only with ?fixture=lexington.
-// Never set on the live GitHub Pages host, so a test cannot publish a version.
+// Local fixtures for tests. Only localhost, and only with ?fixture=lexington
+// or ?fixture=calls. Never set on the live GitHub Pages host, so a test
+// cannot publish a version or write production Firestore.
 window._dlFixture = false;
+window._dlFixtureName = '';
 try {
   var _dlHost = location.hostname;
   var _dlQs = new URLSearchParams(location.search);
-  window._dlFixture = (_dlHost === 'localhost' || _dlHost === '127.0.0.1') && _dlQs.get('fixture') === 'lexington';
-} catch (eFix) { window._dlFixture = false; }
+  window._dlFixtureName = _dlQs.get('fixture') || '';
+  window._dlFixture = (_dlHost === 'localhost' || _dlHost === '127.0.0.1') && (window._dlFixtureName === 'lexington' || window._dlFixtureName === 'calls');
+} catch (eFix) { window._dlFixture = false; window._dlFixtureName = ''; }
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
 // plain string comparison breaks once N reaches double digits, e.g. 'v9' > 'v10' as text).
@@ -1736,6 +1767,7 @@ let state = {
   attendance: [],
   customerRequests: [],
   propEvents: [],
+  receptionistCalls: [], // Ara calls. Manager memory only — stripped from the IndexedDB cache so crew phones never keep them.
   externalEvents: [], // iCloud (manager-only; populated lazily in manager calendar). App writes are done/doneAt and the movedTo/movedAt override — never the synced date.
   propertyPrivate: [], // RATE SPLIT: always kept empty in state/cache — rates live only in _propPrivateById (manager memory)
   crewPrivate: [], // PAY SPLIT: always kept empty in state/cache — daily rates live only in _crewPrivateById (manager memory)
@@ -1823,6 +1855,8 @@ async function load() {
   } catch(e) { console.warn('load() failed:', e); }
   if(!Array.isArray(state.attendance)) state.attendance=[];
   if(!Array.isArray(state.treatments)) state.treatments=[];
+  // Calls are manager-only and must not come back from a shared-phone cache.
+  state.receptionistCalls = [];
   // PAY SPLIT: a previous cache must never revive crew pay. Rates live only
   // in _crewPrivateById after a verified manager listener, never in IndexedDB.
   state.crewPrivate = [];
@@ -1871,6 +1905,7 @@ function save() {
     // PAY SPLIT: never persist crew pay in the IndexedDB cache, even if a
     // listener briefly assigned the collection or a crew doc still carried it.
     slim.crewPrivate = [];
+    slim.receptionistCalls = []; // never cache call transcripts/numbers on device
     ['crew','routes','attendance'].forEach(function(tbl) {
       (slim[tbl] || []).forEach(function(rec) { if (rec) delete rec.dailyRate; });
     });
@@ -1913,6 +1948,12 @@ function toast(msg='✓ Saved') {
 
 // ─── TABS ─────────────────────────────────────────────────────────────────
 function switchTab(tab) {
+  // Calls is manager-only. A crew session that reaches this tab is sent home.
+  if (tab === 'calls' && state.role !== 'manager') {
+    tab = state.role === 'field' ? 'field' : 'dashboard';
+  }
+  var callSheet = document.getElementById('call-sheet');
+  if (callSheet && tab !== 'calls') callSheet.remove();
   // Leaving Work Orders resets the community selection, so coming back
   // always starts at "pick a community" instead of remembering the last one.
   if (state.currentTab === 'wo-crew' && tab !== 'wo-crew') {
@@ -1947,7 +1988,7 @@ function switchTab(tab) {
     equipment: renderEquipment, reports: renderReports,
     schedule: renderSchedule, 'crew-week': renderCrewWeek, field: renderFieldView,
     workorders: renderWorkOrders, 'wo-crew': renderCrewWorkOrders, attendance: renderAttendance,
-    customerrequests: renderCustomerRequests, calendar: renderCalendar };
+    customerrequests: renderCustomerRequests, calls: renderReceptionistCalls, calendar: renderCalendar };
   renders[tab]?.();
 }
 
@@ -2063,6 +2104,7 @@ async function managerEmailLogin() {
     if (_lsScreen && _lsScreen.style.display !== 'none') dismissLoginScreen('manager');
     else applyRole('manager');
     if (typeof _ensureExternalEventsListener === 'function') _ensureExternalEventsListener();
+    if (typeof _ensureReceptionistCallsListener === 'function') _ensureReceptionistCallsListener();
     if (typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener();
     if (typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener();
   } catch (e) {
@@ -2112,10 +2154,12 @@ function loginAsCrew(crewId) {
 function applyRole(r) {
   state.role = r;
   if (r !== 'manager' && typeof _clearExternalEvents === 'function') _clearExternalEvents(); // never carry iPhone events into crew/guest
+  if (r !== 'manager' && typeof _clearReceptionistCalls === 'function') _clearReceptionistCalls(); // never carry Ara calls into crew/guest
   if (r !== 'manager' && typeof _clearPropertyPrivate === 'function') _clearPropertyPrivate(); // RATE SPLIT: never carry rates into crew/guest (strips merged rates before save() below)
   if (r !== 'manager' && typeof _clearCrewPrivate === 'function') _clearCrewPrivate(); // PAY SPLIT: never carry crew pay into crew/guest
   if (r === 'manager' && typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener(); // no-op until a verified manager auth session exists
   if (r === 'manager' && typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener(); // no-op until a verified manager auth session exists
+  if (r === 'manager' && typeof _ensureReceptionistCallsListener === 'function') _ensureReceptionistCallsListener();
   save();
   const roleBadge = document.getElementById('role-badge');
   if (roleBadge) roleBadge.textContent = r === 'manager' ? 'MANAGER' : 'CREW';
@@ -2156,6 +2200,7 @@ function applyRole(r) {
     <button class="nb" onclick="switchTab('schedule')" data-tab="schedule"><span class="ni"><i class="ti ti-calendar-week"></i></span><span class="nl">Schedule</span></button>
     <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni"><i class="ti ti-clipboard-list"></i></span><span class="nl">Work Orders</span></button>
     <button class="nb" onclick="switchTab('customerrequests')" data-tab="customerrequests"><span class="ni"><i class="ti ti-message-circle-2"></i></span><span class="nl">Customer Requests</span><span class="n-count" id="nav-creq-count"></span></button>
+    <button class="nb" onclick="switchTab('calls')" data-tab="calls"><span class="ni"><i class="ti ti-phone-incoming"></i></span><span class="nl">Calls</span><span class="n-badge" id="nav-calls-count" style="display:none;"></span></button>
     <button class="nb" onclick="switchTab('calendar')" data-tab="calendar"><span class="ni"><i class="ti ti-calendar"></i></span><span class="nl">Calendar</span></button>
     <div class="nav-group-label" style="margin-top:10px;">Data</div>
     <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni"><i class="ti ti-home"></i></span><span class="nl">Properties</span><span class="n-count" id="nav-prop-count"></span></button>
@@ -2170,6 +2215,7 @@ function applyRole(r) {
     <div id="nav-utils-inner">
       <button class="nb" onclick="openLoginSheet()"><span class="ni"><i class="ti ti-logout"></i></span><span class="nl">Switch / Sign Out</span></button>
     </div>`;
+    if (typeof updateCallsNavBadge === 'function') updateCallsNavBadge();
     switchTab('dashboard');
     // Ensure Firebase is initialized - safe to call multiple times
     if (!window._fbReady) gsLoad();
@@ -9042,6 +9088,7 @@ function dismissLoginScreen(role) {
 // drops the in-memory manager user and requires email + password again.
 function signOut() {
   state.loggedInCrewId = null;
+  if (typeof _clearReceptionistCalls === 'function') _clearReceptionistCalls();
   if (typeof _clearPropertyPrivate === 'function') _clearPropertyPrivate(); // RATE SPLIT: strip merged rates before the save() below caches state
   state.role = 'guest';
   if (typeof _clearCrewPrivate === 'function') _clearCrewPrivate(); // PAY SPLIT: drop crew pay before the save() below caches state
@@ -9069,6 +9116,7 @@ function signOut() {
     <button class="nb" onclick="switchTab('reports')" data-tab="reports"><span class="ni">📊</span><span class="nl">Reports</span></button>
     <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
     <button class="nb" onclick="switchTab('customerrequests')" data-tab="customerrequests"><span class="ni">💬</span><span class="nl">Customer Requests</span></button>
+    <button class="nb" onclick="switchTab('calls')" data-tab="calls"><span class="ni"><i class="ti ti-phone-incoming"></i></span><span class="nl">Calls</span><span class="n-badge" id="nav-calls-count" style="display:none;"></span></button>
     <button class="nb" onclick="switchTab('calendar')" data-tab="calendar"><span class="ni">🗓️</span><span class="nl">Calendar</span></button>
     <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni">📅</span><span class="nl">Attendance</span></button>
     </div>
@@ -9115,6 +9163,7 @@ function _renderActiveTab() {
   document.querySelectorAll('[data-tab="workorders"] .n-badge, [data-tab="wo-crew"] .n-badge').forEach(function(el){
     el.textContent = woCount || ''; el.style.display = woCount ? '' : 'none';
   });
+  if (typeof updateCallsNavBadge === 'function') updateCallsNavBadge();
   var activeScreen = document.querySelector('.screen.active');
   if (!activeScreen) return;
   var tab = activeScreen.id.replace('screen-', '');
@@ -9132,6 +9181,7 @@ function _renderActiveTab() {
     reports:    renderReports,
     schedule:   renderSchedule,
     calendar:   renderCalendar, // so externalEvents snapshots re-render the checklist from doc.done
+    calls:      renderReceptionistCalls,
   };
   try { if (renders[tab]) renders[tab](); } catch(e) { console.warn('render error:', e); }
   if (tab !== 'dashboard') try { renderDashboard(); } catch(e) {}
@@ -9158,6 +9208,29 @@ function _ensureExternalEventsListener() {
 function _clearExternalEvents() {
   try { if (_listeners['externalEvents']) { _listeners['externalEvents'](); delete _listeners['externalEvents']; } } catch(e) {}
   state.externalEvents = [];
+}
+// Ara receptionist calls. Same gate as externalEvents: a verified manager
+// session on this page load. Crew devices never subscribe. A permission
+// error (rules not published yet) is swallowed so the rest of the app
+// keeps working.
+function _ensureReceptionistCallsListener() {
+  if (window._dlFixture) return;
+  if (!window._managerSessionUnlocked) return;
+  if (state.role !== 'manager' || !_db || _listeners['receptionistCalls']) return;
+  var u = window._fbAuth && window._fbAuth.currentUser;
+  if (!u || u.isAnonymous || !u.emailVerified) return;
+  _listenCollection('receptionistCalls');
+}
+function _clearReceptionistCalls() {
+  try { if (_listeners['receptionistCalls']) { _listeners['receptionistCalls'](); delete _listeners['receptionistCalls']; } } catch(e) {}
+  state.receptionistCalls = [];
+  window._callsUnreadable = false;
+  window._openCallId = null;
+  var sh = document.getElementById('call-sheet'); if (sh) sh.remove();
+  // Drop any rendered rows so a later crew session cannot scroll a hidden screen back to caller numbers.
+  var list = document.getElementById('calls-list'); if (list) list.innerHTML = '';
+  var pills = document.getElementById('calls-filter-pills'); if (pills) pills.innerHTML = '';
+  try { updateCallsNavBadge(); } catch (e2) {}
 }
 // ── RATE SPLIT (Phase 3 step 2): monthlyRate lives in propertyPrivate ────
 // properties/{id} must NEVER carry monthlyRate once migrated: crew devices
@@ -9380,6 +9453,14 @@ function _listenCollection(name) {
       if (name === 'flags') {
         setTimeout(fixStuckFlagPhotos, 2000); // slight delay to ensure auth is ready
       }
+      if (name === 'receptionistCalls') {
+        window._callsUnreadable = false;
+        var openNote = document.getElementById('call-note');
+        var editingNote = openNote && document.activeElement === openNote;
+        if (!editingNote && window._openCallId && document.getElementById('call-sheet')) {
+          try { openCallDetail(window._openCallId); } catch (eCall) {}
+        }
+      }
 
       // Persist to localStorage as offline cache
       save();
@@ -9389,6 +9470,15 @@ function _listenCollection(name) {
     },
     function(err) {
       console.warn('Firestore listener error [' + name + ']:', err.message);
+      // Rules for this collection may not be published yet. Don't take the
+      // rest of the app offline, and don't surface a raw permission error.
+      if (name === 'receptionistCalls') {
+        window._callsUnreadable = true;
+        if (!Array.isArray(state.receptionistCalls)) state.receptionistCalls = [];
+        try { updateCallsNavBadge(); } catch (e1) {}
+        try { if (state.currentTab === 'calls') renderReceptionistCalls(); } catch (e2) {}
+        return;
+      }
       syncOnline = false;
     }
   );
@@ -9690,6 +9780,7 @@ function gsSave(table, record, _attempt) {
   // Never store raw base64 in Firestore — photos go to Firebase Storage
   var toSave = Object.assign({}, record);
   if (table === 'properties') _stripRateFields(toSave); // RATE SPLIT: crew completion + every whole-record write-back must never (re)write monthlyRate to properties; manager rates go via _savePropertyRate()
+  if (table === 'receptionistCalls') delete toSave.id; // doc id is the CallSid; do not store a separate id field
   if (table === 'crew' || table === 'routes' || table === 'attendance') delete toSave.dailyRate; // PAY SPLIT: pay is crewPrivate-only
   if (toSave.completedPhoto && toSave.completedPhoto.startsWith('data:')) toSave.completedPhoto = '';
   if (toSave.photo          && toSave.photo.startsWith('data:'))          toSave.photo          = '';
@@ -10336,6 +10427,7 @@ const MANAGER_MENU = [
   { tab:'schedule',  icon:'📅', label:'Schedule' },
   { tab:'workorders', icon:'📋', label:'Work Orders' },
   { tab:'customerrequests', icon:'💬', label:'Customer Requests' },
+  { tab:'calls', icon:'📞', label:'Calls' },
   { tab:'calendar', icon:'🗓️', label:'Calendar' },
   { tab:'attendance',  icon:'📅', label:'Attendance' },
 ];
@@ -10374,7 +10466,7 @@ function buildDrawerItems(menuItems, activeTab) {
   const iconMap = {
     'dashboard':  'ti-layout-dashboard', 'routes':     'ti-route',
     'schedule':   'ti-calendar-week',    'workorders': 'ti-clipboard-list',
-    'customerrequests': 'ti-message-circle-2', 'calendar': 'ti-calendar',
+    'customerrequests': 'ti-message-circle-2', 'calls': 'ti-phone-incoming', 'calendar': 'ti-calendar',
     'properties': 'ti-home',             'propmap':    'ti-map-pin',
     'crew':       'ti-users',
     'inventory':  'ti-package',          'equipment':  'ti-tool',
@@ -10385,9 +10477,14 @@ function buildDrawerItems(menuItems, activeTab) {
 
   function itemBtn(m) {
     var icon = iconMap[m.tab] || 'ti-circle';
+    var badge = '';
+    if (m.tab === 'calls') {
+      var n = (typeof callsNewCount === 'function') ? callsNewCount() : 0;
+      badge = '<span class="d-badge" id="drawer-calls-count" style="' + (n ? '' : 'display:none;') + '">' + (n || '') + '</span>';
+    }
     return '<button class="drawer-item ' + (m.tab === activeTab ? 'active' : '') + '" onclick="drawerNav(\'' + m.tab + '\')">' +
       '<span class="d-icon"><i class="ti ' + icon + '" style="font-size:17px;"></i></span>' +
-      '<span class="d-label">' + m.label + '</span></button>';
+      '<span class="d-label">' + m.label + '</span>' + badge + '</button>';
   }
 
   let html;
@@ -10396,7 +10493,7 @@ function buildDrawerItems(menuItems, activeTab) {
     // so the mobile drawer and desktop nav look consistent, not like two different apps.
     var groups = [
       { label: 'Overview',  tabs: ['dashboard'] },
-      { label: 'Operations',tabs: ['routes','schedule','workorders','customerrequests','calendar'] },
+      { label: 'Operations',tabs: ['routes','schedule','workorders','customerrequests','calls','calendar'] },
       { label: 'Data',      tabs: ['properties','propmap','crew','inventory','equipment'] },
       { label: 'Reporting', tabs: ['reports','attendance'] },
     ];
@@ -10419,6 +10516,7 @@ function buildDrawerItems(menuItems, activeTab) {
   html += '<button class="drawer-item" onclick="' + (isManager ? 'openLoginSheet()' : 'signOut()') + ';closeDrawer();"><span class="d-icon"><i class="ti ti-logout" style="font-size:17px;"></i></span><span class="d-label">' + (isManager ? 'Switch / Sign Out' : 'Sign Out') + '</span></button>';
 
   el.innerHTML = html;
+  if (typeof updateCallsNavBadge === 'function') updateCallsNavBadge();
 }
 function drawerNav(tab) {
   closeDrawer();
@@ -12700,6 +12798,392 @@ function creqFlagSubmit(id) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// RECEPTIONIST CALLS (Ara) — manager only
+// ═══════════════════════════════════════════════════════════════════════
+// Collection: receptionistCalls. Doc id is the Twilio CallSid.
+// The receptionist server creates each doc. This app only sets
+// status / handledAt / handledBy / note, or deletes a doc.
+// endedAt and durationSec are null while the call is still in progress.
+// Crew never subscribes. The listener error is ignored so the app still
+// works before the owner publishes rules.
+//
+// iPhone calendar: app-owned events live in propEvents, which every crew
+// device downloads. externalEvents is the opposite direction (iCloud →
+// app). Copying a callback into either one would either leak the caller
+// onto crew phones or be overwritten by the iCloud sync. Callbacks are
+// drawn on the manager calendar from this collection instead. A bot that
+// only reads propEvents will not see them; isBot() is not given read here.
+
+var _callsFilter = 'new';
+
+function callsNewCount() {
+  if (state.role !== 'manager') return 0;
+  return (state.receptionistCalls || []).filter(function(c) {
+    return c && (c.status || 'new') === 'new';
+  }).length;
+}
+
+function updateCallsNavBadge() {
+  var n = callsNewCount();
+  var text = n ? String(n) : '';
+  ['nav-calls-count', 'drawer-calls-count'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.style.display = n ? 'inline-block' : 'none';
+  });
+  var ham = document.getElementById('hamburger-calls-count');
+  if (ham) {
+    ham.textContent = text;
+    ham.style.display = (n && state.role === 'manager') ? 'inline-block' : 'none';
+  }
+}
+
+function _callToDate(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+  if (typeof v.toDate === 'function') {
+    try {
+      var td = v.toDate();
+      if (td && !isNaN(td.getTime())) return td;
+    } catch (e) {}
+  }
+  if (typeof v === 'object' && v.seconds != null) {
+    var ms = Number(v.seconds) * 1000 + Math.floor((Number(v.nanoseconds) || 0) / 1e6);
+    var ds = new Date(ms);
+    return isNaN(ds.getTime()) ? null : ds;
+  }
+  var d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function _callEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function _callHtml(s) {
+  return _callEsc(s).replace(/URGENT/gi, function(m) {
+    return '<span class="call-urgent">' + m + '</span>';
+  });
+}
+
+function _callTranscript(c) {
+  var t = c && c.transcript;
+  if (!t) return [];
+  if (Array.isArray(t)) return t;
+  if (typeof t === 'string') {
+    try { var p = JSON.parse(t); if (Array.isArray(p)) return p; } catch (e) {}
+  }
+  return [];
+}
+
+function _callIsUrgent(c) {
+  if (!c) return false;
+  var blob = [c.reason, c.message, c.summary].join('\n');
+  _callTranscript(c).forEach(function(line) { blob += '\n' + (line && line.text || ''); });
+  return /URGENT/i.test(blob);
+}
+
+function _callInProgress(c) {
+  return !c || _callToDate(c.endedAt) == null;
+}
+
+function _callDurLabel(c) {
+  if (_callInProgress(c)) return 'In progress';
+  if (c.durationSec == null || c.durationSec === '') return '—';
+  var s = Math.round(Number(c.durationSec));
+  if (!isFinite(s) || s < 0) return '—';
+  if (s < 60) return s + 's';
+  var m = Math.floor(s / 60), r = s % 60;
+  return r ? (m + 'm ' + r + 's') : (m + 'm');
+}
+
+function _callKindLabel(k) {
+  if (k === 'callback') return 'Callback requested';
+  if (k === 'message') return 'Message';
+  if (k === 'no_message') return 'Hung up, no message';
+  return 'Call';
+}
+
+function _callName(c) {
+  var n = c && c.callerName != null ? String(c.callerName).trim() : '';
+  return n || 'Unknown caller';
+}
+
+function _callPhoneDisplay(e164) {
+  var d = String(e164 || '').trim();
+  var m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(d);
+  if (m) return '(' + m[1] + ') ' + m[2] + '-' + m[3];
+  return d;
+}
+
+function _callWhenLabel(v) {
+  var d = _callToDate(v);
+  if (!d) return '';
+  var day = _pcIso(d);
+  var today = _pcToday();
+  var time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (day === today) return 'Today, ' + time;
+  var y = new Date(); y.setDate(y.getDate() - 1);
+  if (day === _pcIso(y)) return 'Yesterday, ' + time;
+  return _pcFmt(day) + ', ' + time;
+}
+
+function _callLocalParts(v) {
+  var d = _callToDate(v);
+  if (!d) return null;
+  var hh = d.getHours(), mm = d.getMinutes();
+  return {
+    date: _pcIso(d),
+    time: (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm
+  };
+}
+
+function _callAddMinutes(hhmm, mins) {
+  var p = String(hhmm || '0:0').split(':');
+  var t = (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0) + mins;
+  t = ((t % 1440) + 1440) % 1440;
+  var h = Math.floor(t / 60), m = t % 60;
+  return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+}
+
+function _callRangeLabel(callbackAt) {
+  var parts = _callLocalParts(callbackAt);
+  if (!parts) return '';
+  return _pcFmt(parts.date) + ', ' + _pcFmtTime(parts.time) + ' – ' + _pcFmtTime(_callAddMinutes(parts.time, 15));
+}
+
+function _callById(id) {
+  return (state.receptionistCalls || []).find(function(c) {
+    return c && (String(c.id) === String(id) || String(c.callSid) === String(id));
+  }) || null;
+}
+
+function _callSortKey(c) {
+  var d = _callToDate(c && c.startedAt) || _callToDate(c && c.createdAt);
+  return d ? d.getTime() : 0;
+}
+
+function _callbackDayCard(it) {
+  var done = !!it.done;
+  return '<div class="card-flat" role="button" style="margin-bottom:6px;cursor:pointer;border-left:3px solid var(--rose);' + (done ? 'opacity:.45;' : '') + '" onclick="' + it.onclick + '">'
+    + '<div style="font-size:13px;font-weight:700;' + (done ? 'text-decoration:line-through;color:var(--text3);' : '') + '">📞 ' + _callEsc(it.title) + '</div>'
+    + (it.sub ? '<div style="font-size:11px;color:var(--text3);margin-top:2px;' + (done ? 'text-decoration:line-through;' : '') + '">' + _callEsc(it.sub) + '</div>' : '')
+  + '</div>';
+}
+
+function renderReceptionistCalls() {
+  if (state.role !== 'manager') return;
+  var pillsEl = document.getElementById('calls-filter-pills');
+  var listEl = document.getElementById('calls-list');
+  if (!listEl) return;
+  updateCallsNavBadge();
+
+  var all = (state.receptionistCalls || []).slice().sort(function(a, b) {
+    return _callSortKey(b) - _callSortKey(a);
+  });
+  var nNew = all.filter(function(c) { return (c.status || 'new') === 'new'; }).length;
+
+  if (pillsEl) {
+    var pills = [
+      { key: 'new', label: 'New', count: nNew },
+      { key: 'all', label: 'All', count: all.length }
+    ];
+    pillsEl.innerHTML = pills.map(function(p) {
+      return '<button class="pill' + (_callsFilter === p.key ? ' active' : '') + '" onclick="_callsFilter=\'' + p.key + '\';renderReceptionistCalls()">' + p.label + ' (' + p.count + ')</button>';
+    }).join('');
+  }
+
+  if (window._callsUnreadable && !all.length) {
+    listEl.innerHTML = '<div class="card" style="text-align:center;padding:28px 16px;color:var(--text3);font-size:13px;line-height:1.5;">Calls will show up here after receptionist access is turned on. The rest of the app keeps working.</div>';
+    return;
+  }
+
+  var filtered = _callsFilter === 'all' ? all : all.filter(function(c) { return (c.status || 'new') === 'new'; });
+  if (!filtered.length) {
+    listEl.innerHTML = '<div class="card" style="text-align:center;padding:32px;color:var(--text4);font-size:13px;">' + (_callsFilter === 'new' ? 'No new calls' : 'No calls yet') + '</div>';
+    return;
+  }
+
+  listEl.innerHTML = filtered.map(function(c) {
+    var id = String(c.id || c.callSid || '');
+    var status = (c.status || 'new') === 'handled' ? 'handled' : 'new';
+    var phone = _callPhoneDisplay(c.from);
+    var tel = String(c.from || '').trim();
+    var when = _callWhenLabel(c.startedAt || c.createdAt);
+    var dur = _callDurLabel(c);
+    var urgent = _callIsUrgent(c);
+    var phoneHtml = tel
+      ? '<a href="tel:' + _callEsc(tel) + '" onclick="event.stopPropagation();" style="color:var(--blue);font-weight:700;font-size:14px;text-decoration:none;">' + _callEsc(phone) + '</a>'
+      : '<span style="color:var(--text4);font-size:13px;">No number</span>';
+    return '<div class="card" role="button" style="margin-bottom:10px;cursor:pointer;border-left:3px solid ' + (status === 'handled' ? 'var(--green)' : 'var(--rose)') + ';" onclick="openCallDetail(\'' + _callEsc(id) + '\')">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">'
+        + '<div style="min-width:0;">'
+          + '<div style="font-weight:800;font-size:15px;">' + _callHtml(_callName(c)) + (urgent ? ' <span class="call-urgent">URGENT</span>' : '') + '</div>'
+          + '<div style="margin-top:4px;">' + phoneHtml + '</div>'
+        + '</div>'
+        + '<span class="badge badge-' + (status === 'handled' ? 'green' : 'red') + '">' + (status === 'handled' ? 'Handled' : 'New') + '</span>'
+      + '</div>'
+      + '<div style="font-size:12px;color:var(--text3);margin-top:8px;">' + _callEsc(when) + (when ? ' · ' : '') + (dur === 'In progress' ? '<span style="color:var(--yellow);font-weight:700;">In progress</span>' : _callEsc(dur)) + '</div>'
+      + '<div style="font-size:12px;color:var(--text2);margin-top:4px;">' + _callEsc(_callKindLabel(c.kind)) + '</div>'
+    + '</div>';
+  }).join('');
+}
+
+function openCallDetail(id) {
+  if (state.role !== 'manager') return;
+  var c = _callById(id);
+  window._openCallId = c ? String(c.id || c.callSid) : null;
+  var old = document.getElementById('call-sheet'); if (old) old.remove();
+  if (!c) return;
+  var status = (c.status || 'new') === 'handled' ? 'handled' : 'new';
+  var tel = String(c.from || '').trim();
+  var phone = _callPhoneDisplay(c.from);
+  var lines = _callTranscript(c);
+  var transcriptHtml = lines.length
+    ? lines.map(function(line) {
+        var role = line && line.role === 'ara' ? 'ara' : 'caller';
+        var label = role === 'ara' ? 'Ara' : 'Caller';
+        var align = role === 'ara' ? 'flex-end' : 'flex-start';
+        var bg = role === 'ara' ? 'rgba(63,185,80,.12)' : 'var(--bg4)';
+        return '<div style="display:flex;justify-content:' + align + ';margin-bottom:8px;">'
+          + '<div style="max-width:85%;background:' + bg + ';border:1px solid var(--border);border-radius:12px;padding:8px 10px;">'
+            + '<div style="font-size:10px;font-weight:800;letter-spacing:.6px;color:var(--text3);margin-bottom:2px;">' + label + '</div>'
+            + '<div style="font-size:13px;line-height:1.45;color:var(--text);">' + _callHtml(line && line.text || '') + '</div>'
+          + '</div></div>';
+      }).join('')
+    : '<div style="font-size:13px;color:var(--text4);">' + (_callInProgress(c) ? 'Transcript will show here as the call continues.' : 'No transcript.') + '</div>';
+
+  function block(label, value, raw) {
+    if (value == null || value === '') return '';
+    return '<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.4px;margin-bottom:4px;">' + label + '</div>'
+      + '<div style="font-size:14px;line-height:1.5;color:var(--text);">' + (raw ? value : _callHtml(value)) + '</div></div>';
+  }
+
+  var when = _callWhenLabel(c.startedAt || c.createdAt);
+  var ended = _callToDate(c.endedAt) ? _callWhenLabel(c.endedAt) : '';
+  var summary = c.summary ? String(c.summary) : (_callInProgress(c) ? '' : '');
+  var summaryBlock = c.summary
+    ? block('SUMMARY', c.summary)
+    : '<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.4px;margin-bottom:4px;">SUMMARY</div>'
+      + '<div style="font-size:13px;color:var(--text4);">' + (_callInProgress(c) ? 'Summary will show here when the call finishes.' : 'No summary.') + '</div></div>';
+  var callbackBlock = '';
+  if (c.kind === 'callback' || c.callbackAt) {
+    var range = _callRangeLabel(c.callbackAt);
+    callbackBlock = block('CALLBACK TIME', range || 'No time requested.');
+  }
+  var handledLine = '';
+  if (status === 'handled') {
+    handledLine = '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Handled'
+      + (_callWhenLabel(c.handledAt) ? ' · ' + _callEsc(_callWhenLabel(c.handledAt)) : '')
+      + (c.handledBy ? ' · ' + _callEsc(c.handledBy) : '')
+      + '</div>';
+  }
+  var safeId = _callEsc(window._openCallId);
+
+  var sheet = document.createElement('div');
+  sheet.id = 'call-sheet';
+  sheet.className = 'overlay open';
+  sheet.style.zIndex = '12050';
+  sheet.innerHTML = '<div class="sheet" style="max-height:92vh;">'
+    + '<div class="sheet-hdr">'
+      + '<div class="sheet-title" style="padding-right:8px;">' + _callHtml(_callName(c)) + '</div>'
+      + '<button type="button" class="sheet-close" onclick="document.getElementById(\'call-sheet\').remove()" aria-label="Close">✕</button>'
+    + '</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">'
+      + '<span class="badge badge-' + (status === 'handled' ? 'green' : 'red') + '">' + (status === 'handled' ? 'Handled' : 'New') + '</span>'
+      + (_callInProgress(c) ? '<span class="badge badge-yellow">In progress</span>' : '')
+      + (_callIsUrgent(c) ? '<span class="call-urgent">URGENT</span>' : '')
+    + '</div>'
+    + (tel ? '<a href="tel:' + _callEsc(tel) + '" style="display:flex;align-items:center;justify-content:center;min-height:48px;margin-bottom:12px;border-radius:12px;background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.35);color:var(--blue);font-weight:800;font-size:16px;text-decoration:none;">' + _callEsc(phone) + '</a>' : '')
+    + '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;">' + _callEsc(_callKindLabel(c.kind))
+      + (when ? ' · ' + _callEsc(when) : '')
+      + ' · ' + (_callInProgress(c) ? '<span style="color:var(--yellow);font-weight:700;">In progress</span>' : _callEsc(_callDurLabel(c)))
+      + (ended ? ' · ended ' + _callEsc(ended) : '')
+      + '</div>'
+    + summaryBlock
+    + block('REASON', c.reason)
+    + callbackBlock
+    + (c.kind === 'message' || c.message ? block('MESSAGE', c.message || 'No message text.') : '')
+    + handledLine
+    + '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.4px;margin-bottom:4px;">NOTE</div>'
+    + '<textarea class="inp" id="call-note" rows="3" placeholder="Note for yourself" style="margin-bottom:10px;">' + _callEsc(c.note || '') + '</textarea>'
+    + '<div style="display:flex;flex-direction:column;gap:8px;">'
+      + (status !== 'handled' ? '<button type="button" class="btn btn-green" onclick="markCallHandled(\'' + safeId + '\')">Mark Handled</button>' : '')
+      + '<button type="button" class="btn btn-outline" onclick="saveCallNote(\'' + safeId + '\')">Save note</button>'
+      + '<button type="button" class="btn btn-outline" style="color:var(--red);" onclick="deleteReceptionistCall(\'' + safeId + '\')">Delete call</button>'
+    + '</div>'
+    + '<details class="call-transcript" style="margin-top:14px;border-top:1px solid var(--border);">'
+      + '<summary style="cursor:pointer;font-size:13px;font-weight:800;padding:12px 0;color:var(--text);">Transcript (' + lines.length + ')</summary>'
+      + transcriptHtml
+    + '</details>'
+  + '</div>';
+  sheet.addEventListener('click', function(e) { if (e.target === sheet) sheet.remove(); });
+  document.body.appendChild(sheet);
+}
+
+function _writeCallFields(id, fields) {
+  var rec = { id: id };
+  Object.keys(fields).forEach(function(k) { rec[k] = fields[k]; });
+  try { gsSave('receptionistCalls', rec); } catch (e) { console.warn('call save failed', e); }
+}
+
+function saveCallNote(id) {
+  if (state.role !== 'manager') return;
+  var c = _callById(id);
+  if (!c) return;
+  var noteEl = document.getElementById('call-note');
+  var note = noteEl ? noteEl.value : (c.note || '');
+  c.note = note;
+  _writeCallFields(c.id || c.callSid, { note: note });
+  toast('Note saved');
+}
+
+function markCallHandled(id) {
+  if (state.role !== 'manager') return;
+  var c = _callById(id);
+  if (!c) return;
+  var noteEl = document.getElementById('call-note');
+  var note = noteEl ? noteEl.value : (c.note || '');
+  c.note = note;
+  if ((c.status || 'new') !== 'handled') {
+    c.status = 'handled';
+    c.handledAt = new Date().toISOString();
+    c.handledBy = window._managerAuthEmail || 'Manager';
+  }
+  _writeCallFields(c.id || c.callSid, {
+    status: 'handled',
+    handledAt: c.handledAt,
+    handledBy: c.handledBy,
+    note: note
+  });
+  toast('Marked handled');
+  openCallDetail(c.id || c.callSid);
+  renderReceptionistCalls();
+  try { if (state.currentTab === 'calendar') renderCalendar(); } catch (e) {}
+}
+
+function deleteReceptionistCall(id) {
+  if (state.role !== 'manager') return;
+  var c = _callById(id);
+  if (!c) return;
+  var who = _callName(c);
+  if (!confirm('Delete this call from ' + who + '? This cannot be undone.')) return;
+  var docId = String(c.id || c.callSid || id);
+  state.receptionistCalls = (state.receptionistCalls || []).filter(function(x) {
+    return String(x.id || x.callSid) !== docId;
+  });
+  window._openCallId = null;
+  var sh = document.getElementById('call-sheet'); if (sh) sh.remove();
+  try { gsDelete('receptionistCalls', docId); } catch (e) {}
+  save();
+  renderReceptionistCalls();
+  try { if (state.currentTab === 'calendar') renderCalendar(); } catch (e2) {}
+  toast('Call deleted');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // PROPERTY CALENDAR / EVENTS, MASTER CALENDAR, AND IRRIGATION WET CHECKS
 // ═══════════════════════════════════════════════════════════════════════
 // propEvents  — per-property scheduled items (annual flowers, mulch, estimate
@@ -13251,6 +13735,27 @@ function _calItemsForDate(iso) {
       onclick:"openRouteDetail('" + r.id + "')" });
   });
 
+  // Callbacks stay on receptionistCalls. They are not copied into propEvents
+  // (crew phones download that whole collection) or externalEvents (that
+  // feed is iCloud → app, and the sync bot replaces the date). The in-app
+  // calendar reads them here, manager only. See the Calls section comment.
+  if (state.role === 'manager') {
+    (state.receptionistCalls || []).forEach(function(c) {
+      if (!c || c.kind !== 'callback') return;
+      var parts = _callLocalParts(c.callbackAt);
+      if (!parts || parts.date !== iso) return;
+      var id = String(c.id || c.callSid || '');
+      if (!id) return;
+      var name = (c.callerName && String(c.callerName).trim()) || 'Unknown';
+      var end = _callAddMinutes(parts.time, 15);
+      var handled = (c.status || '') === 'handled';
+      items.push({ kind:'callback', id:id, color:'rose', done:handled,
+        title:'Callback: ' + name,
+        sub:_pcFmtTime(parts.time) + ' – ' + _pcFmtTime(end) + (handled ? ' · Handled' : ''),
+        onclick:"openCallDetail('" + id.replace(/\\/g,'\\\\').replace(/'/g,"\\'") + "')" });
+    });
+  }
+
   (state.propEvents || []).forEach(function(e) {
     if (!e || e.date !== iso) return;
     var prop = (state.properties || []).find(function(p){ return p.id === e.propId; });
@@ -13315,6 +13820,7 @@ function renderCalendar() {
   var root = document.getElementById('cal-root');
   if (!root) return;
   if (typeof _ensureExternalEventsListener === 'function') _ensureExternalEventsListener(); // manager-only lazy subscribe
+  if (typeof _ensureReceptionistCallsListener === 'function') _ensureReceptionistCallsListener();
   var today = _pcToday();
   if (!_calSel) _calSel = today;
   if (!_calMonth) _calMonth = _calSel.slice(0, 8) + '01';
@@ -13341,10 +13847,10 @@ function renderCalendar() {
   }
 
   var selItems = _calItemsForDate(_calSel);
-  var order = { route:0, event:1, wet:2, treat:3, wo:4, external:5 };
+  var order = { route:0, event:1, callback:2, wet:3, treat:4, wo:5, external:6 };
   selItems.sort(function(a,b){ return order[a.kind] - order[b.kind]; });
 
-  var legend = [['blue','Routes'],['orange','Scheduled'],['green','Done'],['teal','Wet checks'],['purple','Pest & Fert']].concat(state.role === 'manager' ? [['yellow','📅 iPhone (manager only)']] : []).map(function(l){
+  var legend = [['blue','Routes'],['orange','Scheduled'],['green','Done'],['teal','Wet checks'],['purple','Pest & Fert']].concat(state.role === 'manager' ? [['rose','Callbacks'],['yellow','📅 iPhone (manager only)']] : []).map(function(l){
     return '<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--' + l[0] + ');"></span>' + l[1] + '</span>';
   }).join('');
 
@@ -13365,6 +13871,7 @@ function renderCalendar() {
     + '</div>'
     + (selItems.length ? selItems.map(function(it) {
         if (it.kind === 'external') return _extEventCard(it); // 📅 iPhone: tick + Move only — no openEventSheet, no edit/delete
+        if (it.kind === 'callback') return _callbackDayCard(it); // Ara callback: tap opens the call, not the property editor
         if (it.kind === 'event') return _propEventDayCard(it); // app event: tap to edit, manager Move beside it
         return '<div class="card-flat" style="margin-bottom:6px;cursor:pointer;border-left:3px solid var(--' + it.color + ');" onclick="' + it.onclick + '">'
           + '<div style="font-size:13px;font-weight:700;">' + it.icon + ' ' + _pcEsc(it.title) + '</div>'
@@ -13945,6 +14452,147 @@ function communityReportText(prop, record) {
   });
   lines.push('Every address is listed on the PDF report.');
   return lines;
+}
+
+// Local-only fixture (?fixture=calls on localhost). Fake Ara calls for preview.
+// Never starts Firebase, so it cannot write production or publish a version.
+// Times stay inside the server's callback window (Mon–Fri 8am–4pm,
+// Sat 8am–2pm ET, no Sunday). The screen does not advertise those hours.
+function _fixtureCallIso(daysBack, hour, minute) {
+  var probe = new Date(Date.now() - daysBack * 86400000);
+  var wd = probe.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'short' });
+  if (wd === 'Sun') probe = new Date(probe.getTime() - 86400000);
+  wd = probe.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'short' });
+  var h = hour, m = minute;
+  if (h < 8) { h = 8; m = 30; }
+  if (wd === 'Sat' && h >= 14) { h = 13; m = 15; }
+  if (wd !== 'Sat' && h >= 16) { h = 15; m = 0; }
+  return estWallTimeISO(probe.toISOString(), h, m);
+}
+function _fixtureNextCallbackIso() {
+  for (var i = 0; i < 8; i++) {
+    var probe = new Date(Date.now() + i * 86400000);
+    var wd = probe.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'short' });
+    if (wd === 'Sun') continue;
+    var candidates = wd === 'Sat' ? [[8, 30], [10, 0], [13, 0]] : [[8, 30], [10, 0], [15, 0]];
+    for (var j = 0; j < candidates.length; j++) {
+      var iso = estWallTimeISO(probe.toISOString(), candidates[j][0], candidates[j][1]);
+      if (new Date(iso).getTime() > Date.now() + 60000) return iso;
+    }
+  }
+  return _fixtureCallIso(-3, 8, 30);
+}
+function _fixturePlusSec(iso, sec) {
+  return new Date(new Date(iso).getTime() + sec * 1000).toISOString();
+}
+function startCallsFixture() {
+  if (window._dlFixtureName !== 'calls') return;
+  var inStart = _fixtureCallIso(0, 13, 50);
+  var cbToday = _fixtureCallIso(0, 10, 0);
+  var cbHandled = _fixtureCallIso(0, 13, 15);
+  var msgStart = _fixtureCallIso(1, 11, 15);
+  var hungStart = _fixtureCallIso(0, 8, 5);
+  var nextCb = _fixtureNextCallbackIso();
+  var dayParts = _callLocalParts(cbToday);
+  var day = dayParts ? dayParts.date : _pcToday();
+  state.properties = [
+    { id: 'fix-example-prop', name: 'Example Property', address: '100 Example Lane, Delray Beach, FL', phone: '555-0100', services: ['Trim Shrubs'] }
+  ];
+  state.crew = [{ id: 'fix-crew', name: 'Alex Example', role: 'Crew Lead', phone: '555-0199' }];
+  state.routes = [{
+    id: 'fix-route', name: 'Example route', date: day,
+    day: new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' }),
+    crewId: 'fix-crew', status: 'Scheduled',
+    stops: [{ propId: 'fix-example-prop', completed: false, completedServices: [] }]
+  }];
+  state.propEvents = [{
+    id: 'fix-ev', propId: 'fix-example-prop', title: 'Mulch', type: 'mulch',
+    date: day, time: '09:00', status: 'scheduled', notes: 'Example event',
+    customerVisible: false, remindDays: -1, repeatMonths: 0
+  }];
+  state.flags = [];
+  state.wetChecks = [];
+  state.treatments = [];
+  state.workOrders = [];
+  state.receptionistCalls = [
+    {
+      id: 'CA_example_inprogress', callSid: 'CA_example_inprogress',
+      from: '+15555550101', callerName: 'Sam Example',
+      startedAt: inStart, endedAt: null, durationSec: null,
+      kind: 'callback', callbackAt: nextCb,
+      reason: 'URGENT — hedge blocking the driveway at 100 Example Lane. Spanish speaker. Alternate callback (555) 555-0199.',
+      message: null, summary: null,
+      transcript: [
+        { role: 'ara', text: 'Diamond Landscapes, this is Ara. How can I help?' },
+        { role: 'caller', text: 'This is Sam Example. The hedge is blocking the driveway at 100 Example Lane. It is URGENT.' },
+        { role: 'ara', text: 'I can request a callback. I cannot book an onsite visit.' },
+        { role: 'caller', text: 'Please call me back. I also speak Spanish.' }
+      ],
+      status: 'new', source: 'ara', createdAt: inStart
+    },
+    {
+      id: 'CA_example_callback', callSid: 'CA_example_callback',
+      from: '+15555550102', callerName: 'Riley Example',
+      startedAt: cbToday, endedAt: _fixturePlusSec(cbToday, 95), durationSec: 95,
+      kind: 'callback', callbackAt: cbToday,
+      reason: 'Wants a return call about the front walk at 200 Example Blvd.',
+      message: null,
+      summary: 'Riley Example asked for a callback about the front walk. No visit was booked.',
+      transcript: [
+        { role: 'ara', text: 'Diamond Landscapes, this is Ara.' },
+        { role: 'caller', text: 'Hi, it is Riley Example. Can someone call me about the front walk?' },
+        { role: 'ara', text: 'I requested a callback. I did not schedule a visit.' }
+      ],
+      status: 'new', source: 'ara', createdAt: cbToday
+    },
+    {
+      id: 'CA_example_message', callSid: 'CA_example_message',
+      from: '+15555550103', callerName: 'Jordan Example',
+      startedAt: msgStart, endedAt: _fixturePlusSec(msgStart, 78), durationSec: 78,
+      kind: 'message', callbackAt: null,
+      reason: null,
+      message: 'Gate code is 0000 at 200 Example Blvd. Please use the side path next visit.',
+      summary: 'Caller left a gate-code message for the next visit. No callback was requested.',
+      transcript: [
+        { role: 'ara', text: 'Diamond Landscapes, this is Ara. I can take a message.' },
+        { role: 'caller', text: 'Please tell the crew the gate code is 0000 and to use the side path.' }
+      ],
+      status: 'new', source: 'ara', createdAt: msgStart
+    },
+    {
+      id: 'CA_example_hungup', callSid: 'CA_example_hungup',
+      from: '+15555550104', callerName: null,
+      startedAt: hungStart, endedAt: _fixturePlusSec(hungStart, 6), durationSec: 6,
+      kind: 'no_message', callbackAt: null,
+      reason: null, message: null, summary: 'Caller hung up before leaving a message.',
+      transcript: [
+        { role: 'ara', text: 'Diamond Landscapes, this is Ara. How can I help?' }
+      ],
+      status: 'new', source: 'ara', createdAt: hungStart
+    },
+    {
+      id: 'CA_example_handled', callSid: 'CA_example_handled',
+      from: '+15555550105', callerName: 'Pat Example',
+      startedAt: cbHandled, endedAt: _fixturePlusSec(cbHandled, 64), durationSec: 64,
+      kind: 'callback', callbackAt: cbHandled,
+      reason: 'Question about last month\'s invoice for Example Property.',
+      message: null,
+      summary: 'Pat Example asked for a callback about an invoice. No visit was booked.',
+      transcript: [
+        { role: 'caller', text: 'This is Pat Example. I have a question about the invoice.' },
+        { role: 'ara', text: 'I requested a callback.' }
+      ],
+      status: 'handled', source: 'ara', createdAt: cbHandled,
+      handledAt: _fixturePlusSec(cbHandled, 3600),
+      handledBy: 'manager@example.com',
+      note: 'Called back. They only had a billing question.'
+    }
+  ];
+  window._dlFixtureReady = true;
+  _calSel = day;
+  _calMonth = day.slice(0, 8) + '01';
+  try { dismissLoginScreen('manager'); } catch (e) { console.warn(e); }
+  setTimeout(function() { switchTab('calls'); updateCallsNavBadge(); }, 400);
 }
 
 // Local-only fixture (?fixture=lexington on localhost). Never starts Firebase,
@@ -18110,7 +18758,8 @@ load().then(function() {
   var screen = document.getElementById('login-screen');
   if (screen) { screen.style.display = 'flex'; screen.style.opacity = '1'; }
   ls_showWho();
-  if (window._dlFixture) startLexingtonFixture();
+  if (window._dlFixtureName === 'calls') startCallsFixture();
+  else if (window._dlFixture) startLexingtonFixture();
 });
 // load live data from Google Sheets
 

@@ -1,0 +1,51 @@
+// FRAGMENT — paste this inside the existing
+//   match /databases/{database}/documents { ... }
+// block, next to the other matches. Do not deploy this file by itself.
+// It is not a complete ruleset. The live rules file is not in this
+// repository (confirmed on main through v68). The owner publishes rules
+// separately. This fragment uses the existing isManager() and isBot()
+// helpers and does not change any other match.
+//
+// createdAt is the receptionist server's clock. Do not require
+// createdAt == request.time.
+//
+// endedAt and durationSec are null while a call is still in progress
+// (a lead tool creates the doc before the call ends).
+
+function receptionistCallCreateOk(data, callId) {
+  return data.keys().hasOnly([
+      'callSid', 'from', 'callerName', 'startedAt', 'endedAt', 'durationSec',
+      'kind', 'callbackAt', 'reason', 'message', 'summary', 'transcript',
+      'status', 'source', 'createdAt'
+    ])
+    && data.status == 'new'
+    && data.source == 'ara'
+    && (!('callSid' in data) || data.callSid == callId)
+    && (!('from' in data) || data.from is string)
+    && (!('callerName' in data) || data.callerName == null || data.callerName is string)
+    && (!('startedAt' in data) || data.startedAt is timestamp)
+    // null until the call ends
+    && (!('endedAt' in data) || data.endedAt == null || data.endedAt is timestamp)
+    && (!('durationSec' in data) || data.durationSec == null || data.durationSec is int || data.durationSec is float)
+    && (!('kind' in data) || data.kind in ['callback', 'message', 'no_message'])
+    && (!('callbackAt' in data) || data.callbackAt == null || data.callbackAt is timestamp)
+    && (!('reason' in data) || data.reason == null || data.reason is string)
+    && (!('message' in data) || data.message == null || data.message is string)
+    && (!('summary' in data) || data.summary == null || data.summary is string)
+    && (!('transcript' in data) || data.transcript == null || data.transcript is list)
+    // Server clock. Not request.time.
+    && (!('createdAt' in data) || data.createdAt is timestamp);
+}
+
+match /receptionistCalls/{callId} {
+  allow read: if isManager();
+  allow create: if isBot() && receptionistCallCreateOk(request.resource.data, callId);
+  // Bot may fill in the post-call fields only. Manager updates are the
+  // handled flag, handledAt, handledBy, and note.
+  allow update: if isManager()
+    || (isBot()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['summary', 'transcript', 'endedAt', 'durationSec']));
+  // Test docs and anything else the manager wants gone. The bot cannot delete.
+  allow delete: if isManager();
+}

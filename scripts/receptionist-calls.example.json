@@ -1,0 +1,45 @@
+{
+  "instructions": "Shape reference for receptionistCalls. Doc id = callSid. Do not import this wrapper. Live docs use Firestore Timestamps; null endedAt and durationSec mean the call is still in progress. Preview in the app on localhost with ?fixture=calls — that path never writes Firestore. Callback times the server accepts are Mon–Fri 8am–4pm and Sat 8am–2pm ET, never Sunday.",
+  "docs": [
+    {
+      "callSid": "CA_example_inprogress",
+      "from": "+15555550101",
+      "callerName": "Sam Example",
+      "startedAt": "2026-10-24T17:50:00.000Z",
+      "endedAt": null,
+      "durationSec": null,
+      "kind": "callback",
+      "callbackAt": null,
+      "reason": "URGENT — hedge blocking the driveway at 100 Example Lane. Spanish speaker. Alternate callback (555) 555-0199.",
+      "message": null,
+      "summary": null,
+      "transcript": [
+        { "role": "ara", "text": "Diamond Landscapes, this is Ara. How can I help?" },
+        { "role": "caller", "text": "This is Sam Example. It is URGENT." }
+      ],
+      "status": "new",
+      "source": "ara",
+      "createdAt": "2026-10-24T17:50:01.000Z"
+    },
+    {
+      "callSid": "CA_example_message",
+      "from": "+15555550103",
+      "callerName": "Jordan Example",
+      "startedAt": "2026-10-23T15:15:00.000Z",
+      "endedAt": "2026-10-23T15:16:18.000Z",
+      "durationSec": 78,
+      "kind": "message",
+      "callbackAt": null,
+      "reason": null,
+      "message": "Gate code is 0000 at 200 Example Blvd. Please use the side path next visit.",
+      "summary": "Caller left a gate-code message. No callback was requested.",
+      "transcript": [
+        { "role": "ara", "text": "I can take a message." },
+        { "role": "caller", "text": "Please tell the crew the gate code is 0000." }
+      ],
+      "status": "new",
+      "source": "ara",
+      "createdAt": "2026-10-23T15:15:02.000Z"
+    }
+  ]
+}
