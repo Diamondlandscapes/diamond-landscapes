@@ -2,7 +2,7 @@
 // Firebase-aware: never caches index.html or Firebase SDK URLs
 // New version activates immediately across all devices
 
-const CACHE_NAME = 'diamond-static-v3';
+const CACHE_NAME = 'diamond-static-v4';
 
 // URLs that should never be cached
 const NEVER_CACHE = [

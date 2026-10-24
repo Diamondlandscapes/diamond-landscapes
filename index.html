@@ -939,6 +939,13 @@ select.inp{cursor:pointer;}
         </div>
       </div>
 
+      <div class="card" id="dash-calls-card" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;">
+          <div class="sec-title" style="margin-bottom:0;">New calls <span id="dash-calls-count" style="color:var(--rose);"></span></div>
+          <button type="button" class="btn-sm" onclick="switchTab('calls')" style="background:rgba(247,120,186,.12);color:var(--rose);border:1px solid rgba(247,120,186,.35);flex-shrink:0;">View all</button>
+        </div>
+        <div id="dash-calls-list"></div>
+      </div>
 
       <div class="card" id="dash-crew-status-card" style="display:none;margin-bottom:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -1730,7 +1737,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-24-v69'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-24-v70'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 // Local fixtures for tests. Only localhost, and only with ?fixture=lexington
 // or ?fixture=calls. Never set on the live GitHub Pages host, so a test
@@ -2257,6 +2264,8 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
   document.getElementById('dash-completed').textContent  = doneStops || completed;
   document.getElementById('dash-flags').textContent      = openFlags.length;
   document.getElementById('dash-crew-active').textContent = activeCrew;
+
+  try { renderDashCalls(); } catch (eCalls) { console.warn('calls card failed', eCalls); }
 
   // routes summary
   const dr = document.getElementById('dash-routes');
@@ -9230,6 +9239,9 @@ function _clearReceptionistCalls() {
   // Drop any rendered rows so a later crew session cannot scroll a hidden screen back to caller numbers.
   var list = document.getElementById('calls-list'); if (list) list.innerHTML = '';
   var pills = document.getElementById('calls-filter-pills'); if (pills) pills.innerHTML = '';
+  var dashList = document.getElementById('dash-calls-list'); if (dashList) dashList.innerHTML = '';
+  var dashCard = document.getElementById('dash-calls-card'); if (dashCard) dashCard.style.display = 'none';
+  var dashCount = document.getElementById('dash-calls-count'); if (dashCount) dashCount.textContent = '';
   try { updateCallsNavBadge(); } catch (e2) {}
 }
 // ── RATE SPLIT (Phase 3 step 2): monthlyRate lives in propertyPrivate ────
@@ -12948,10 +12960,142 @@ function _callAddMinutes(hhmm, mins) {
   return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
 }
 
-function _callRangeLabel(callbackAt) {
+function _callClockMinutes(h, min, ap, startMins) {
+  h = parseInt(h, 10);
+  min = min ? parseInt(min, 10) : 0;
+  if (isNaN(h) || isNaN(min) || min > 59) return null;
+  if (ap) {
+    if (h < 1 || h > 12) return null;
+    if (/^p/i.test(ap) && h !== 12) h += 12;
+    if (/^a/i.test(ap) && h === 12) h = 0;
+    return h * 60 + min;
+  }
+  if (h > 23 || h < 0) return null;
+  var mins = h * 60 + min;
+  if (startMins != null && mins <= startMins && h <= 12) mins += 12 * 60;
+  if (mins >= 24 * 60) return null;
+  return mins;
+}
+
+// callbackAt is the window start. The server puts the window end in reason
+// ("ends 12:00 PM", "10am–12pm", "10am to 12pm"). Same-day only.
+function _callWindowEndDate(start, reason) {
+  if (!start || reason == null || reason === '') return null;
+  var text = String(reason);
+  var startMins = start.getHours() * 60 + start.getMinutes();
+  function toDate(mins) {
+    if (mins == null || mins <= startMins || mins >= 24 * 60) return null;
+    var end = new Date(start.getTime());
+    end.setHours(Math.floor(mins / 60), mins % 60, 0, 0);
+    return end;
+  }
+  var explicit = /(?:\buntil\b|\btill\b|\bthrough\b|\bending\b|\bends(?:\s+at)?\b|\bby\b)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i.exec(text);
+  if (explicit) {
+    var found = toDate(_callClockMinutes(explicit[1], explicit[2], explicit[3], startMins));
+    if (found) return found;
+  }
+  var range = /(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*(?:–|—|-|to)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm))/i.exec(text);
+  if (range) {
+    var token = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i.exec(range[2].replace(/\s+/g, ' ').trim());
+    if (token) {
+      var ranged = toDate(_callClockMinutes(token[1], token[2], token[3], startMins));
+      if (ranged) return ranged;
+    }
+  }
+  var re = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/ig;
+  var last = null;
+  var m;
+  while ((m = re.exec(text))) {
+    var mins = _callClockMinutes(m[1], m[2], m[3], startMins);
+    if (mins != null && mins > startMins) last = mins;
+  }
+  return toDate(last);
+}
+
+function _callCompactClock(d) {
+  var h = d.getHours(), m = d.getMinutes();
+  var ap = h >= 12 ? 'pm' : 'am';
+  var h12 = h % 12 || 12;
+  if (!m) return h12 + ap;
+  return h12 + ':' + (m < 10 ? '0' : '') + m + ap;
+}
+
+function _callRangeLabel(callbackAt, reason) {
+  var start = _callToDate(callbackAt);
+  if (!start) return '';
+  var end = _callWindowEndDate(start, reason);
+  if (end) {
+    var wd = start.toLocaleDateString('en-US', { weekday: 'short' });
+    return wd + ' ' + _callCompactClock(start) + '–' + _callCompactClock(end);
+  }
   var parts = _callLocalParts(callbackAt);
   if (!parts) return '';
   return _pcFmt(parts.date) + ', ' + _pcFmtTime(parts.time) + ' – ' + _pcFmtTime(_callAddMinutes(parts.time, 15));
+}
+
+function _callDashTitle(c) {
+  var n = c && c.callerName != null ? String(c.callerName).trim() : '';
+  if (n) return n;
+  var phone = _callPhoneDisplay(c && c.from);
+  return phone || 'Unknown caller';
+}
+
+function _callBlurb(c) {
+  var s = '';
+  if (c && c.summary != null && String(c.summary).trim()) s = String(c.summary);
+  else if (c && c.reason != null && String(c.reason).trim()) s = String(c.reason);
+  else if (c && c.message != null && String(c.message).trim()) s = String(c.message);
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function openDashCall(id) {
+  if (state.role !== 'manager') return;
+  switchTab('calls');
+  openCallDetail(id);
+}
+
+function renderDashCalls() {
+  var card = document.getElementById('dash-calls-card');
+  var list = document.getElementById('dash-calls-list');
+  if (!card || !list) return;
+  if (state.role !== 'manager') {
+    card.style.display = 'none';
+    list.innerHTML = '';
+    var hiddenCount = document.getElementById('dash-calls-count');
+    if (hiddenCount) hiddenCount.textContent = '';
+    return;
+  }
+  if (window._callsUnreadable && !(state.receptionistCalls || []).length) {
+    card.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+  updateCallsNavBadge();
+  var n = callsNewCount();
+  var countEl = document.getElementById('dash-calls-count');
+  if (countEl) countEl.textContent = n ? '(' + n + ')' : '';
+  card.style.display = '';
+  var rows = (state.receptionistCalls || []).filter(function(c) {
+    return c && (c.status || 'new') === 'new';
+  }).sort(function(a, b) {
+    return _callSortKey(b) - _callSortKey(a);
+  });
+  if (!rows.length) {
+    list.innerHTML = '<div style="font-size:13px;color:var(--text4);text-align:center;padding:8px 0;">No new calls</div>';
+    return;
+  }
+  var shown = rows.slice(0, 5);
+  list.innerHTML = shown.map(function(c) {
+    var id = String(c.id || c.callSid || '');
+    var range = (c.kind === 'callback' || c.callbackAt) ? _callRangeLabel(c.callbackAt, c.reason) : '';
+    var blurb = _callBlurb(c);
+    var urgent = _callIsUrgent(c);
+    return '<div class="card-flat" role="button" style="margin-bottom:6px;cursor:pointer;" onclick="openDashCall(\'' + _callEsc(id) + '\')">'
+      + '<div style="font-weight:700;font-size:14px;">' + _callHtml(_callDashTitle(c)) + (urgent ? ' <span class="call-urgent">URGENT</span>' : '') + '</div>'
+      + '<div style="font-size:12px;color:var(--text2);margin-top:2px;">' + _callEsc(_callKindLabel(c.kind)) + (range ? ' · ' + _callEsc(range) : '') + '</div>'
+      + (blurb ? '<div style="font-size:12px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _callHtml(blurb) + '</div>' : '')
+    + '</div>';
+  }).join('') + (rows.length > 5 ? '<div style="font-size:11px;color:var(--text4);text-align:center;margin-top:4px;">+' + (rows.length - 5) + ' more</div>' : '');
 }
 
 function _callById(id) {
@@ -13070,7 +13214,7 @@ function openCallDetail(id) {
       + '<div style="font-size:13px;color:var(--text4);">' + (_callInProgress(c) ? 'Summary will show here when the call finishes.' : 'No summary.') + '</div></div>';
   var callbackBlock = '';
   if (c.kind === 'callback' || c.callbackAt) {
-    var range = _callRangeLabel(c.callbackAt);
+    var range = _callRangeLabel(c.callbackAt, c.reason);
     callbackBlock = block('CALLBACK TIME', range || 'No time requested.');
   }
   var handledLine = '';
@@ -13161,6 +13305,7 @@ function markCallHandled(id) {
   toast('Marked handled');
   openCallDetail(c.id || c.callSid);
   renderReceptionistCalls();
+  try { renderDashCalls(); } catch (eDash) {}
   try { if (state.currentTab === 'calendar') renderCalendar(); } catch (e) {}
 }
 
@@ -13179,6 +13324,7 @@ function deleteReceptionistCall(id) {
   try { gsDelete('receptionistCalls', docId); } catch (e) {}
   save();
   renderReceptionistCalls();
+  try { renderDashCalls(); } catch (eDash) {}
   try { if (state.currentTab === 'calendar') renderCalendar(); } catch (e2) {}
   toast('Call deleted');
 }
@@ -14469,18 +14615,15 @@ function _fixtureCallIso(daysBack, hour, minute) {
   if (wd !== 'Sat' && h >= 16) { h = 15; m = 0; }
   return estWallTimeISO(probe.toISOString(), h, m);
 }
-function _fixtureNextCallbackIso() {
+function _fixtureNextWeekdayAt(hour, minute) {
   for (var i = 0; i < 8; i++) {
     var probe = new Date(Date.now() + i * 86400000);
     var wd = probe.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'short' });
-    if (wd === 'Sun') continue;
-    var candidates = wd === 'Sat' ? [[8, 30], [10, 0], [13, 0]] : [[8, 30], [10, 0], [15, 0]];
-    for (var j = 0; j < candidates.length; j++) {
-      var iso = estWallTimeISO(probe.toISOString(), candidates[j][0], candidates[j][1]);
-      if (new Date(iso).getTime() > Date.now() + 60000) return iso;
-    }
+    if (wd === 'Sat' || wd === 'Sun') continue;
+    var iso = estWallTimeISO(probe.toISOString(), hour, minute);
+    if (new Date(iso).getTime() > Date.now() + 60000) return iso;
   }
-  return _fixtureCallIso(-3, 8, 30);
+  return _fixtureCallIso(0, hour, minute);
 }
 function _fixturePlusSec(iso, sec) {
   return new Date(new Date(iso).getTime() + sec * 1000).toISOString();
@@ -14492,7 +14635,7 @@ function startCallsFixture() {
   var cbHandled = _fixtureCallIso(0, 13, 15);
   var msgStart = _fixtureCallIso(1, 11, 15);
   var hungStart = _fixtureCallIso(0, 8, 5);
-  var nextCb = _fixtureNextCallbackIso();
+  var nextCb = _fixtureNextWeekdayAt(10, 0);
   var dayParts = _callLocalParts(cbToday);
   var day = dayParts ? dayParts.date : _pcToday();
   state.properties = [
@@ -14520,7 +14663,7 @@ function startCallsFixture() {
       from: '+15555550101', callerName: 'Sam Example',
       startedAt: inStart, endedAt: null, durationSec: null,
       kind: 'callback', callbackAt: nextCb,
-      reason: 'URGENT — hedge blocking the driveway at 100 Example Lane. Spanish speaker. Alternate callback (555) 555-0199.',
+      reason: 'URGENT — hedge blocking the driveway at 100 Example Lane. Spanish speaker. Alternate callback (555) 555-0199. Callback window ends 12:00 PM.',
       message: null, summary: null,
       transcript: [
         { role: 'ara', text: 'Diamond Landscapes, this is Ara. How can I help?' },
@@ -14535,7 +14678,7 @@ function startCallsFixture() {
       from: '+15555550102', callerName: 'Riley Example',
       startedAt: cbToday, endedAt: _fixturePlusSec(cbToday, 95), durationSec: 95,
       kind: 'callback', callbackAt: cbToday,
-      reason: 'Wants a return call about the front walk at 200 Example Blvd.',
+      reason: 'Wants a return call about the front walk at 200 Example Blvd. Callback window ends 12:00 PM.',
       message: null,
       summary: 'Riley Example asked for a callback about the front walk. No visit was booked.',
       transcript: [
@@ -14575,7 +14718,7 @@ function startCallsFixture() {
       from: '+15555550105', callerName: 'Pat Example',
       startedAt: cbHandled, endedAt: _fixturePlusSec(cbHandled, 64), durationSec: 64,
       kind: 'callback', callbackAt: cbHandled,
-      reason: 'Question about last month\'s invoice for Example Property.',
+      reason: 'Question about last month\'s invoice for Example Property. Callback window ends 2:00 PM.',
       message: null,
       summary: 'Pat Example asked for a callback about an invoice. No visit was booked.',
       transcript: [
@@ -14592,7 +14735,7 @@ function startCallsFixture() {
   _calSel = day;
   _calMonth = day.slice(0, 8) + '01';
   try { dismissLoginScreen('manager'); } catch (e) { console.warn(e); }
-  setTimeout(function() { switchTab('calls'); updateCallsNavBadge(); }, 400);
+  setTimeout(function() { switchTab('dashboard'); updateCallsNavBadge(); }, 400);
 }
 
 // Local-only fixture (?fixture=lexington on localhost). Never starts Firebase,
