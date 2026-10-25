@@ -40,6 +40,30 @@
       "status": "new",
       "source": "ara",
       "createdAt": "2026-10-23T15:15:02.000Z"
+    },
+    {
+      "callSid": "CA_example_outbound",
+      "from": "+15555550177",
+      "callerName": "Harbor Example HOA",
+      "startedAt": "2026-10-25T16:00:00.000Z",
+      "endedAt": "2026-10-25T16:00:42.000Z",
+      "durationSec": 42,
+      "kind": "outbound",
+      "direction": "outbound",
+      "outcome": "voicemail",
+      "callbackAt": null,
+      "reason": null,
+      "message": null,
+      "summary": "Ara called Harbor Example HOA and left a voicemail about the irrigation timer.",
+      "answers": [
+        { "question": "Who is the property manager?", "answer": "No one picked up." },
+        "Gate code was not confirmed."
+      ],
+      "followUp": "Try again Tuesday morning.",
+      "transcript": [],
+      "status": "new",
+      "source": "ara",
+      "createdAt": "2026-10-25T16:00:01.000Z"
     }
   ]
 }
