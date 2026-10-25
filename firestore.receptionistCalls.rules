@@ -11,12 +11,17 @@
 //
 // endedAt and durationSec are null while a call is still in progress
 // (a lead tool creates the doc before the call ends).
+//
+// direction, outcome, answers, and followUp match the rules published
+// 2026-10-25 for outbound calls Ara places. This file is still only a fragment.
 
 function receptionistCallCreateOk(data, callId) {
   return data.keys().hasOnly([
       'callSid', 'from', 'callerName', 'startedAt', 'endedAt', 'durationSec',
       'kind', 'callbackAt', 'reason', 'message', 'summary', 'transcript',
-      'status', 'source', 'createdAt'
+      'status', 'source', 'createdAt',
+      // outbound calls placed by Ara (notes only, no transcript)
+      'direction', 'outcome', 'answers', 'followUp'
     ])
     && data.status == 'new'
     && data.source == 'ara'
@@ -27,12 +32,16 @@ function receptionistCallCreateOk(data, callId) {
     // null until the call ends
     && (!('endedAt' in data) || data.endedAt == null || data.endedAt is timestamp)
     && (!('durationSec' in data) || data.durationSec == null || data.durationSec is int || data.durationSec is float)
-    && (!('kind' in data) || data.kind in ['callback', 'message', 'no_message'])
+    && (!('kind' in data) || data.kind in ['callback', 'message', 'no_message', 'outbound'])
     && (!('callbackAt' in data) || data.callbackAt == null || data.callbackAt is timestamp)
     && (!('reason' in data) || data.reason == null || data.reason is string)
     && (!('message' in data) || data.message == null || data.message is string)
     && (!('summary' in data) || data.summary == null || data.summary is string)
     && (!('transcript' in data) || data.transcript == null || data.transcript is list)
+    && (!('direction' in data) || data.direction in ['inbound', 'outbound'])
+    && (!('outcome' in data) || data.outcome in ['person', 'voicemail', 'ivr_dead_end', 'wrong_number', 'refused', 'no_answer', 'busy', 'failed', 'canceled'])
+    && (!('answers' in data) || (data.answers is list && data.answers.size() <= 10))
+    && (!('followUp' in data) || data.followUp == null || data.followUp is string)
     // Server clock. Not request.time.
     && (!('createdAt' in data) || data.createdAt is timestamp);
 }

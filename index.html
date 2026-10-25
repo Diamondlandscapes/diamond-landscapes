@@ -1737,7 +1737,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-24-v70'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-25-v71'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 // Local fixtures for tests. Only localhost, and only with ?fixture=lexington
 // or ?fixture=calls. Never set on the live GitHub Pages host, so a test
@@ -12911,11 +12911,63 @@ function _callDurLabel(c) {
   return r ? (m + 'm ' + r + 's') : (m + 'm');
 }
 
+function _callIsOutbound(c) {
+  return !!(c && c.kind === 'outbound');
+}
+
 function _callKindLabel(k) {
   if (k === 'callback') return 'Callback requested';
   if (k === 'message') return 'Message';
   if (k === 'no_message') return 'Hung up, no message';
+  if (k === 'outbound') return 'Outbound';
   return 'Call';
+}
+
+function _callOutcomeLabel(outcome) {
+  var labels = {
+    person: 'Reached a person',
+    voicemail: 'Voicemail',
+    ivr_dead_end: 'IVR dead end',
+    wrong_number: 'Wrong number',
+    refused: 'Refused',
+    no_answer: 'No answer',
+    busy: 'Busy',
+    failed: 'Failed',
+    canceled: 'Canceled'
+  };
+  if (outcome == null || outcome === '') return '';
+  var key = String(outcome);
+  return labels[key] || key;
+}
+
+function _callOutboundMark(c) {
+  if (!_callIsOutbound(c)) return '';
+  var outcome = _callOutcomeLabel(c.outcome);
+  return '<span class="badge badge-blue">↗ Outbound</span>'
+    + (outcome ? '<span style="font-size:12px;font-weight:700;color:var(--text2);">' + _callEsc(outcome) + '</span>' : '');
+}
+
+function _callAnswersHtml(c) {
+  var list = c && c.answers;
+  if (!Array.isArray(list) || !list.length) return '';
+  var items = list.slice(0, 10).map(function(item) {
+    if (item == null) return '';
+    if (typeof item === 'string') {
+      return '<div style="font-size:14px;line-height:1.45;margin-bottom:8px;">' + _callHtml(item) + '</div>';
+    }
+    if (typeof item === 'object') {
+      var q = item.question != null ? String(item.question) : '';
+      var a = item.answer != null ? String(item.answer) : '';
+      if (!q && !a) return '';
+      return '<div style="margin-bottom:10px;">'
+        + (q ? '<div style="font-size:13px;font-weight:700;">' + _callHtml(q) + '</div>' : '')
+        + (a ? '<div style="font-size:14px;line-height:1.45;color:var(--text2);margin-top:2px;">' + _callHtml(a) + '</div>' : '')
+      + '</div>';
+    }
+    return '';
+  }).join('');
+  if (!items) return '';
+  return '<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.4px;margin-bottom:4px;">ANSWERS</div>' + items + '</div>';
 }
 
 function _callName(c) {
@@ -13087,12 +13139,15 @@ function renderDashCalls() {
   var shown = rows.slice(0, 5);
   list.innerHTML = shown.map(function(c) {
     var id = String(c.id || c.callSid || '');
-    var range = (c.kind === 'callback' || c.callbackAt) ? _callRangeLabel(c.callbackAt, c.reason) : '';
+    var range = (!_callIsOutbound(c) && (c.kind === 'callback' || c.callbackAt)) ? _callRangeLabel(c.callbackAt, c.reason) : '';
     var blurb = _callBlurb(c);
     var urgent = _callIsUrgent(c);
+    var kindLine = _callIsOutbound(c)
+      ? '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px;">' + _callOutboundMark(c) + '</div>'
+      : '<div style="font-size:12px;color:var(--text2);margin-top:2px;">' + _callEsc(_callKindLabel(c.kind)) + (range ? ' · ' + _callEsc(range) : '') + '</div>';
     return '<div class="card-flat" role="button" style="margin-bottom:6px;cursor:pointer;" onclick="openDashCall(\'' + _callEsc(id) + '\')">'
       + '<div style="font-weight:700;font-size:14px;">' + _callHtml(_callDashTitle(c)) + (urgent ? ' <span class="call-urgent">URGENT</span>' : '') + '</div>'
-      + '<div style="font-size:12px;color:var(--text2);margin-top:2px;">' + _callEsc(_callKindLabel(c.kind)) + (range ? ' · ' + _callEsc(range) : '') + '</div>'
+      + kindLine
       + (blurb ? '<div style="font-size:12px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _callHtml(blurb) + '</div>' : '')
     + '</div>';
   }).join('') + (rows.length > 5 ? '<div style="font-size:11px;color:var(--text4);text-align:center;margin-top:4px;">+' + (rows.length - 5) + ' more</div>' : '');
@@ -13158,6 +13213,7 @@ function renderReceptionistCalls() {
     var when = _callWhenLabel(c.startedAt || c.createdAt);
     var dur = _callDurLabel(c);
     var urgent = _callIsUrgent(c);
+    var outbound = _callIsOutbound(c);
     var phoneHtml = tel
       ? '<a href="tel:' + _callEsc(tel) + '" onclick="event.stopPropagation();" style="color:var(--blue);font-weight:700;font-size:14px;text-decoration:none;">' + _callEsc(phone) + '</a>'
       : '<span style="color:var(--text4);font-size:13px;">No number</span>';
@@ -13170,7 +13226,9 @@ function renderReceptionistCalls() {
         + '<span class="badge badge-' + (status === 'handled' ? 'green' : 'red') + '">' + (status === 'handled' ? 'Handled' : 'New') + '</span>'
       + '</div>'
       + '<div style="font-size:12px;color:var(--text3);margin-top:8px;">' + _callEsc(when) + (when ? ' · ' : '') + (dur === 'In progress' ? '<span style="color:var(--yellow);font-weight:700;">In progress</span>' : _callEsc(dur)) + '</div>'
-      + '<div style="font-size:12px;color:var(--text2);margin-top:4px;">' + _callEsc(_callKindLabel(c.kind)) + '</div>'
+      + (outbound
+          ? '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px;">' + _callOutboundMark(c) + '</div>'
+          : '<div style="font-size:12px;color:var(--text2);margin-top:4px;">' + _callEsc(_callKindLabel(c.kind)) + '</div>')
     + '</div>';
   }).join('');
 }
@@ -13212,11 +13270,14 @@ function openCallDetail(id) {
     ? block('SUMMARY', c.summary)
     : '<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.4px;margin-bottom:4px;">SUMMARY</div>'
       + '<div style="font-size:13px;color:var(--text4);">' + (_callInProgress(c) ? 'Summary will show here when the call finishes.' : 'No summary.') + '</div></div>';
+  var outbound = _callIsOutbound(c);
   var callbackBlock = '';
-  if (c.kind === 'callback' || c.callbackAt) {
+  if (!outbound && (c.kind === 'callback' || c.callbackAt)) {
     var range = _callRangeLabel(c.callbackAt, c.reason);
     callbackBlock = block('CALLBACK TIME', range || 'No time requested.');
   }
+  var answersBlock = outbound ? _callAnswersHtml(c) : '';
+  var followBlock = outbound ? block('FOLLOW-UP', c.followUp) : '';
   var handledLine = '';
   if (status === 'handled') {
     handledLine = '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Handled'
@@ -13237,16 +13298,22 @@ function openCallDetail(id) {
     + '</div>'
     + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">'
       + '<span class="badge badge-' + (status === 'handled' ? 'green' : 'red') + '">' + (status === 'handled' ? 'Handled' : 'New') + '</span>'
+      + (outbound ? _callOutboundMark(c) : '')
       + (_callInProgress(c) ? '<span class="badge badge-yellow">In progress</span>' : '')
       + (_callIsUrgent(c) ? '<span class="call-urgent">URGENT</span>' : '')
     + '</div>'
     + (tel ? '<a href="tel:' + _callEsc(tel) + '" style="display:flex;align-items:center;justify-content:center;min-height:48px;margin-bottom:12px;border-radius:12px;background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.35);color:var(--blue);font-weight:800;font-size:16px;text-decoration:none;">' + _callEsc(phone) + '</a>' : '')
-    + '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;">' + _callEsc(_callKindLabel(c.kind))
-      + (when ? ' · ' + _callEsc(when) : '')
-      + ' · ' + (_callInProgress(c) ? '<span style="color:var(--yellow);font-weight:700;">In progress</span>' : _callEsc(_callDurLabel(c)))
-      + (ended ? ' · ended ' + _callEsc(ended) : '')
+    + '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;">'
+      + [
+          outbound ? '' : _callEsc(_callKindLabel(c.kind)),
+          when ? _callEsc(when) : '',
+          _callInProgress(c) ? '<span style="color:var(--yellow);font-weight:700;">In progress</span>' : _callEsc(_callDurLabel(c)),
+          ended ? ('ended ' + _callEsc(ended)) : ''
+        ].filter(Boolean).join(' · ')
       + '</div>'
     + summaryBlock
+    + answersBlock
+    + followBlock
     + block('REASON', c.reason)
     + callbackBlock
     + (c.kind === 'message' || c.message ? block('MESSAGE', c.message || 'No message text.') : '')
@@ -13258,10 +13325,12 @@ function openCallDetail(id) {
       + '<button type="button" class="btn btn-outline" onclick="saveCallNote(\'' + safeId + '\')">Save note</button>'
       + '<button type="button" class="btn btn-outline" style="color:var(--red);" onclick="deleteReceptionistCall(\'' + safeId + '\')">Delete call</button>'
     + '</div>'
-    + '<details class="call-transcript" style="margin-top:14px;border-top:1px solid var(--border);">'
-      + '<summary style="cursor:pointer;font-size:13px;font-weight:800;padding:12px 0;color:var(--text);">Transcript (' + lines.length + ')</summary>'
-      + transcriptHtml
-    + '</details>'
+    + ((!outbound || lines.length)
+      ? ('<details class="call-transcript" style="margin-top:14px;border-top:1px solid var(--border);">'
+        + '<summary style="cursor:pointer;font-size:13px;font-weight:800;padding:12px 0;color:var(--text);">Transcript (' + lines.length + ')</summary>'
+        + transcriptHtml
+      + '</details>')
+      : '')
   + '</div>';
   sheet.addEventListener('click', function(e) { if (e.target === sheet) sheet.remove(); });
   document.body.appendChild(sheet);
@@ -14636,6 +14705,7 @@ function startCallsFixture() {
   var msgStart = _fixtureCallIso(1, 11, 15);
   var hungStart = _fixtureCallIso(0, 8, 5);
   var nextCb = _fixtureNextWeekdayAt(10, 0);
+  var outStart = new Date(Date.now() - 8 * 60000).toISOString();
   var dayParts = _callLocalParts(cbToday);
   var day = dayParts ? dayParts.date : _pcToday();
   state.properties = [
@@ -14658,6 +14728,22 @@ function startCallsFixture() {
   state.treatments = [];
   state.workOrders = [];
   state.receptionistCalls = [
+    {
+      id: 'CA_example_outbound', callSid: 'CA_example_outbound',
+      from: '+15555550177', callerName: 'Harbor Example HOA',
+      startedAt: outStart, endedAt: _fixturePlusSec(outStart, 42), durationSec: 42,
+      kind: 'outbound', direction: 'outbound', outcome: 'voicemail',
+      callbackAt: nextCb,
+      reason: null, message: null,
+      summary: 'Ara called Harbor Example HOA and left a voicemail about the irrigation timer.',
+      answers: [
+        { question: 'Who is the property manager?', answer: 'No one picked up.' },
+        'Gate code was not confirmed.'
+      ],
+      followUp: 'Try again Tuesday morning.',
+      transcript: [],
+      status: 'new', source: 'ara', createdAt: outStart
+    },
     {
       id: 'CA_example_inprogress', callSid: 'CA_example_inprogress',
       from: '+15555550101', callerName: 'Sam Example',
