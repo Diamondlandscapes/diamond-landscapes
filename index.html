@@ -1695,6 +1695,9 @@ select.inp{cursor:pointer;}
   <button class="cbn-btn" data-tab="wo-crew" onclick="switchTab('wo-crew');updateCrewBottomNav('wo-crew')">
     <i class="ti ti-clipboard-check" style="font-size:20px;"></i><span class="cbn-label">Work Orders</span>
   </button>
+  <button class="cbn-btn" id="cbn-properties" data-tab="properties" onclick="switchTab('properties');updateCrewBottomNav('properties')" style="display:none;">
+    <i class="ti ti-home" style="font-size:20px;"></i><span class="cbn-label">Properties</span>
+  </button>
   <button class="cbn-btn" id="cbn-attendance" data-tab="attendance" onclick="switchTab('attendance');updateCrewBottomNav('attendance')" style="display:none;">
     <i class="ti ti-calendar-check" style="font-size:20px;"></i><span class="cbn-label">Attendance</span>
   </button>
@@ -1737,7 +1740,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-25-v71'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-27-v72'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 // Local fixtures for tests. Only localhost, and only with ?fixture=lexington
 // or ?fixture=calls. Never set on the live GitHub Pages host, so a test
@@ -1777,6 +1780,7 @@ let state = {
   receptionistCalls: [], // Ara calls. Manager memory only — stripped from the IndexedDB cache so crew phones never keep them.
   externalEvents: [], // iCloud (manager-only; populated lazily in manager calendar). App writes are done/doneAt and the movedTo/movedAt override — never the synced date.
   propertyPrivate: [], // RATE SPLIT: always kept empty in state/cache — rates live only in _propPrivateById (manager memory)
+  propertyDirectory: [], // name + address only. Crew property list reads this, never properties.
   crewPrivate: [], // PAY SPLIT: always kept empty in state/cache — daily rates live only in _crewPrivateById (manager memory)
   wetChecks: [],
   treatments: [], // pest & fertilization service reports. Collection: treatments.
@@ -1867,6 +1871,10 @@ async function load() {
   // PAY SPLIT: a previous cache must never revive crew pay. Rates live only
   // in _crewPrivateById after a verified manager listener, never in IndexedDB.
   state.crewPrivate = [];
+  if (!Array.isArray(state.propertyDirectory)) state.propertyDirectory = [];
+  state.propertyDirectory = state.propertyDirectory.map(function(d) {
+    return d && d.id ? { id: String(d.id), name: d.name == null ? '' : String(d.name), address: d.address == null ? '' : String(d.address) } : null;
+  }).filter(Boolean);
   ['crew','routes','attendance'].forEach(function(tbl) {
     (state[tbl] || []).forEach(function(rec) { if (rec) delete rec.dailyRate; });
   });
@@ -1913,6 +1921,11 @@ function save() {
     // listener briefly assigned the collection or a crew doc still carried it.
     slim.crewPrivate = [];
     slim.receptionistCalls = []; // never cache call transcripts/numbers on device
+    if (Array.isArray(slim.propertyDirectory)) {
+      slim.propertyDirectory = slim.propertyDirectory.map(function(d) {
+        return d && d.id ? { id: String(d.id), name: d.name == null ? '' : String(d.name), address: d.address == null ? '' : String(d.address) } : null;
+      }).filter(Boolean);
+    }
     ['crew','routes','attendance'].forEach(function(tbl) {
       (slim[tbl] || []).forEach(function(rec) { if (rec) delete rec.dailyRate; });
     });
@@ -1958,6 +1971,14 @@ function switchTab(tab) {
   // Calls is manager-only. A crew session that reaches this tab is sent home.
   if (tab === 'calls' && state.role !== 'manager') {
     tab = state.role === 'field' ? 'field' : 'dashboard';
+  }
+  // Property map is the full record (notes, rates, contact). Crew never get it.
+  // The properties tab is the name/address list, and only with the permission.
+  if (tab === 'propmap' && state.role !== 'manager') {
+    tab = state.role === 'field' ? 'field' : 'dashboard';
+  }
+  if (tab === 'properties' && state.role === 'field' && !crewCanViewPropertyList()) {
+    tab = 'field';
   }
   var callSheet = document.getElementById('call-sheet');
   if (callSheet && tab !== 'calls') callSheet.remove();
@@ -2167,6 +2188,7 @@ function applyRole(r) {
   if (r === 'manager' && typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener(); // no-op until a verified manager auth session exists
   if (r === 'manager' && typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener(); // no-op until a verified manager auth session exists
   if (r === 'manager' && typeof _ensureReceptionistCallsListener === 'function') _ensureReceptionistCallsListener();
+  if (typeof _syncPropertyDirectoryAccess === 'function') _syncPropertyDirectoryAccess();
   save();
   const roleBadge = document.getElementById('role-badge');
   if (roleBadge) roleBadge.textContent = r === 'manager' ? 'MANAGER' : 'CREW';
@@ -3036,6 +3058,17 @@ function openCrewDetail(id) {
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg3);border-radius:10px;padding:12px 14px;">
           <div style="flex:1;">
+            <div style="font-size:13px;font-weight:700;">🏡 Property list</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px;">Name and address only, plus reporting a flag. No rates, notes, gate codes, or customer contact.</div>
+          </div>
+          <label for="ce-proplist-${id}" style="position:relative;display:inline-block;width:44px;height:26px;flex-shrink:0;cursor:pointer;">
+            <input type="checkbox" id="ce-proplist-${id}" ${c.canViewPropertyList?"checked":""} onchange="paintCrewToggle('${id}','ce-proplist',this.checked)" style="position:absolute;opacity:0;width:0;height:0;"/>
+            <span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:${c.canViewPropertyList?"var(--green3)":"var(--bg4)"};border-radius:26px;border:1px solid var(--border2);transition:.2s;" id="ce-proplist-track-${id}"></span>
+            <span style="position:absolute;height:18px;width:18px;left:${c.canViewPropertyList?"21px":"3px"};bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.3);" id="ce-proplist-thumb-${id}"></span>
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg3);border-radius:10px;padding:12px 14px;">
+          <div style="flex:1;">
             <div style="font-size:13px;font-weight:700;">📅 Supervisor — View Attendance</div>
             <div style="font-size:11px;color:var(--text3);margin-top:2px;">Allow this crew member to view and manage attendance</div>
           </div>
@@ -3128,6 +3161,13 @@ function openCrewDetail(id) {
   buildMgrCrewCal(id);
 }
 
+function paintCrewToggle(id, prefix, on) {
+  var track = document.getElementById(prefix + '-track-' + id);
+  var thumb = document.getElementById(prefix + '-thumb-' + id);
+  if (track) track.style.background = on ? 'var(--green3)' : 'var(--bg4)';
+  if (thumb) thumb.style.left = on ? '21px' : '3px';
+}
+
 function toggleCrewEdit(id) {
   const view = document.getElementById('crew-view-'+id);
   const edit = document.getElementById('crew-edit-'+id);
@@ -3149,6 +3189,7 @@ function saveCrewEdit(id) {
   c.role  = document.getElementById('ce-role-'+id)?.value         || c.role;
   c.canViewRoutes    = document.getElementById('ce-viewroutes-'+id)?.checked || false;
   c.canViewAttendance = document.getElementById('ce-viewatt-'+id)?.checked || false;
+  c.canViewPropertyList = document.getElementById('ce-proplist-'+id)?.checked || false;
   const pinVal = (document.getElementById('ce-pin-'+id)?.value||'').trim();
   if (pinVal) {
     if (pinVal.length!==4||!/^\d{4}$/.test(pinVal)) { toast('PIN must be 4 digits'); return; }
@@ -3171,6 +3212,7 @@ function saveCrewEdit(id) {
   // If this is the currently logged-in crew member, rebuild their menu live
   if (state.loggedInCrewId === id && state.role === 'field') {
     rebuildCrewNav(state.currentTab || 'field');
+    if (typeof _syncPropertyDirectoryAccess === 'function') _syncPropertyDirectoryAccess();
   }
   openCrewDetail(id); renderCrew(); toast('Saved ✓');
 }
@@ -4714,6 +4756,10 @@ var UI_ES = {
   'Complete with Photo':          'Completar con Foto',
   'Select a community to see its work orders': 'Selecciona una comunidad para ver sus órdenes de trabajo',
   'All Communities':              'Todas las Comunidades',
+  'Name and address only':        'Solo nombre y dirección',
+  'No properties on the list yet.': 'Aún no hay propiedades en la lista.',
+  'No matching properties.':      'Ninguna propiedad coincide.',
+  'Property list is not available yet.': 'La lista de propiedades aún no está disponible.',
 };
 function t(str) {
   // Translation is only for the crew-facing daily workflow — the language
@@ -5678,7 +5724,65 @@ function setPropView(view) {
   renderProperties();
 }
 
+function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Crew property list. Reads propertyDirectory only — never state.properties —
+// so phone, notes, gate codes, frequency, rates, and community units cannot
+// show up here even if those fields are still on the properties doc.
+function renderCrewPropertyDirectory() {
+  var btns = document.getElementById('prop-header-btns');
+  if (btns) btns.innerHTML = '';
+  var bulk = document.getElementById('prop-bulk-bar');
+  if (bulk) bulk.style.display = 'none';
+  var pills = document.getElementById('prop-view-pills');
+  if (pills) pills.style.display = 'none';
+  var list = document.getElementById('properties-list');
+  var countEl = document.getElementById('prop-count');
+  if (!list) return;
+  if (!crewCanViewPropertyList()) {
+    list.innerHTML = '';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+  if (window._propertyDirectoryUnreadable) {
+    list.innerHTML = '<div class="card" style="text-align:center;color:var(--text3);font-size:13px;line-height:1.5;padding:16px;">' + t('Property list is not available yet.') + '</div>';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+  var q = ((document.getElementById('prop-search') || {}).value || '').toLowerCase().trim();
+  var rows = crewPropertyRows().filter(function(p) {
+    if (!q) return true;
+    return p.name.toLowerCase().indexOf(q) !== -1 || p.address.toLowerCase().indexOf(q) !== -1;
+  }).sort(function(a, b) { return a.name.localeCompare(b.name); });
+  if (!rows.length) {
+    list.innerHTML = '<div class="card" style="text-align:center;color:var(--text4);font-size:13px;padding:16px;">' + t(q ? 'No matching properties.' : 'No properties on the list yet.') + '</div>';
+    if (countEl) countEl.textContent = t('Name and address only');
+    return;
+  }
+  if (countEl) countEl.textContent = rows.length + ' · ' + t('Name and address only');
+  list.innerHTML = rows.map(function(p) {
+    return '<div style="display:flex;align-items:center;gap:10px;border-radius:10px;background:var(--bg2);border:1px solid var(--border);margin-bottom:6px;padding:10px 12px;">'
+      + '<div style="width:36px;height:36px;border-radius:8px;background:rgba(63,185,80,.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;font-weight:700;color:var(--green);">' + escHtml((p.name || '?').charAt(0).toUpperCase()) + '</div>'
+      + '<div style="flex:1;min-width:0;">'
+        + '<div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(p.name || '—') + '</div>'
+        + '<div style="font-size:11px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(p.address || '—') + '</div>'
+      + '</div>'
+      + '<button type="button" class="crew-prop-flag" data-prop-id="' + escHtml(p.id) + '" style="flex-shrink:0;background:rgba(240,136,62,.12);border:1px solid rgba(240,136,62,.35);border-radius:8px;color:var(--orange);font-size:12px;font-weight:700;padding:8px 10px;cursor:pointer;">' + t('Report an Issue') + '</button>'
+      + '</div>';
+  }).join('');
+  list.querySelectorAll('.crew-prop-flag').forEach(function(btn) {
+    btn.onclick = function() { openAddFlag(btn.getAttribute('data-prop-id')); };
+  });
+}
+
 function renderProperties() {
+  if (state.role === 'field') { renderCrewPropertyDirectory(); return; }
+  var propPills = document.getElementById('prop-view-pills');
+  if (propPills) propPills.style.display = '';
   // show/hide manager-only buttons
   const propBtns = document.getElementById('prop-header-btns');
   if (propBtns) {
@@ -5746,6 +5850,9 @@ function renderProperties() {
 }
 
 function openPropDetail(id) {
+  // Full property detail includes phone, notes, frequency, and rates.
+  // Crew with the property-list permission never open this panel.
+  if (state.role !== 'manager') return;
   const p = state.properties.find(x => x.id === id);
   if (!p) return;
   const flags     = state.flags.filter(f => f.propId === id);
@@ -6251,6 +6358,17 @@ function openAddFlag(propId) {
     </div>
   </div>`;
   document.body.appendChild(sheet);
+
+  // Crew flags are attributed to the signed-in employee. Same flag shape
+  // managers already review; the name is not a free-typed field on a crew phone.
+  var byEl = document.getElementById('flag-by');
+  if (byEl && state.role === 'field') {
+    var who = loggedInCrewMember();
+    if (who && who.name) {
+      byEl.value = who.name;
+      byEl.readOnly = true;
+    }
+  }
 
   // Wire photo input AFTER DOM is ready - same single-pass pattern as
   // completion photos (readFileAsDataUrl -> compressPhoto -> done, no
@@ -9104,6 +9222,7 @@ function signOut() {
   window._crewWOSelectedCommunity = ''; // don't carry over to the next crew member on this device
   window._crewWOVillage = '';
   window._crewWOType = '';
+  if (typeof _syncPropertyDirectoryAccess === 'function') _syncPropertyDirectoryAccess();
   save();
   // show login screen again
   const screen = document.getElementById('login-screen');
@@ -9383,6 +9502,172 @@ async function runRateMigration() {
 }
 
 
+// ── PROPERTY DIRECTORY (name + address only) ─────────────────────────────
+// properties/{id} is one document, and Firestore rules cannot hide fields
+// inside it. Crew phones already download that whole document for My Jobs
+// (notes/gate codes, phone, email, frequency, services, checklist,
+// service log, lat/lng, and community.villages unit addresses). monthlyRate
+// already lives in propertyPrivate.
+//
+// The crew Property list does not read properties. It reads
+// propertyDirectory/{same id} = { name, address } and nothing else.
+// Archived properties and community-unit rows are left out. Managers
+// publish the list (overwrite, not merge) when they are signed in.
+// Rules are not in this repo — see firestore.propertyDirectory.rules.
+// The owner publishes them. Until then the crew screen says the list
+// is not available, and a denied write is not queued.
+function crewPermOn(crew, key) {
+  return !!(crew && (crew[key] === true || crew[key] === 'true'));
+}
+function loggedInCrewMember() {
+  if (!state.loggedInCrewId) return null;
+  return (state.crew || []).find(function(c) { return c && c.id === state.loggedInCrewId; }) || null;
+}
+function crewCanViewPropertyList() {
+  return state.role === 'field' && crewPermOn(loggedInCrewMember(), 'canViewPropertyList');
+}
+function crewPropertyRows() {
+  return (state.propertyDirectory || []).map(function(d) {
+    if (!d || !d.id) return null;
+    return { id: String(d.id), name: d.name == null ? '' : String(d.name), address: d.address == null ? '' : String(d.address) };
+  }).filter(function(d) { return d && (d.name || d.address); });
+}
+function _directoryDocFor(p) {
+  if (!p || !p.id) return null;
+  if (p.archived === true || p.archived === 'true') return null;
+  if (!isListedCustomer(p)) return null;
+  if (!String(p.name || '').trim() && !String(p.address || '').trim()) return null;
+  return {
+    id: String(p.id),
+    name: p.name == null ? '' : String(p.name),
+    address: p.address == null ? '' : String(p.address)
+  };
+}
+function _directoryDenied(err) {
+  var code = err && err.code ? String(err.code) : '';
+  var msg = err && err.message ? String(err.message) : '';
+  return code === 'permission-denied' || code.indexOf('permission-denied') !== -1 || /permission/i.test(msg);
+}
+function _writePropertyDirectory(doc) {
+  if (window._dlFixture || _directoryWriteBlocked) return Promise.resolve();
+  if (!_fbReady || !_db || !window._fbSDK || !doc || !doc.id) return Promise.resolve();
+  return window._fbSDK.setDoc(window._fbSDK.doc(_db, 'propertyDirectory', doc.id), {
+    name: doc.name || '',
+    address: doc.address || ''
+  }).catch(function(err) {
+    if (_directoryDenied(err)) {
+      _directoryWriteBlocked = true;
+      console.warn('propertyDirectory write denied — rules are not published yet');
+    } else {
+      console.warn('propertyDirectory write failed:', err && err.message);
+    }
+  });
+}
+function _deletePropertyDirectory(id) {
+  if (window._dlFixture || _directoryWriteBlocked || !id) return Promise.resolve();
+  if (!_fbReady || !_db || !window._fbSDK) return Promise.resolve();
+  return window._fbSDK.deleteDoc(window._fbSDK.doc(_db, 'propertyDirectory', String(id))).catch(function(err) {
+    // Already gone is fine. A missing-doc delete may still be permission-denied
+    // when the rules are not published — stop, and do not queue it.
+    if (_directoryDenied(err)) {
+      _directoryWriteBlocked = true;
+      console.warn('propertyDirectory delete denied — rules are not published yet');
+    } else if (!/not.found|no entity/i.test(String(err && err.message || ''))) {
+      console.warn('propertyDirectory delete failed:', err && err.message);
+    }
+  });
+}
+function _publishPropertyDirectory(prop) {
+  if (state.role !== 'manager' || !window._managerSessionUnlocked) return;
+  if (!prop || !prop.id) return;
+  var doc = _directoryDocFor(prop);
+  if (!doc) { _deletePropertyDirectory(prop.id); return; }
+  _writePropertyDirectory(doc);
+}
+function _removePropertyDirectory(id) {
+  if (state.role !== 'manager' || !window._managerSessionUnlocked) return;
+  _deletePropertyDirectory(id);
+}
+var _directoryWriteBlocked = false;
+var _directoryReconcileTimer = null;
+var _directoryReconcileRunning = false;
+function _scheduleDirectoryReconcile() {
+  if (state.role !== 'manager' || !window._managerSessionUnlocked) return;
+  if (!window._propertiesSnapReady || !window._propertyDirectoryReady) return;
+  if (_directoryWriteBlocked) return;
+  clearTimeout(_directoryReconcileTimer);
+  _directoryReconcileTimer = setTimeout(function() { _reconcilePropertyDirectory(); }, 600);
+}
+async function _reconcilePropertyDirectory() {
+  if (_directoryReconcileRunning || _directoryWriteBlocked) return;
+  if (window._dlFixture) return;
+  if (state.role !== 'manager' || !window._managerSessionUnlocked) return;
+  if (!window._propertiesSnapReady || !window._propertyDirectoryReady) return;
+  _directoryReconcileRunning = true;
+  try {
+    var want = {};
+    (state.properties || []).forEach(function(p) {
+      var d = _directoryDocFor(p);
+      if (d) want[d.id] = d;
+    });
+    var have = {};
+    (state.propertyDirectory || []).forEach(function(d) {
+      if (d && d.id) have[String(d.id)] = d;
+    });
+    var ops = [];
+    Object.keys(want).forEach(function(id) {
+      var w = want[id];
+      var h = have[id];
+      var dirty = !h || h.name !== w.name || h.address !== w.address
+        || (window._propertyDirectoryDirtyIds && window._propertyDirectoryDirtyIds[id]);
+      if (dirty) ops.push(function() { return _writePropertyDirectory(w); });
+    });
+    Object.keys(have).forEach(function(id) {
+      if (!want[id]) ops.push(function() { return _deletePropertyDirectory(id); });
+    });
+    if (!ops.length) return;
+    console.log('propertyDirectory: publishing ' + ops.length + ' name/address change(s)');
+    var BATCH = 20;
+    for (var i = 0; i < ops.length; i += BATCH) {
+      if (_directoryWriteBlocked) return;
+      await Promise.all(ops.slice(i, i + BATCH).map(function(fn) { return fn(); }));
+    }
+  } catch (e) {
+    console.warn('propertyDirectory reconcile failed:', e && e.message);
+  } finally {
+    _directoryReconcileRunning = false;
+  }
+}
+function _ensurePropertyDirectoryListener() {
+  if (window._dlFixture || !_db || _listeners['propertyDirectory']) return;
+  var allowed = (state.role === 'manager' && window._managerSessionUnlocked)
+    || crewCanViewPropertyList();
+  if (!allowed) return;
+  _listenCollection('propertyDirectory');
+}
+function _clearPropertyDirectoryListener() {
+  try {
+    if (_listeners['propertyDirectory']) { _listeners['propertyDirectory'](); delete _listeners['propertyDirectory']; }
+  } catch (e) {}
+}
+function _syncPropertyDirectoryAccess() {
+  var allowed = (state.role === 'manager' && window._managerSessionUnlocked)
+    || crewCanViewPropertyList();
+  if (allowed) {
+    _ensurePropertyDirectoryListener();
+    return;
+  }
+  _clearPropertyDirectoryListener();
+  // Splash calls applyRole('manager') before email unlock. Leave the
+  // name/address cache alone on that pass. A real sign-out or a crew
+  // member without the permission should not keep the list on screen.
+  if (!(state.role === 'manager' && !window._managerSessionUnlocked)) {
+    state.propertyDirectory = [];
+    window._propertyDirectoryReady = false;
+    window._propertyDirectoryUnreadable = false;
+  }
+}
+
 // ── Attach a real-time listener to a single Firestore collection ──────────
 // When any document in the collection changes, state[name] is updated and
 // the active tab re-renders automatically on every connected device.
@@ -9394,7 +9679,9 @@ function _listenCollection(name) {
     function(snapshot) {
       var docs = [];
       snapshot.forEach(function(d) { docs.push(_docToObj(d)); });
-      state[name] = docs;
+      // propertyDirectory is reduced to name + address below, before save().
+      // Never park the raw snapshot on state — a bad doc must not be cached.
+      if (name !== 'propertyDirectory') state[name] = docs;
       syncOnline = true;
       lastSync = new Date();
 
@@ -9432,6 +9719,27 @@ function _listenCollection(name) {
           if (!Array.isArray(p.services))    p.services    = [];
           if (!Array.isArray(p.serviceDays)) p.serviceDays = [];
         });
+        window._propertiesSnapReady = true;
+        _scheduleDirectoryReconcile();
+      }
+      if (name === 'propertyDirectory') {
+        // Keep only name and address, even if a doc was written with more.
+        // Extra keys are rewritten off the server by the manager reconcile.
+        var dirtyIds = {};
+        docs.forEach(function(d) {
+          if (!d || !d.id) return;
+          Object.keys(d).forEach(function(k) {
+            if (k !== 'id' && k !== 'name' && k !== 'address') dirtyIds[String(d.id)] = true;
+          });
+        });
+        window._propertyDirectoryDirtyIds = dirtyIds;
+        state.propertyDirectory = docs.map(function(d) {
+          if (!d || !d.id) return null;
+          return { id: String(d.id), name: d.name == null ? '' : String(d.name), address: d.address == null ? '' : String(d.address) };
+        }).filter(Boolean);
+        window._propertyDirectoryReady = true;
+        window._propertyDirectoryUnreadable = false;
+        _scheduleDirectoryReconcile();
       }
       if (name === 'crew') {
         // PAY SPLIT: if a crew doc ever carried dailyRate, drop it locally so
@@ -9441,6 +9749,8 @@ function _listenCollection(name) {
         // and live changes (e.g. manager toggling canViewRoutes)
         if (state.role === 'field' && state.loggedInCrewId) {
           rebuildCrewNav(state.currentTab || 'field');
+          _syncPropertyDirectoryAccess();
+          if (state.currentTab === 'properties' && !crewCanViewPropertyList()) switchTab('field');
         }
       }
       if (name === 'workOrders') {
@@ -9489,6 +9799,12 @@ function _listenCollection(name) {
         if (!Array.isArray(state.receptionistCalls)) state.receptionistCalls = [];
         try { updateCallsNavBadge(); } catch (e1) {}
         try { if (state.currentTab === 'calls') renderReceptionistCalls(); } catch (e2) {}
+        return;
+      }
+      if (name === 'propertyDirectory') {
+        window._propertyDirectoryUnreadable = true;
+        window._propertyDirectoryReady = false;
+        try { if (state.currentTab === 'properties' && state.role === 'field') renderCrewPropertyDirectory(); } catch (eDir) {}
         return;
       }
       syncOnline = false;
@@ -9792,6 +10108,7 @@ function gsSave(table, record, _attempt) {
   // Never store raw base64 in Firestore — photos go to Firebase Storage
   var toSave = Object.assign({}, record);
   if (table === 'properties') _stripRateFields(toSave); // RATE SPLIT: crew completion + every whole-record write-back must never (re)write monthlyRate to properties; manager rates go via _savePropertyRate()
+  if (table === 'properties') _publishPropertyDirectory(toSave); // name + address projection; no-op unless a manager is signed in
   if (table === 'receptionistCalls') delete toSave.id; // doc id is the CallSid; do not store a separate id field
   if (table === 'crew' || table === 'routes' || table === 'attendance') delete toSave.dailyRate; // PAY SPLIT: pay is crewPrivate-only
   if (toSave.completedPhoto && toSave.completedPhoto.startsWith('data:')) toSave.completedPhoto = '';
@@ -9832,6 +10149,7 @@ function gsDelete(table, id, _attempt) {
     setTimeout(function() { gsDelete(table, id, (_attempt||0)+1); }, 2000);
     return;
   }
+  if (table === 'properties') _removePropertyDirectory(id);
   window._fbSDK.deleteDoc(window._fbSDK.doc(_db, table, String(id)))
     .catch(function(err) {
       console.warn('gsDelete failed [' + table + ']:', err.message);
@@ -10449,20 +10767,23 @@ const CREW_MENU = [
   { tab:'wo-crew',   icon:'📋', label:'Work Orders' },
 ];
 
-// Returns the menu for the currently logged-in crew member
-// Adds Routes if canViewRoutes, Attendance if canViewAttendance (Supervisor)
+// Returns the menu for the currently logged-in crew member.
+// Adds Properties if canViewPropertyList, Routes if canViewRoutes,
+// Attendance if canViewAttendance (Supervisor).
 function getCrewMenu() {
   if (state.role !== 'field') return CREW_MENU;
   var crew = (state.crew||[]).find(function(c){ return c.id === state.loggedInCrewId; });
   if (!crew) return CREW_MENU;
 
-  var isSupervisor   = crew.canViewAttendance === true || crew.canViewAttendance === 'true';
-  var canViewRoutes  = crew.canViewRoutes === true || crew.canViewRoutes === 'true';
+  var isSupervisor   = crewPermOn(crew, 'canViewAttendance');
+  var canViewRoutes  = crewPermOn(crew, 'canViewRoutes');
+  var canViewPropertyList = crewPermOn(crew, 'canViewPropertyList');
 
   var menu = [
     { tab:'field',     icon:'📋', label:'My Jobs' },
     { tab:'crew-week', icon:'📅', label:'My Week' },
   ];
+  if (canViewPropertyList) menu.push({ tab:'properties', icon:'🏡', label:'Properties' });
   if (canViewRoutes)  menu.push({ tab:'routes',     icon:'🗺️', label:'Routes' });
   menu.push({ tab:'wo-crew', icon:'📋', label:'Work Orders' });
   if (isSupervisor)   menu.push({ tab:'attendance', icon:'📅', label:'Attendance' });
@@ -10577,12 +10898,11 @@ function rebuildCrewNav(activeTab) {
   buildDrawerItems(menu, activeTab);
 
   // Show/hide Attendance in bottom nav
+  var crewMember = (state.crew||[]).find(function(c){ return c.id === state.loggedInCrewId; });
+  var propBtn = document.getElementById('cbn-properties');
+  if (propBtn) propBtn.style.display = crewPermOn(crewMember, 'canViewPropertyList') ? '' : 'none';
   var attBtn = document.getElementById('cbn-attendance');
-  if (attBtn) {
-    var crewMember = (state.crew||[]).find(function(c){ return c.id === state.loggedInCrewId; });
-    var showAtt = crewMember && (crewMember.canViewAttendance === true || crewMember.canViewAttendance === 'true');
-    attBtn.style.display = showAtt ? '' : 'none';
-  }
+  if (attBtn) attBtn.style.display = crewPermOn(crewMember, 'canViewAttendance') ? '' : 'none';
 }
 
 function toggleDrawer() {
@@ -10640,7 +10960,7 @@ function showFlagConfirmation(flag) {
     + '<div style="font-size:12px;color:var(--text3);margin-top:4px;">'+flag.note+'</div>'
     + '<div style="margin-top:6px;"><span class="badge badge-'+(PCOLORS[flag.priority]||'yellow')+'">'+flag.priority+'</span></div>'
     + '</div>'
-    + '<button class="btn btn-green" onclick="document.getElementById(\'flag-confirm-sheet\').remove();loadFieldView();">Done</button>'
+    + '<button class="btn btn-green" onclick="document.getElementById(\'flag-confirm-sheet\').remove();if(state.currentTab===\'properties\'){renderProperties();}else{loadFieldView();}">Done</button>'
     + '</div>';
   document.body.appendChild(sheet);
   // add notification badge to manager's reports tab
@@ -14849,6 +15169,9 @@ function startLexingtonFixture() {
     state.wetChecks = [];
     state.treatments = [];
     state.flags = [];
+    // Local stand-in for the manager publish step. Same { name, address }
+    // projection the live app writes to propertyDirectory. No Firebase.
+    state.propertyDirectory = (state.properties || []).map(function(p) { return _directoryDocFor(p); }).filter(Boolean);
     state.role = 'manager';
     window._dlFixtureReady = true;
     window._dlFixtureCounts = _cuCounts(_cuProp('lexington-club'));
