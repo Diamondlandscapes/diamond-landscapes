@@ -1,0 +1,39 @@
+// FRAGMENT — paste this inside the existing
+//   match /databases/{database}/documents { ... }
+// block, next to the other matches. Do not deploy this file by itself.
+// It is not a complete ruleset. The live rules file is not in this
+// repository. The owner publishes rules separately.
+//
+// propertyDirectory/{propertyId} is the ONLY property read added for the
+// crew "Property list" permission (canViewPropertyList on the crew doc).
+// Each doc is exactly { name, address }. No phone, email, notes, gate
+// codes, frequency, rates, services, checklist, service history, lat/lng,
+// or community unit addresses.
+//
+// Firestore cannot hide fields inside properties/{id}. Those docs still
+// hold the private fields above (monthlyRate is already split into
+// propertyPrivate). Do NOT open properties reads for this feature.
+//
+// Crew sign in anonymously (request.auth != null, same gate the app
+// already uses). Rules cannot tell Jeremias apart from any other crew
+// phone. The per-employee toggle is enforced in the app. This match makes
+// the readable document safe even if any signed-in client queries it.
+//
+// isManager() is the existing helper (verified manager email). The app
+// overwrites the doc (no merge) and deletes it when a property is
+// archived or removed.
+
+function propertyDirectoryOk(data) {
+  return data.keys().hasOnly(['name', 'address'])
+    && data.name is string
+    && data.address is string
+    && data.name.size() <= 300
+    && data.address.size() <= 500;
+}
+
+match /propertyDirectory/{propId} {
+  allow read: if request.auth != null;
+  allow create, update: if isManager()
+    && propertyDirectoryOk(request.resource.data);
+  allow delete: if isManager();
+}
