@@ -1740,7 +1740,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-27-v72'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-28-v73'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 // Local fixtures for tests. Only localhost, and only with ?fixture=lexington
 // or ?fixture=calls. Never set on the live GitHub Pages host, so a test
@@ -10216,7 +10216,15 @@ function _ppSave(list) { return idbSet(PENDING_PHOTO_KEY, list).catch(function(e
 
 function queuePendingPhoto(entry) {
   entry.key = entry.key || uid();
-  return _ppLoad().then(function(list) { list.push(entry); return _ppSave(list); }).then(function() {
+  return _ppLoad().then(function(list) {
+    // A work order has one photo. A newer failed upload replaces the older retry
+    // so the queue cannot put the previous picture back later.
+    if (entry.kind === 'wo' && entry.recordId) {
+      list = list.filter(function(e) { return !(e.kind === 'wo' && e.recordId === entry.recordId); });
+    }
+    list.push(entry);
+    return _ppSave(list);
+  }).then(function() {
     toast('📷 Photo will keep retrying in the background');
     setTimeout(retryPendingPhotos, 20000);
   });
@@ -10240,7 +10248,28 @@ function _ppApply(e, url) {
     var p = (state.properties || []).find(function(x){ return x.id === e.propId; });
     var le = p && (p.serviceLog || []).find(function(x){ return x.id === e.logEntryId; });
     if (le) { le.photo = url; saveAndSync('properties', p); }
+  } else if (e.kind === 'wo') {
+    var wo = (state.workOrders || []).find(function(x) { return x.id === e.recordId; });
+    if (!wo) return;
+    // Ignore a retry that a newer photo on this device already superseded.
+    if (e.gen && _woPhotoGen[wo.id] && _woPhotoGen[wo.id] !== e.gen) return;
+    wo.completedPhoto = url;
+    try {
+      var ph = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+      ph[wo.id] = url;
+      localStorage.setItem('dlphotos', JSON.stringify(ph));
+    } catch (err) {}
+    saveAndSync('workOrders', wo);
+    if (document.getElementById('wo-detail-sheet')) refreshWODetailPhoto(wo.id);
   }
+}
+
+// Bumps each time a work-order photo upload starts, so an older upload that
+// finishes late cannot overwrite the picture the user picked after it.
+var _woPhotoGen = {};
+function bumpWOPhotoGen(woId) {
+  _woPhotoGen[woId] = (_woPhotoGen[woId] || 0) + 1;
+  return _woPhotoGen[woId];
 }
 
 function retryPendingPhotos() {
@@ -10249,17 +10278,27 @@ function retryPendingPhotos() {
   return _ppLoad().then(function(list) {
     if (!list.length) return;
     var remaining = [];
+    var started = {};
+    var uploadedCount = 0;
+    list.forEach(function(e) { if (e && e.key) started[e.key] = true; });
     return list.reduce(function(chain, e) {
       return chain.then(function() {
         return new Promise(function(resolve) {
-          uploadPhotoToStorage(e.dataUrl, e.path, function(url) { _ppApply(e, url); resolve(); },
+          uploadPhotoToStorage(e.dataUrl, e.path, function(url) { uploadedCount++; _ppApply(e, url); resolve(); },
             function() { remaining.push(e); resolve(); }, true);
         });
       });
     }, Promise.resolve()).then(function() {
-      return _ppSave(remaining).then(function() {
-        if (list.length > remaining.length) toast('📷 ' + (list.length - remaining.length) + ' pending photo(s) uploaded ✓');
-        if (remaining.length) setTimeout(retryPendingPhotos, 60000);
+      // Keep anything queued while this pass was running. Saving only
+      // `remaining` used to drop a photo that failed mid-retry.
+      return _ppLoad().then(function(latest) {
+        (latest || []).forEach(function(e) {
+          if (e && e.key && !started[e.key]) remaining.push(e);
+        });
+        return _ppSave(remaining).then(function() {
+          if (uploadedCount) toast('📷 ' + uploadedCount + ' pending photo(s) uploaded ✓');
+          if (remaining.length) setTimeout(retryPendingPhotos, 60000);
+        });
       });
     });
   }).catch(function(e){ console.warn('retryPendingPhotos failed', e); }).then(function(){ _ppRunning = false; });
@@ -16417,12 +16456,12 @@ function openCommunityWO(community) {
       +'</div></div>'+(w.details?'<div style="font-size:11px;color:var(--text3);margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">'+w.details+'</div>':'')+'</div>';
   }
   function archCard(w){
-    return '<div class="card-flat" style="margin-bottom:8px;border-left:3px solid var(--text4);opacity:0.85;">'
+    return '<div class="card-flat" style="margin-bottom:8px;border-left:3px solid var(--text4);opacity:0.85;cursor:pointer;" onclick="openWODetail(\''+w.id+'\')">'
       +'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
       +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;color:var(--text3);">#'+(w.woNumber||w.id.slice(-4))+' &middot; '+(w.ownerName||'')+'</div>'
       +'<div style="font-size:11px;color:var(--text4);">'+(w.address||'')+vTag(w)+'</div>'
       +'<div style="font-size:11px;color:var(--text4);">'+(w.requestType||'')+(w.archivedAt?' &middot; archived '+w.archivedAt:'')+'</div></div>'
-      +'<button data-woid="'+w.id+'" onclick="unarchiveWO(this.dataset.woid)" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.3);cursor:pointer;white-space:nowrap;flex-shrink:0;">&#x21A9; Restore</button>'
+      +'<button data-woid="'+w.id+'" onclick="event.stopPropagation();unarchiveWO(this.dataset.woid)" style="font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.3);cursor:pointer;white-space:nowrap;flex-shrink:0;">&#x21A9; Restore</button>'
       +'</div></div>';
   }
 
@@ -16951,6 +16990,95 @@ function processWOUpload(community) {
 }
 
 // ── Work Order Detail (manager) ────────────────────────────────────────────────
+// One completion photo per work order. The photo box is its own node so a
+// pick can refresh the picture without rebuilding the rest of the sheet
+// (that would wipe unsaved assign / status / notes edits).
+function woDetailPhotoBox(wo) {
+  var photoUrl = getWOPhoto(wo);
+  var label = photoUrl ? '📷 Replace photo' : '📷 Add photo';
+  return '<div id="wo-detail-photo" style="margin-bottom:14px;">' +
+    '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">COMPLETION PHOTO</div>' +
+    (photoUrl
+      ? '<img src="' + photoUrl + '" referrerpolicy="no-referrer" style="width:100%;border-radius:10px;max-height:200px;object-fit:cover;margin-top:4px;" />'
+      : '<div style="font-size:12px;color:var(--text4);padding:8px 0;">No photo yet</div>') +
+    '<button type="button" class="btn-sm" data-woid="' + wo.id + '" onclick="managerWOPickPhoto(this.dataset.woid)" style="margin-top:8px;width:100%;background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">' + label + '</button>' +
+  '</div>';
+}
+
+function refreshWODetailPhoto(woId) {
+  var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
+  var box = document.getElementById('wo-detail-photo');
+  if (!wo || !box) return;
+  var wrap = document.createElement('div');
+  wrap.innerHTML = woDetailPhotoBox(wo);
+  box.replaceWith(wrap.firstChild);
+}
+
+// Same pipeline the crew uses: compressPhoto(1200, 0.9) then
+// uploadPhotoToStorage to photos/workOrders/. Replacing deletes the previous
+// Storage file the way reopen does. A failed upload stays in the retry queue.
+function commitWOPhoto(wo, compressed) {
+  if (!wo || !compressed) return;
+  var oldUrl = wo.completedPhoto || '';
+  if (oldUrl && String(oldUrl).indexOf('firebasestorage.googleapis.com') !== -1) deleteStoragePhoto(oldUrl);
+  try {
+    var ph = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+    ph[wo.id] = compressed;
+    localStorage.setItem('dlphotos', JSON.stringify(ph));
+  } catch (e) {}
+  try { localStorage.removeItem('dlphoto_' + wo.id); } catch (e2) {}
+  wo.completedPhoto = compressed;
+  save();
+  var gen = bumpWOPhotoGen(wo.id);
+  var storagePath = 'photos/workOrders/' + wo.id + '_' + Date.now() + '.jpg';
+  gsSave('workOrders', Object.assign({}, wo, { completedPhoto: '[uploading]' }));
+  refreshWODetailPhoto(wo.id);
+  uploadPhotoToStorage(compressed, storagePath,
+    function(url) {
+      if (_woPhotoGen[wo.id] !== gen) return;
+      wo.completedPhoto = url;
+      try {
+        var ph2 = JSON.parse(localStorage.getItem('dlphotos') || '{}');
+        ph2[wo.id] = url;
+        localStorage.setItem('dlphotos', JSON.stringify(ph2));
+      } catch (e) {}
+      save();
+      gsSave('workOrders', wo);
+      toast('Photo uploaded ✓');
+      refreshWODetailPhoto(wo.id);
+    },
+    function(err) {
+      console.warn('WO photo upload failed:', err);
+      if (_woPhotoGen[wo.id] !== gen) return;
+      queuePendingPhoto({ kind:'wo', dataUrl:compressed, path:storagePath, recordId:wo.id, gen:gen });
+      refreshWODetailPhoto(wo.id);
+    }
+  );
+}
+
+function managerWOPickPhoto(woId) {
+  var fi = document.createElement('input');
+  fi.type = 'file';
+  fi.accept = 'image/*';
+  fi.capture = 'environment';
+  fi.style.cssText = 'position:fixed;top:-999px;left:-999px;opacity:0;';
+  document.body.appendChild(fi);
+  fi.addEventListener('change', function() {
+    var file = fi.files && fi.files[0];
+    fi.remove();
+    if (!file) return;
+    readFileAsDataUrl(file, function(dataUrl) {
+      if (!dataUrl) { toast('Could not read photo'); return; }
+      compressPhoto(dataUrl, 1200, 0.90, function(compressed) {
+        var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
+        if (!wo) return;
+        commitWOPhoto(wo, compressed);
+      });
+    });
+  });
+  fi.click();
+}
+
 function openWODetail(woId) {
   var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
   if (!wo) return;
@@ -16968,9 +17096,11 @@ function openWODetail(woId) {
       return '<option value="' + c.id + '"' + (wo.assignedTo === c.id ? ' selected' : '') + '>' + c.name + '</option>';
     }).join('');
 
-  var statusOptions = ['open','in_progress','completed'].map(function(s) {
-    return '<option value="' + s + '"' + (wo.status === s ? ' selected' : '') + '>' +
-      (s === 'open' ? '🔴 Open' : s === 'in_progress' ? '🟡 In Progress' : '🟢 Completed') + '</option>';
+  var statusList = ['open','in_progress','completed'];
+  if (wo.status === 'archived') statusList.push('archived');
+  var statusOptions = statusList.map(function(s) {
+    var label = s === 'open' ? '🔴 Open' : s === 'in_progress' ? '🟡 In Progress' : s === 'completed' ? '🟢 Completed' : '📦 Archived';
+    return '<option value="' + s + '"' + (wo.status === s ? ' selected' : '') + '>' + label + '</option>';
   }).join('');
 
   var typeLabel = wo.type === 'irrigation' ? '💧 Irrigation' : '🌿 Landscaping';
@@ -17015,7 +17145,7 @@ function openWODetail(woId) {
       '</div>' +
 
 
-      (wo.status === 'completed' ?
+      ((wo.status === 'completed' || wo.status === 'archived') ?
         '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:14px;">' +
           '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:8px;">COMPLETION DETAILS</div>' +
           (wo.completedBy ? '<div style="font-size:12px;color:var(--text2);margin-bottom:6px;">&#x2713; Completed by <strong>' + wo.completedBy + '</strong>' + (wo.completedOn ? ' on ' + fmtWODate(wo.completedOn) : '') + '</div>' : '') +
@@ -17039,49 +17169,65 @@ function openWODetail(woId) {
         '</div>'
       : '') +
 
-      '<div style="margin-bottom:14px;">' +
-        '<div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:6px;">COMPLETION PHOTO</div>' +
-        (wo.status === 'completed' && getWOPhoto(wo) ?
-          '<img src="' + getWOPhoto(wo) + '" referrerpolicy="no-referrer" crossorigin="anonymous" style="width:100%;border-radius:10px;max-height:200px;object-fit:cover;margin-top:8px;" onerror="this.onerror=null;this.src=\'' + getWOPhoto(wo) + '\';this.style.opacity=\'0.7\'"/>'
-        : wo.status === 'completed' ?
-          '<div style="background:var(--bg3);border-radius:10px;padding:14px;text-align:center;">' +
-            '<div style="font-size:24px;margin-bottom:6px;">&#x1F4F7;</div>' +
-            '<div style="font-size:13px;font-weight:700;color:var(--text2);">No photo attached</div>' +
-            '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Crew can add a photo by opening this WO on their device.</div>' +
-          '</div>'
-        : '<div style="font-size:12px;color:var(--text4);padding:8px 0;">No photo yet</div>'
-        ) +
-      '</div>' +
+      woDetailPhotoBox(wo) +
 
       '<div style="display:flex;gap:8px;">' +
         '<button class="btn btn-green" onclick="saveWODetail(\'' + woId + '\')" style="flex:1;">Save Changes</button>' +
         '<button class="btn btn-red" onclick="deleteWO(\'' + woId + '\')" style="font-size:13px;padding:12px;">Delete</button>' +
       '</div>' +
-      (wo.status !== 'completed' ?
+      (wo.status !== 'completed' && wo.status !== 'archived' ?
         '<div style="margin-top:14px;">' +
           '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">COMPLETION NOTES (optional)</div>' +
           '<textarea id="wo-quick-notes" class="inp" rows="2" placeholder="What was done..." style="margin-bottom:8px;"></textarea>' +
-          '<button class="btn btn-green" onclick="quickCompleteWO(\'' + woId + '\')" style="width:100%;background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.3);color:var(--green);">✓ Mark Complete (no photo needed)</button>' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;margin-bottom:6px;">PHOTO (optional)</div>' +
+          '<label class="photo-zone" for="wo-quick-photo" id="wo-quick-photo-zone" style="margin-bottom:8px;padding:12px;">' +
+            '<div style="font-size:22px;margin-bottom:4px;">📷</div>' +
+            '<div style="font-size:12px;color:var(--text3);">Tap to add a photo</div>' +
+            '<input type="file" id="wo-quick-photo" accept="image/*" capture="environment" style="display:none;"/>' +
+          '</label>' +
+          '<img id="wo-quick-photo-preview" alt="" style="display:none;width:100%;border-radius:10px;margin-bottom:8px;max-height:140px;object-fit:cover;"/>' +
+          '<button type="button" class="btn btn-green" onclick="quickCompleteWO(\'' + woId + '\')" style="width:100%;background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.3);color:var(--green);">✓ Mark Complete</button>' +
         '</div>'
       : '') +
     '</div>';
 
   document.body.appendChild(sheet);
+
+  window._woQuickPhotoData = '';
+  var quickPhoto = document.getElementById('wo-quick-photo');
+  if (quickPhoto) {
+    quickPhoto.onchange = function() {
+      var file = this.files && this.files[0];
+      if (!file) return;
+      readFileAsDataUrl(file, function(dataUrl) {
+        if (!dataUrl) { toast('Could not read photo'); return; }
+        compressPhoto(dataUrl, 1200, 0.90, function(compressed) {
+          window._woQuickPhotoData = compressed;
+          var preview = document.getElementById('wo-quick-photo-preview');
+          var zone = document.getElementById('wo-quick-photo-zone');
+          if (preview) { preview.src = compressed; preview.style.display = 'block'; }
+          if (zone) zone.style.display = 'none';
+        });
+      });
+    };
+  }
 }
 
-// One-tap complete for managers — no photo required, notes optional. Sets
-// exactly what saveWODetail's "completed" branch already sets, plus
-// whatever's in the notes field, without needing to touch the other fields.
+// One-tap complete for managers. Notes and a photo are both optional.
+// A photo uses the same compress-and-upload path as the detail button.
 function quickCompleteWO(woId) {
   var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
   if (!wo) return;
   var notes = document.getElementById('wo-quick-notes')?.value.trim() || '';
+  var photoData = window._woQuickPhotoData || '';
+  window._woQuickPhotoData = '';
   wo.status = 'completed';
   wo.completedBy = 'Manager';
   if (notes) wo.completedNotes = notes;
   if (!wo.completedOn)   wo.completedOn   = new Date().toLocaleDateString('en-US');
   if (!wo.dateCompleted) wo.dateCompleted = new Date().toLocaleDateString('en-US');
-  saveAndSync('workOrders', wo);
+  if (photoData) commitWOPhoto(wo, photoData);
+  else saveAndSync('workOrders', wo);
   document.getElementById('wo-detail-sheet')?.remove();
   toast('✓ Work order completed');
   var panel = document.getElementById('wo-community-panel');
@@ -17092,16 +17238,24 @@ function quickCompleteWO(woId) {
 function saveWODetail(woId) {
   var wo = (state.workOrders || []).find(function(w) { return w.id === woId; });
   if (!wo) return;
+  var prevStatus = wo.status;
   wo.assignedTo = document.getElementById('wo-assign-crew').value;
   wo.status     = document.getElementById('wo-status-sel').value;
   wo.type       = document.getElementById('wo-type-sel')?.value || wo.type;
   wo.dueDate    = document.getElementById('wo-due-date')?.value || wo.dueDate || '';
 
+  if (prevStatus === 'archived' && wo.status !== 'archived') wo.archivedAt = '';
+
+  // Photo cleanup is the reopen path only (completed or archived -> open /
+  // in progress). Saving an open or archived order must keep its photo.
+  var reopening = (prevStatus === 'completed' || prevStatus === 'archived')
+    && wo.status !== 'completed' && wo.status !== 'archived';
+
   if (wo.status === 'completed') {
     // Set completion date if not already set
     if (!wo.completedOn)   wo.completedOn   = new Date().toLocaleDateString('en-US');
     if (!wo.dateCompleted) wo.dateCompleted = new Date().toLocaleDateString('en-US');
-  } else {
+  } else if (reopening) {
     // Reopening — delete photo from Firebase Storage then clear all completion fields
     var oldPhotoUrl = wo.completedPhoto || '';
     deleteStoragePhoto(oldPhotoUrl);
@@ -17120,7 +17274,14 @@ function saveWODetail(woId) {
     wo.completedPhoto           = '';
   }
 
-  saveAndSync('workOrders', wo);
+  // A data URL must not be written to Firestore (gsSave strips it to '').
+  // Keep the placeholder so Save Changes doesn't erase an upload still in flight.
+  if (wo.completedPhoto && String(wo.completedPhoto).indexOf('data:') === 0) {
+    save();
+    gsSave('workOrders', Object.assign({}, wo, { completedPhoto: '[uploading]' }));
+  } else {
+    saveAndSync('workOrders', wo);
+  }
   document.getElementById('wo-detail-sheet')?.remove();
   toast('Work order saved ✓');
   var panel = document.getElementById('wo-community-panel');
@@ -17905,8 +18066,10 @@ function crewWOAddPhoto(woId) {
         openCrewWODetail(woId);
         // Upload to Firebase Storage
         var storagePath = 'photos/workOrders/' + woId + '_' + Date.now() + '.jpg';
+        var gen = bumpWOPhotoGen(woId);
         uploadPhotoToStorage(compressed, storagePath,
           function(url) {
+            if (_woPhotoGen[woId] !== gen) return;
             wo.completedPhoto = url;
             try {
               var ph2 = JSON.parse(localStorage.getItem('dlphotos') || '{}');
@@ -17919,8 +18082,9 @@ function crewWOAddPhoto(woId) {
           },
           function(err) {
             console.warn('crewWOAddPhoto upload failed:', err);
+            if (_woPhotoGen[woId] !== gen) return;
             gsSave('workOrders', wo);
-            toast('Photo saved locally');
+            queuePendingPhoto({ kind:'wo', dataUrl:compressed, path:storagePath, recordId:woId, gen:gen });
           }
         );
       });
@@ -18277,6 +18441,10 @@ function getWOPhoto(wo) {
       !wo.completedPhoto.startsWith('[')) {
     return wo.completedPhoto;
   }
+  // In-memory photo (just picked, or waiting on the retry queue)
+  if (wo.completedPhoto && wo.completedPhoto.startsWith('data:') && wo.completedPhoto.length > 100) {
+    return wo.completedPhoto;
+  }
   // 2. Local cache (same device, while upload is in progress)
   try {
     var photos = JSON.parse(localStorage.getItem('dlphotos') || '{}');
@@ -18569,13 +18737,20 @@ function submitCrewWOComplete(woId, photoData, selectedParts) {
     if (compressedPhoto) {
       var woFilename='WO_'+(wo.woNumber||wo.id.slice(-4))+'_'+(wo.ownerName||'').replace(/[^a-zA-Z0-9]/g,'_')+'_'+Date.now();
       var storagePath='photos/workOrders/'+woFilename+'.jpg';
+      var gen = bumpWOPhotoGen(wo.id);
       uploadPhotoToStorage(compressedPhoto,storagePath,
         function(storageUrl){
+          if (_woPhotoGen[wo.id] !== gen) return;
           wo.completedPhoto=storageUrl;
           try{var ph=JSON.parse(localStorage.getItem('dlphotos')||'{}');ph[wo.id]=storageUrl;localStorage.setItem('dlphotos',JSON.stringify(ph));}catch(e){}
           save(); gsSave('workOrders',wo); toast('✓ Photo uploaded — visible on all devices');
         },
-        function(err){ console.warn('WO photo upload failed:',err); gsSave('workOrders',wo); toast('Completed — photo saved locally'); }
+        function(err){
+          console.warn('WO photo upload failed:',err);
+          if (_woPhotoGen[wo.id] !== gen) return;
+          gsSave('workOrders',wo);
+          queuePendingPhoto({ kind:'wo', dataUrl:compressedPhoto, path:storagePath, recordId:wo.id, gen:gen });
+        }
       );
     }
   }
@@ -19354,12 +19529,34 @@ function openCreateWO(community) {
     +'<select id="woc-crew" class="inp">'+crewOpts+'</select>'
     +'<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">STATUS</div>'
     +'<select id="woc-status" class="inp"><option value="open">Open</option><option value="in_progress">In Progress</option><option value="completed">Completed</option></select>'
+    +'<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">PHOTO (optional)</div>'
+    +'<label id="woc-photo-zone" style="display:flex;align-items:center;gap:10px;background:var(--bg3);border:1px dashed var(--border2);border-radius:10px;padding:10px 14px;cursor:pointer;margin-bottom:12px;">'
+    +'<span style="font-size:18px;">📷</span><span id="woc-photo-label" style="font-size:13px;color:var(--text3);">Tap to add a photo</span>'
+    +'<input type="file" id="woc-photo" accept="image/*" capture="environment" style="display:none;"/>'
+    +'</label>'
+    +'<img id="woc-photo-preview" alt="" style="display:none;width:100%;border-radius:10px;margin-bottom:12px;max-height:140px;object-fit:cover;"/>'
     +'<div style="display:flex;gap:8px;margin-top:4px;">'
     +'<button id="woc-save" class="btn btn-green" style="flex:1;">&#x2713; Create Work Order</button>'
     +'<button id="woc-cancel" class="btn btn-outline">Cancel</button></div>';
   sheet.appendChild(inner);document.body.appendChild(sheet);
+  var createPhoto = '';
   document.getElementById('woc-close').onclick=function(){sheet.remove();};
   document.getElementById('woc-cancel').onclick=function(){sheet.remove();};
+  var wocPhoto = document.getElementById('woc-photo');
+  if (wocPhoto) wocPhoto.onchange = function() {
+    var file = this.files && this.files[0];
+    if (!file) return;
+    readFileAsDataUrl(file, function(dataUrl) {
+      if (!dataUrl) { toast('Could not read photo'); return; }
+      compressPhoto(dataUrl, 1200, 0.90, function(compressed) {
+        createPhoto = compressed;
+        var preview = document.getElementById('woc-photo-preview');
+        var label = document.getElementById('woc-photo-label');
+        if (preview) { preview.src = compressed; preview.style.display = 'block'; }
+        if (label) label.textContent = 'Photo added';
+      });
+    });
+  };
   document.getElementById('woc-save').onclick=function(){
     var finalCommunity=document.getElementById('woc-community').value.trim();
     if(!finalCommunity){toast('Community is required');return;}
@@ -19379,7 +19576,9 @@ function openCreateWO(community) {
       status:document.getElementById('woc-status').value,
       dueDate:document.getElementById('woc-due').value,
       completedOn:'',completedPhoto:'',completedBy:'',createdAt:new Date().toLocaleDateString('en-US')};
-    state.workOrders=state.workOrders||[];state.workOrders.push(wo);saveAndSync('workOrders',wo);
+    state.workOrders=state.workOrders||[];state.workOrders.push(wo);
+    if (createPhoto) commitWOPhoto(wo, createPhoto);
+    else saveAndSync('workOrders', wo);
     sheet.remove();renderWorkOrders();
     var panel=document.getElementById('wo-community-panel');if(panel){panel.remove();openCommunityWO(finalCommunity);}
     toast('Work order created \u2713');
