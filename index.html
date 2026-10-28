@@ -1740,7 +1740,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-28-v73'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-28-v74'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 // Local fixtures for tests. Only localhost, and only with ?fixture=lexington
 // or ?fixture=calls. Never set on the live GitHub Pages host, so a test
@@ -17060,7 +17060,6 @@ function managerWOPickPhoto(woId) {
   var fi = document.createElement('input');
   fi.type = 'file';
   fi.accept = 'image/*';
-  fi.capture = 'environment';
   fi.style.cssText = 'position:fixed;top:-999px;left:-999px;opacity:0;';
   document.body.appendChild(fi);
   fi.addEventListener('change', function() {
@@ -17183,7 +17182,7 @@ function openWODetail(woId) {
           '<label class="photo-zone" for="wo-quick-photo" id="wo-quick-photo-zone" style="margin-bottom:8px;padding:12px;">' +
             '<div style="font-size:22px;margin-bottom:4px;">📷</div>' +
             '<div style="font-size:12px;color:var(--text3);">Tap to add a photo</div>' +
-            '<input type="file" id="wo-quick-photo" accept="image/*" capture="environment" style="display:none;"/>' +
+            '<input type="file" id="wo-quick-photo" accept="image/*" style="display:none;"/>' +
           '</label>' +
           '<img id="wo-quick-photo-preview" alt="" style="display:none;width:100%;border-radius:10px;margin-bottom:8px;max-height:140px;object-fit:cover;"/>' +
           '<button type="button" class="btn btn-green" onclick="quickCompleteWO(\'' + woId + '\')" style="width:100%;background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.3);color:var(--green);">✓ Mark Complete</button>' +
@@ -18042,7 +18041,7 @@ function crewWOSaveEdit(woId) {
 
 function crewWOAddPhoto(woId) {
   var fi = document.createElement('input');
-  fi.type = 'file'; fi.accept = 'image/*'; fi.capture = 'environment';
+  fi.type = 'file'; fi.accept = 'image/*';
   fi.style.cssText = 'position:fixed;top:-999px;left:-999px;opacity:0;';
   document.body.appendChild(fi);
   fi.addEventListener('change', function() {
@@ -18146,7 +18145,7 @@ function openCrewWOComplete(woId) {
       '<label class="photo-zone" for="wo-photo-input" id="wo-photo-zone" style="margin-bottom:8px;padding:12px;">' +
         '<div style="font-size:22px;margin-bottom:4px;">📷</div>' +
         '<div style="font-size:12px;color:var(--text3);">Tap to take or choose a photo</div>' +
-        '<input type="file" id="wo-photo-input" accept="image/*" capture="environment" style="display:none;"/>' +
+        '<input type="file" id="wo-photo-input" accept="image/*" style="display:none;"/>' +
       '</label>' +
       '<img id="wo-photo-preview" style="display:none;width:100%;border-radius:10px;margin-bottom:8px;max-height:140px;object-fit:cover;"/>' +
       '<textarea id="wo-complete-notes" class="inp" rows="2" placeholder="Completion notes (optional)..." style="margin-bottom:10px;font-size:13px;"></textarea>' +
@@ -18459,14 +18458,100 @@ function getWOPhoto(wo) {
 }
 
 
-function compressPhoto(dataUrl, maxSize, quality, callback) {
+function dataUrlLooksHeic(dataUrl) {
+  if (!dataUrl || dataUrl.indexOf('data:') !== 0) return false;
+  if (/^data:image\/hei[cf]/i.test(dataUrl)) return true;
+  try {
+    var b64 = (dataUrl.split(',')[1] || '').slice(0, 80);
+    var head = atob(b64);
+    return head.indexOf('ftypheic') !== -1 || head.indexOf('ftypheix') !== -1 ||
+      head.indexOf('ftypheis') !== -1 || head.indexOf('ftyphevc') !== -1 ||
+      head.indexOf('ftypmif1') !== -1;
+  } catch (e) { return false; }
+}
+
+// iOS often refuses a HEIC data URL on <img>, but will decode the same bytes
+// from a blob URL and let canvas export a JPEG. Used only after the normal
+// decode fails, so a JPEG library photo is unchanged.
+function heicDataUrlToJpegViaCanvas(dataUrl, callback) {
+  try {
+    var comma = dataUrl.indexOf(',');
+    if (comma < 0) { callback(null); return; }
+    var mime = ((dataUrl.slice(0, comma).match(/^data:([^;,]+)/) || [])[1]) || 'image/heic';
+    var binary = atob(dataUrl.slice(comma + 1));
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    if (bytes.length > 2 && bytes[0] === 0xFF && bytes[1] === 0xD8) mime = 'image/jpeg';
+    else if (bytes.length > 4 && bytes[0] === 0x89 && bytes[1] === 0x50) mime = 'image/png';
+    var blob = new Blob([bytes], { type: mime });
+    var objectUrl = URL.createObjectURL(blob);
+    var img = new Image();
+    img.onload = function() {
+      URL.revokeObjectURL(objectUrl);
+      if (!img.width || !img.height) { callback(null); return; }
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        var sample = ctx.getImageData(
+          Math.floor(canvas.width * 0.3), Math.floor(canvas.height * 0.3),
+          Math.min(10, canvas.width), Math.min(10, canvas.height)
+        );
+        var allWhite = true;
+        for (var s = 0; s < sample.data.length; s += 4) {
+          if (sample.data[s] < 250 || sample.data[s+1] < 250 || sample.data[s+2] < 250) {
+            allWhite = false; break;
+          }
+        }
+        if (allWhite) { callback(null); return; }
+        callback(canvas.toDataURL('image/jpeg', 0.92));
+      } catch (e) { callback(null); }
+    };
+    img.onerror = function() {
+      URL.revokeObjectURL(objectUrl);
+      callback(null);
+    };
+    img.src = objectUrl;
+  } catch (e) { callback(null); }
+}
+
+function compressPhoto(dataUrl, maxSize, quality, callback, _heicTried) {
   var img = new Image();
+  var settled = false;
+  function finish(result) {
+    if (settled) return;
+    settled = true;
+    callback(result);
+  }
+  // A library HEIC that <img> cannot decode directly is drawn to a canvas
+  // from a blob URL and saved as JPEG, then scaled like any other photo.
+  function giveUp(reason) {
+    if (settled) return;
+    if (!_heicTried && dataUrlLooksHeic(dataUrl)) {
+      settled = true;
+      heicDataUrlToJpegViaCanvas(dataUrl, function(jpeg) {
+        if (jpeg && jpeg.indexOf('data:image/jpeg') === 0) {
+          compressPhoto(jpeg, maxSize, quality, callback, true);
+        } else {
+          console.warn('compressPhoto: HEIC canvas conversion failed (' + reason + ')');
+          callback(dataUrl);
+        }
+      });
+      return;
+    }
+    console.warn('compressPhoto: ' + reason + ', using uncompressed input instead');
+    finish(dataUrl);
+  }
   // Allow cross-origin for HEIC and other formats
   img.onload = function() {
     var canvas = document.createElement('canvas');
     var w = img.width;
     var h = img.height;
-    if (w === 0 || h === 0) { callback(dataUrl); return; }
+    if (w === 0 || h === 0) { giveUp('zero size'); return; }
     // Scale down if larger than maxSize
     if (w > maxSize || h > maxSize) {
       if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
@@ -18485,7 +18570,7 @@ function compressPhoto(dataUrl, maxSize, quality, callback) {
       // step (a second canvas decode of an already-processed image) is where
       // a blank-HEIC-decode can silently reoccur even after readFileAsDataUrl
       // already validated the input. If it's blank, don't save a corrupt
-      // all-white JPEG — fall back to the pre-compression input instead.
+      // all-white JPEG — try the HEIC blob path, then the original input.
       var sample = ctx.getImageData(
         Math.floor(w * 0.3), Math.floor(h * 0.3),
         Math.min(10, w), Math.min(10, h)
@@ -18496,25 +18581,15 @@ function compressPhoto(dataUrl, maxSize, quality, callback) {
           allWhite = false; break;
         }
       }
-      if (allWhite) {
-        console.warn('compressPhoto: blank canvas detected, using uncompressed input instead');
-        callback(dataUrl);
-        return;
-      }
+      if (allWhite) { giveUp('blank canvas'); return; }
 
       // Always output as JPEG regardless of input format (handles HEIC, PNG, WebP etc)
-      var result = canvas.toDataURL('image/jpeg', quality);
-      callback(result);
+      finish(canvas.toDataURL('image/jpeg', quality));
     } catch(e) {
-      // Canvas tainted or other draw error — fall back to uncompressed input
-      console.warn('compressPhoto: draw failed, using uncompressed input instead', e);
-      callback(dataUrl);
+      giveUp('draw failed');
     }
   };
-  img.onerror = function() {
-    console.warn('Image load failed, trying blob URL approach');
-    callback(dataUrl); // fallback
-  };
+  img.onerror = function() { giveUp('image load failed'); };
   // Set src - browser handles HEIC natively on iOS Safari
   img.src = dataUrl;
 }
@@ -19532,7 +19607,7 @@ function openCreateWO(community) {
     +'<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;">PHOTO (optional)</div>'
     +'<label id="woc-photo-zone" style="display:flex;align-items:center;gap:10px;background:var(--bg3);border:1px dashed var(--border2);border-radius:10px;padding:10px 14px;cursor:pointer;margin-bottom:12px;">'
     +'<span style="font-size:18px;">📷</span><span id="woc-photo-label" style="font-size:13px;color:var(--text3);">Tap to add a photo</span>'
-    +'<input type="file" id="woc-photo" accept="image/*" capture="environment" style="display:none;"/>'
+    +'<input type="file" id="woc-photo" accept="image/*" style="display:none;"/>'
     +'</label>'
     +'<img id="woc-photo-preview" alt="" style="display:none;width:100%;border-radius:10px;margin-bottom:12px;max-height:140px;object-fit:cover;"/>'
     +'<div style="display:flex;gap:8px;margin-top:4px;">'
