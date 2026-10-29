@@ -1165,6 +1165,10 @@ select.inp{cursor:pointer;}
 
 
 
+    <div id="screen-jobcost" class="screen">
+      <div id="jobcost-root"></div>
+    </div>
+
     <div id="screen-reports" class="screen">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
         <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">Reports</div>
@@ -1419,6 +1423,7 @@ select.inp{cursor:pointer;}
         <select class="inp" id="nr-crew">
           <option value="">Assign crew member...</option>
         </select>
+        <input class="inp" id="nr-crew-count" type="number" min="1" max="30" inputmode="numeric" placeholder="People on truck (optional)"/>
         <div style="font-size:12px;color:var(--text3);font-weight:700;letter-spacing:1px;">ADD PROPERTIES TO ROUTE</div>
         <input type="text" id="nr-prop-search" placeholder="🔍 Search properties..." style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:8px 12px;color:var(--text);font-size:13px;width:100%;box-sizing:border-box;"/>
         <div id="nr-selected-chips" style="display:flex;flex-wrap:wrap;gap:6px;min-height:0;"></div>
@@ -1740,18 +1745,18 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-28-v74'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-10-29-v75'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
-// Local fixtures for tests. Only localhost, and only with ?fixture=lexington
-// or ?fixture=calls. Never set on the live GitHub Pages host, so a test
-// cannot publish a version or write production Firestore.
+// Local fixtures for tests. Only localhost, and only with ?fixture=lexington,
+// ?fixture=calls, or ?fixture=jobcost. Never set on the live GitHub Pages
+// host, so a test cannot publish a version or write production Firestore.
 window._dlFixture = false;
 window._dlFixtureName = '';
 try {
   var _dlHost = location.hostname;
   var _dlQs = new URLSearchParams(location.search);
   window._dlFixtureName = _dlQs.get('fixture') || '';
-  window._dlFixture = (_dlHost === 'localhost' || _dlHost === '127.0.0.1') && (window._dlFixtureName === 'lexington' || window._dlFixtureName === 'calls');
+  window._dlFixture = (_dlHost === 'localhost' || _dlHost === '127.0.0.1') && (window._dlFixtureName === 'lexington' || window._dlFixtureName === 'calls' || window._dlFixtureName === 'jobcost');
 } catch (eFix) { window._dlFixture = false; window._dlFixtureName = ''; }
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -1782,6 +1787,7 @@ let state = {
   propertyPrivate: [], // RATE SPLIT: always kept empty in state/cache — rates live only in _propPrivateById (manager memory)
   propertyDirectory: [], // name + address only. Crew property list reads this, never properties.
   crewPrivate: [], // PAY SPLIT: always kept empty in state/cache — daily rates live only in _crewPrivateById (manager memory)
+  jobCosting: [], // site days + break-even. Manager memory only — never cached, never shown to crew.
   wetChecks: [],
   treatments: [], // pest & fertilization service reports. Collection: treatments.
   routeWeeks: {},
@@ -1871,6 +1877,12 @@ async function load() {
   // PAY SPLIT: a previous cache must never revive crew pay. Rates live only
   // in _crewPrivateById after a verified manager listener, never in IndexedDB.
   state.crewPrivate = [];
+  state.jobCosting = [];
+  (state.properties || []).forEach(function(p) {
+    if (!p) return;
+    delete p.budgetHoursPerVisit;
+    delete p.budgetCrewSize;
+  });
   if (!Array.isArray(state.propertyDirectory)) state.propertyDirectory = [];
   state.propertyDirectory = state.propertyDirectory.map(function(d) {
     return d && d.id ? { id: String(d.id), name: d.name == null ? '' : String(d.name), address: d.address == null ? '' : String(d.address) } : null;
@@ -1882,8 +1894,8 @@ async function load() {
     var pq = JSON.parse(localStorage.getItem('dl_pending_writes') || '[]');
     if (Array.isArray(pq)) {
       var pqFiltered = pq.filter(function(item) {
-        if (!item || item.table !== 'crewPrivate') return true;
-        return item.op === 'delete'; // id only — never keep a queued dailyRate payload
+        if (!item || (item.table !== 'crewPrivate' && item.table !== 'jobCosting')) return true;
+        return item.op === 'delete'; // id only — never keep a queued pay or job-cost payload
       });
       if (pqFiltered.length !== pq.length) localStorage.setItem('dl_pending_writes', JSON.stringify(pqFiltered));
     }
@@ -1920,7 +1932,13 @@ function save() {
     // PAY SPLIT: never persist crew pay in the IndexedDB cache, even if a
     // listener briefly assigned the collection or a crew doc still carried it.
     slim.crewPrivate = [];
+    slim.jobCosting = []; // site days and break-even stay in manager memory, not the shared cache
     slim.receptionistCalls = []; // never cache call transcripts/numbers on device
+    (slim.properties || []).forEach(function(p) {
+      if (!p) return;
+      delete p.budgetHoursPerVisit;
+      delete p.budgetCrewSize;
+    });
     if (Array.isArray(slim.propertyDirectory)) {
       slim.propertyDirectory = slim.propertyDirectory.map(function(d) {
         return d && d.id ? { id: String(d.id), name: d.name == null ? '' : String(d.name), address: d.address == null ? '' : String(d.address) } : null;
@@ -1972,6 +1990,10 @@ function switchTab(tab) {
   if (tab === 'calls' && state.role !== 'manager') {
     tab = state.role === 'field' ? 'field' : 'dashboard';
   }
+  // Job costing shows rates, budgets, and truck break-even. Crew never get it.
+  if (tab === 'jobcost' && state.role !== 'manager') {
+    tab = state.role === 'field' ? 'field' : 'dashboard';
+  }
   // Property map is the full record (notes, rates, contact). Crew never get it.
   // The properties tab is the name/address list, and only with the permission.
   if (tab === 'propmap' && state.role !== 'manager') {
@@ -2016,7 +2038,8 @@ function switchTab(tab) {
     equipment: renderEquipment, reports: renderReports,
     schedule: renderSchedule, 'crew-week': renderCrewWeek, field: renderFieldView,
     workorders: renderWorkOrders, 'wo-crew': renderCrewWorkOrders, attendance: renderAttendance,
-    customerrequests: renderCustomerRequests, calls: renderReceptionistCalls, calendar: renderCalendar };
+    customerrequests: renderCustomerRequests, calls: renderReceptionistCalls, calendar: renderCalendar,
+    jobcost: renderJobCost };
   renders[tab]?.();
 }
 
@@ -2135,6 +2158,7 @@ async function managerEmailLogin() {
     if (typeof _ensureReceptionistCallsListener === 'function') _ensureReceptionistCallsListener();
     if (typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener();
     if (typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener();
+    if (typeof _ensureJobCostListener === 'function') _ensureJobCostListener();
   } catch (e) {
     console.warn('Manager email sign-in failed:', e && e.message);
     if (errEl) errEl.textContent = '✕ Sign-in failed — check email/password.';
@@ -2185,8 +2209,10 @@ function applyRole(r) {
   if (r !== 'manager' && typeof _clearReceptionistCalls === 'function') _clearReceptionistCalls(); // never carry Ara calls into crew/guest
   if (r !== 'manager' && typeof _clearPropertyPrivate === 'function') _clearPropertyPrivate(); // RATE SPLIT: never carry rates into crew/guest (strips merged rates before save() below)
   if (r !== 'manager' && typeof _clearCrewPrivate === 'function') _clearCrewPrivate(); // PAY SPLIT: never carry crew pay into crew/guest
+  if (r !== 'manager' && typeof _clearJobCost === 'function') _clearJobCost(); // job costing is rates and break-even — crew screens stay clear of it
   if (r === 'manager' && typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener(); // no-op until a verified manager auth session exists
   if (r === 'manager' && typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener(); // no-op until a verified manager auth session exists
+  if (r === 'manager' && typeof _ensureJobCostListener === 'function') _ensureJobCostListener();
   if (r === 'manager' && typeof _ensureReceptionistCallsListener === 'function') _ensureReceptionistCallsListener();
   if (typeof _syncPropertyDirectoryAccess === 'function') _syncPropertyDirectoryAccess();
   save();
@@ -2239,6 +2265,7 @@ function applyRole(r) {
     <button class="nb" onclick="switchTab('equipment')" data-tab="equipment"><span class="ni"><i class="ti ti-tool"></i></span><span class="nl">Equipment</span></button>
     <div class="nav-group-label" style="margin-top:10px;">Reporting</div>
     <button class="nb" onclick="switchTab('reports')" data-tab="reports"><span class="ni"><i class="ti ti-chart-bar"></i></span><span class="nl">Reports</span></button>
+    <button class="nb" onclick="switchTab('jobcost')" data-tab="jobcost"><span class="ni"><i class="ti ti-calculator"></i></span><span class="nl">Job costing</span></button>
     <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni"><i class="ti ti-calendar-check"></i></span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
@@ -2774,6 +2801,14 @@ function openRouteDetail(id) {
           <div style="font-size:20px;font-weight:800;color:var(--text);padding:4px 0;">${stops.length}</div>
         </div>
       </div>
+      <div style="margin-top:10px;">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1px;margin-bottom:4px;">PEOPLE ON THIS TRUCK</div>
+        <input type="number" min="1" max="30" inputmode="numeric" placeholder="optional"
+          value="${r.crewCount > 0 ? r.crewCount : ''}"
+          onchange="updateRouteCrewCount('${r.id}', this.value)"
+          style="width:120px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:6px 8px;color:var(--text);font-size:13px;"/>
+        <div style="font-size:10px;color:var(--text4);margin-top:4px;">Optional. Job costing uses this for man-hours. Pay is not stored on the route.</div>
+      </div>
       ${pnl.revenue > 0 ? `
       <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
         <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;">Route P&L · ${pnl.truck||'Truck'}</div>
@@ -2912,13 +2947,14 @@ function openRouteDetail(id) {
                     return `<div style="font-size:10px;color:var(--text4);margin-bottom:4px;">${parts.join(' · ')}</div>`;
                   })()}
                   ${s.completedAt?`<div style="font-size:11px;color:var(--text3);">${s.completedAt}${s.completedAtISO?' · '+formatTimeEST(s.completedAtISO):''}</div>`:''}
+                  ${jobCostArrivedControl(r.id, s)}
                   ${s.completedBy?`<div style="font-size:11px;color:var(--text3);">by ${s.completedBy}</div>`:''}
                   ${(s.completedServices||[]).length?`<div style="font-size:11px;color:var(--text3);margin-top:4px;">✓ ${s.completedServices.join(', ')}</div>`:''}
                   ${s.completedNotes?`<div style="font-size:11px;color:var(--text3);margin-top:4px;font-style:italic;">"${s.completedNotes}"</div>`:''}
                   ${s.completedPhoto?`<img src="${s.completedPhoto}" referrerpolicy="no-referrer" onclick="openPhoto('${s.completedPhoto}','${prop?.name||''} — Completion Photo')" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover;margin-top:8px;cursor:zoom-in;" />`:''}
                   ${state.role==='manager'?`<button class="btn btn-outline" onclick="markStopDone('${r.id}','${s.propId}')" style="margin-top:8px;font-size:12px;color:var(--red);border-color:var(--red);">↩ Reopen</button>`:''}
                 </div>`
-              : `<button class="btn btn-green" onclick="openStopCompletion('${r.id}','${s.propId}')" style="margin-top:10px;font-size:13px;">📷 ${t('Complete Job')}</button>`}
+              : `${jobCostArrivedControl(r.id, s)}<button class="btn btn-green" onclick="openStopCompletion('${r.id}','${s.propId}')" style="margin-top:10px;font-size:13px;">📷 ${t('Complete Job')}</button>`}
           </div>
           ${state.role==='manager' ? buildServiceDatesHTML(r.id, s.propId, prop) : ''}
         </div>
@@ -3517,6 +3553,1167 @@ function getRouteDurations(route) {
     };
   });
 }
+
+
+
+// ── Job costing (manager only) ───────────────────────────────────────────
+// On-site time follows the read-only prototype: Navigate + ETA when that tap
+// is after the previous completion, otherwise the gap minus drive (15 min if
+// the route has no Directions estimate). Lunch uses lunchOverlapMinutes
+// (12:00–1:00 PM Eastern, taken off whichever property spans it). An Arrived
+// tap, when the crew used it, replaces the estimate. Employee pay is never
+// read here. Rates come from the manager-only propertyPrivate records.
+var JOBCOST_DEFAULT_OVERHEAD = 5000;
+var JOBCOST_DEFAULT_TRUCKS = 3;
+var JOBCOST_DEFAULT_DRIVE = 15;
+var JOBCOST_BATCH_MIN = 5;
+var _jobCostSettings = { dailyOverhead: JOBCOST_DEFAULT_OVERHEAD, truckCount: JOBCOST_DEFAULT_TRUCKS };
+var _jobCostSiteDays = [];
+var _jobCostSort = { key: 'perHr', dir: 1 };
+
+function jobCostTodayEt() {
+  try { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); }
+  catch (e) { return new Date().toISOString().slice(0, 10); }
+}
+function jobCostAddDays(iso, days) {
+  var p = String(iso || '').split('-');
+  if (p.length < 3) return iso;
+  var dt = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+function jobCostEnsureRange() {
+  if (!window._jobCostStart || !window._jobCostEnd) {
+    var end = jobCostTodayEt();
+    window._jobCostEnd = end;
+    window._jobCostStart = jobCostAddDays(end, -27);
+  }
+  if (window._jobCostStart > window._jobCostEnd) {
+    var swap = window._jobCostStart;
+    window._jobCostStart = window._jobCostEnd;
+    window._jobCostEnd = swap;
+  }
+}
+function jobCostEtDate(iso) {
+  var d = new Date(iso);
+  if (isNaN(d)) return '';
+  try { return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); }
+  catch (e2) { return ''; }
+}
+function jobCostMinutes(a, b) {
+  var ms = new Date(b) - new Date(a);
+  if (isNaN(ms)) return null;
+  return ms / 60000;
+}
+function jobCostVisitsPerMonth(frequency) {
+  var key = String(frequency || '').trim().toLowerCase();
+  var map = {
+    'weekly': 4, '2x per week': 8, 'bi-weekly': 2, 'biweekly': 2,
+    'monthly': 1, '2x per month': 2, 'quarterly': 0.33, 'as needed': 1
+  };
+  if (map[key] != null) return map[key];
+  if (typeof getVisitsPerMonth === 'function') return getVisitsPerMonth(frequency);
+  return 1;
+}
+function jobCostMoney(n) {
+  if (n == null || isNaN(n)) return '—';
+  var neg = n < 0;
+  var abs = Math.abs(n);
+  var rounded = Math.round(abs * 100) / 100;
+  var cents = Math.round(rounded * 100) % 100 !== 0;
+  var s = rounded.toLocaleString('en-US', { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: 2 });
+  return (neg ? '-$' : '$') + s;
+}
+function jobCostHrsFromMin(min) {
+  if (min == null || isNaN(min)) return '—';
+  return (Math.round(min) / 60).toFixed(1);
+}
+function jobCostPerTruck(settings) {
+  var s = settings || _jobCostSettings || {};
+  var overhead = parseFloat(s.dailyOverhead);
+  var trucks = parseInt(s.truckCount, 10);
+  if (!(overhead > 0)) overhead = JOBCOST_DEFAULT_OVERHEAD;
+  if (!(trucks > 0)) trucks = JOBCOST_DEFAULT_TRUCKS;
+  return { overhead: overhead, trucks: trucks, perTruck: overhead / trucks };
+}
+function jobCostFiniteNum(v) {
+  if (v == null || v === '') return null;
+  var n = Number(v);
+  return isFinite(n) ? n : null;
+}
+
+// One route's completed stops → visit rows. Mirrors the prototype's order:
+// window filter, then Arrived, then nav+eta, then gap, with batch and
+// missing-start flags. ctx.lunch is lunchOverlapMinutes.
+function jobCostVisitsFromRoute(route, ctx) {
+  var gaps = ctx.gaps;
+  var lunchFn = ctx.lunch;
+  var stops = route.stops || [];
+  gaps.stops += stops.length;
+  stops.forEach(function(s) {
+    if (!s || !s.completed) gaps.notCompleted++;
+    else if (!s.completedAtISO) gaps.noCompletedAt++;
+  });
+  var done = stops.filter(function(s) {
+    return s && s.completed && s.completedAtISO;
+  }).filter(function(s) {
+    var hr = getESTDecimalHour(s.completedAtISO);
+    var ok = jobCostEtDate(s.completedAtISO) === route.date && hr != null && hr >= 6 && hr <= 19;
+    if (!ok) gaps.offDayCompletion++;
+    return ok;
+  }).sort(function(a, b) {
+    return new Date(a.completedAtISO) - new Date(b.completedAtISO);
+  });
+  var visits = [];
+  var crewCount = jobCostFiniteNum(route.crewCount);
+  if (!(crewCount > 0)) crewCount = null;
+  done.forEach(function(s, i) {
+    var method = null, work = null, drive = null, lunchMin = 0;
+    var batchFlag = false, noStart = false;
+    if (!s.navigateTappedAtISO) gaps.noNav++;
+    var nav = s.navigateTappedAtISO && !isNaN(new Date(s.navigateTappedAtISO)) ? s.navigateTappedAtISO : null;
+    var prev = null;
+    if (i > 0) prev = done[i - 1].completedAtISO;
+    else if (nav && jobCostEtDate(nav) === route.date && new Date(nav) < new Date(s.completedAtISO)) prev = nav;
+    var cyc = prev ? jobCostMinutes(prev, s.completedAtISO) : null;
+    if (i > 0 && cyc != null && cyc < JOBCOST_BATCH_MIN) {
+      gaps.batchMarked++;
+      batchFlag = true;
+    }
+    var arrivedOk = false;
+    if (s.arrivedAtISO && !isNaN(new Date(s.arrivedAtISO)) && jobCostEtDate(s.arrivedAtISO) === route.date && new Date(s.arrivedAtISO) < new Date(s.completedAtISO) && (!prev || new Date(s.arrivedAtISO) >= new Date(prev))) {
+      arrivedOk = true;
+    }
+    if (arrivedOk) {
+      lunchMin = lunchFn(s.arrivedAtISO, s.completedAtISO);
+      var rawA = jobCostMinutes(s.arrivedAtISO, s.completedAtISO);
+      work = rawA == null ? null : Math.max(0, rawA - lunchMin);
+      var estA = jobCostFiniteNum(s.estimatedDriveMinutes);
+      if (estA != null) drive = estA;
+      else if (i > 0 && prev) {
+        var gapToArrived = jobCostMinutes(prev, s.arrivedAtISO);
+        drive = gapToArrived == null ? null : Math.max(0, Math.min(JOBCOST_DEFAULT_DRIVE, gapToArrived));
+      }
+      method = 'arrived';
+    } else if (!prev) {
+      gaps.firstStopNoStart++;
+      noStart = true;
+      method = 'no start';
+    } else if (batchFlag) {
+      method = 'batch-marked';
+    } else {
+      var est = jobCostFiniteNum(s.estimatedDriveMinutes);
+      var etaOk = !!(s.estimatedArrivalAtISO && nav && jobCostEtDate(nav) === jobCostEtDate(s.completedAtISO) && new Date(nav) >= new Date(prev) && new Date(s.estimatedArrivalAtISO) < new Date(s.completedAtISO));
+      if (etaOk) {
+        lunchMin = lunchFn(s.estimatedArrivalAtISO, s.completedAtISO);
+        var rawW = jobCostMinutes(s.estimatedArrivalAtISO, s.completedAtISO);
+        work = rawW == null ? null : Math.max(0, rawW - lunchMin);
+        drive = est != null ? est : s.estimatedDriveMinutes;
+        method = 'nav+eta';
+      } else {
+        lunchMin = lunchFn(prev, s.completedAtISO);
+        var driveCap = Math.max(0, cyc - lunchMin);
+        drive = Math.min(est != null ? est : JOBCOST_DEFAULT_DRIVE, driveCap);
+        work = Math.max(0, cyc - lunchMin - drive);
+        method = est != null ? 'gap-estDrive' : 'gap-15minDrive';
+      }
+    }
+    if (work != null && work > 240) gaps.over4h++;
+    if (work == null) gaps.untimed++;
+    visits.push({
+      date: route.date,
+      routeId: route.id,
+      route: route.name || 'Route',
+      crewId: route.crewId || '',
+      propId: s.propId,
+      propKey: s.propId || '',
+      workMin: work == null ? null : Math.round(work),
+      driveMin: drive == null || isNaN(drive) ? null : drive,
+      lunchMin: lunchMin || 0,
+      method: method,
+      batchFlag: batchFlag,
+      noStart: noStart,
+      crewCount: crewCount,
+      siteDay: false,
+      dayTrucks: 1
+    });
+  });
+  var day = null;
+    if (done.length) {
+    var startISO = null;
+    done.forEach(function(s) {
+      var candidate = null;
+      if (s.arrivedAtISO && jobCostEtDate(s.arrivedAtISO) === route.date && new Date(s.arrivedAtISO) < new Date(s.completedAtISO)) candidate = s.arrivedAtISO;
+      else if (s.navigateTappedAtISO && !isNaN(new Date(s.navigateTappedAtISO)) && new Date(s.navigateTappedAtISO) < new Date(s.completedAtISO) && jobCostEtDate(s.navigateTappedAtISO) === route.date) {
+        var navHr = getESTDecimalHour(s.navigateTappedAtISO);
+        if (navHr != null && navHr >= 5) candidate = s.navigateTappedAtISO;
+      }
+      if (candidate && (!startISO || new Date(candidate) < new Date(startISO))) startISO = candidate;
+    });
+    day = {
+      key: 'route:' + route.id,
+      date: route.date,
+      route: route.name || 'Route',
+      crewId: route.crewId || '',
+      stops: done.length,
+      startISO: startISO,
+      endISO: done[done.length - 1].completedAtISO,
+      siteDay: false,
+      trucks: 1,
+      crewCount: crewCount,
+      propName: ''
+    };
+  }
+  return { visits: visits, day: day };
+}
+
+function computeJobCostReport(ctx) {
+  ctx = ctx || {};
+  var routes = ctx.routes || state.routes || [];
+  var properties = ctx.properties || state.properties || [];
+  var crewList = ctx.crew || state.crew || [];
+  var siteDays = ctx.siteDays || _jobCostSiteDays || [];
+  var role = ctx.role || state.role;
+  var privateById = ctx.privateById || _propPrivateById || {};
+  var start = ctx.start;
+  var end = ctx.end;
+  var lunchFn = ctx.lunch || lunchOverlapMinutes;
+  var byId = {};
+  properties.forEach(function(p) { if (p && p.id) byId[p.id] = p; });
+  function crewName(id) {
+    var c = crewList.find(function(x) { return x && x.id === id; });
+    return (c && c.name) || 'Unassigned';
+  }
+  function propByName(name) {
+    var n = String(name || '').trim().toLowerCase();
+    if (!n) return null;
+    return properties.find(function(p) { return p && String(p.name || '').trim().toLowerCase() === n; }) || null;
+  }
+  function rateOf(prop) {
+    if (role !== 'manager' || !prop) return 0;
+    var priv = privateById[prop.id];
+    if (priv && priv.monthlyRate != null && priv.monthlyRate !== '') return parseFloat(priv.monthlyRate) || 0;
+    return parseFloat(prop.monthlyRate) || 0;
+  }
+  function revPerVisit(prop) {
+    if (!prop) return 0;
+    var rate = rateOf(prop);
+    var visits = jobCostVisitsPerMonth(prop.frequency);
+    if (!visits) return 0;
+    return Math.round((rate / visits) * 100) / 100;
+  }
+  function labelOf(prop, fallback) {
+    if (!prop) return fallback || 'Unknown property';
+    var street = String(prop.address || '').split(',')[0];
+    var name = prop.name || fallback || 'Property';
+    return street ? (name + ' (' + street + ')') : name;
+  }
+  var gaps = { stops: 0, notCompleted: 0, noCompletedAt: 0, offDayCompletion: 0, noNav: 0, firstStopNoStart: 0, batchMarked: 0, over4h: 0, untimed: 0 };
+  var visits = [];
+  var days = {};
+  (routes || []).forEach(function(r) {
+    if (!r || !r.date || r.date < start || r.date > end) return;
+    var built = jobCostVisitsFromRoute(r, { gaps: gaps, lunch: lunchFn });
+    built.visits.forEach(function(v) {
+      var prop = byId[v.propId] || null;
+      v.name = labelOf(prop, 'Unknown property');
+      v.frequency = prop ? (prop.frequency || '') : '';
+      v.rev = revPerVisit(prop);
+      v.hasProp = !!prop;
+      v.missingProp = !prop;
+      visits.push(v);
+    });
+    if (built.day) {
+      built.day.crew = crewName(built.day.crewId);
+      days[built.day.key] = built.day;
+    }
+  });
+  (siteDays || []).forEach(function(sd) {
+    if (!sd || !sd.date || sd.date < start || sd.date > end) return;
+    var hours = parseFloat(sd.hours);
+    if (!(hours > 0)) return;
+    var prop = sd.propId ? (byId[sd.propId] || null) : null;
+    if (!prop && sd.propertyName) prop = propByName(sd.propertyName);
+    var fallback = sd.propertyName || 'Site day';
+    var propKey = prop ? prop.id : ('name:' + String(fallback).trim().toLowerCase());
+    var people = jobCostFiniteNum(sd.people);
+    if (!(people > 0)) people = null;
+    var trucks = parseInt(sd.trucks, 10);
+    if (!(trucks > 0)) trucks = 1;
+    var dayKey = 'site:' + (sd.id || (sd.date + propKey));
+    visits.push({
+      date: sd.date,
+      routeId: dayKey,
+      route: 'Site day',
+      crewId: sd.crewId || '',
+      propId: prop ? prop.id : '',
+      propKey: propKey,
+      name: labelOf(prop, fallback),
+      frequency: prop ? (prop.frequency || '') : '',
+      workMin: Math.round(hours * 60),
+      driveMin: null,
+      lunchMin: 0,
+      method: 'site-day',
+      batchFlag: false,
+      noStart: false,
+      crewCount: people,
+      siteDay: true,
+      dayTrucks: trucks,
+      rev: revPerVisit(prop),
+      hasProp: !!prop,
+      missingProp: !prop
+    });
+    days[dayKey] = {
+      key: dayKey,
+      date: sd.date,
+      route: 'Site day',
+      crewId: sd.crewId || '',
+      crew: crewName(sd.crewId),
+      stops: 0,
+      startISO: null,
+      endISO: null,
+      siteDay: true,
+      trucks: trucks,
+      crewCount: people,
+      propName: labelOf(prop, fallback),
+      siteDayId: sd.id || ''
+    };
+  });
+  var cnt = {};
+  visits.forEach(function(v) {
+    var k = v.date + '|' + v.propKey;
+    cnt[k] = (cnt[k] || 0) + 1;
+  });
+  visits.forEach(function(v) {
+    var n = cnt[v.date + '|' + v.propKey] || 1;
+    v.rev = Math.round((v.rev / n) * 100) / 100;
+  });
+  Object.keys(days).forEach(function(k) {
+    days[k].rev = 0;
+    days[k].onSiteMin = 0;
+    days[k].driveMin = 0;
+    days[k].manMin = 0;
+    days[k].manKnown = false;
+    days[k].batch = 0;
+    days[k].noStart = 0;
+    days[k].untimed = 0;
+    days[k].timed = 0;
+  });
+  visits.forEach(function(v) {
+    var d = days[v.siteDay ? v.routeId : ('route:' + v.routeId)];
+    if (!d) return;
+    d.rev += v.rev;
+    if (v.workMin != null) {
+      d.onSiteMin += v.workMin;
+      d.timed++;
+      if (v.crewCount > 0) { d.manMin += v.workMin * v.crewCount; d.manKnown = true; }
+    } else if (!v.batchFlag && !v.noStart) d.untimed++;
+    if (v.driveMin != null) d.driveMin += v.driveMin;
+    if (v.batchFlag) d.batch++;
+    if (v.noStart) d.noStart++;
+  });
+  var byP = {};
+  visits.forEach(function(v) {
+    var b = byP[v.propKey] || (byP[v.propKey] = {
+      propKey: v.propKey,
+      propId: v.propId || '',
+      name: v.name,
+      frequency: v.frequency || '',
+      missingProp: v.missingProp,
+      visits: 0, timed: 0, onSiteMin: 0, driveMin: 0, driveKnown: 0,
+      rev: 0, lunchMin: 0, manMin: 0, manKnown: false,
+      batch: 0, noStart: 0, untimed: 0, bareUntimed: 0,
+      methods: {}
+    });
+    b.visits++;
+    b.rev += v.rev;
+    b.lunchMin += v.lunchMin || 0;
+    b.methods[v.method || 'none'] = (b.methods[v.method || 'none'] || 0) + 1;
+    if (v.missingProp) b.missingProp = true;
+    if (v.workMin != null) {
+      b.timed++;
+      b.onSiteMin += v.workMin;
+      if (v.crewCount > 0) { b.manMin += v.workMin * v.crewCount; b.manKnown = true; }
+    } else {
+      b.untimed++;
+      if (!v.batchFlag && !v.noStart) b.bareUntimed++;
+    }
+    if (v.driveMin != null) { b.driveMin += v.driveMin; b.driveKnown++; }
+    if (v.batchFlag) b.batch++;
+    if (v.noStart) b.noStart++;
+  });
+  var rows = Object.keys(byP).map(function(k) {
+    var b = byP[k];
+    var prop = b.propId ? byId[b.propId] : null;
+    var priv = (role === 'manager' && b.propId && privateById[b.propId]) ? privateById[b.propId] : null;
+    var rate = prop ? rateOf(prop) : 0;
+    var budgetPer = priv ? parseFloat(priv.budgetHoursPerVisit) : NaN;
+    var budgetCrew = priv ? parseInt(priv.budgetCrewSize, 10) : NaN;
+    b.hasRate = rate > 0;
+    b.monthlyRate = role === 'manager' ? rate : 0;
+    b.budgetPerVisit = budgetPer > 0 ? budgetPer : null;
+    b.budgetCrewSize = budgetCrew > 0 ? budgetCrew : null;
+    b.budgetHours = b.budgetPerVisit != null ? b.budgetPerVisit * b.visits : null;
+    b.onSiteHrs = b.onSiteMin / 60;
+    b.perHr = b.onSiteMin > 0 ? b.rev / (b.onSiteMin / 60) : null;
+    b.varianceHrs = b.budgetHours != null ? (b.onSiteHrs - b.budgetHours) : null;
+    return b;
+  });
+  var methods = {};
+  visits.forEach(function(v) { methods[v.method || 'none'] = (methods[v.method || 'none'] || 0) + 1; });
+  return {
+    rows: rows,
+    days: days,
+    visits: visits,
+    gaps: gaps,
+    methods: methods,
+    lunchMin: visits.reduce(function(a, v) { return a + (v.lunchMin || 0); }, 0),
+    start: start,
+    end: end,
+    role: role
+  };
+}
+
+function jobCostSortRows(rows) {
+  var key = (_jobCostSort && _jobCostSort.key) || 'perHr';
+  var dir = (_jobCostSort && _jobCostSort.dir) || 1;
+  var numeric = { perHr: 'perHr', onSiteMin: 'onSiteMin', rev: 'rev', visits: 'visits', driveMin: 'driveMin' };
+  return rows.slice().sort(function(a, b) {
+    if (key === 'name') return dir * String(a.name || '').localeCompare(String(b.name || ''));
+    var field = numeric[key] || 'perHr';
+    var av = a[field], bv = b[field];
+    if (av == null && bv == null) return String(a.name || '').localeCompare(String(b.name || ''));
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (av === bv) return String(a.name || '').localeCompare(String(b.name || ''));
+    return av < bv ? -dir : dir;
+  });
+}
+function jobCostTone(perHr, hasRate) {
+  if (!hasRate) return 'yellow';
+  if (perHr == null) return 'muted';
+  if (perHr < 80) return 'red';
+  if (perHr < 150) return 'yellow';
+  return 'green';
+}
+function jobCostToneColor(tone) {
+  if (tone === 'red') return 'var(--red)';
+  if (tone === 'yellow') return 'var(--yellow)';
+  if (tone === 'green') return 'var(--green)';
+  return 'var(--text3)';
+}
+
+function _ensureJobCostListener() {
+  if (!window._managerSessionUnlocked) return;
+  if (state.role !== 'manager' || !_db || _listeners['jobCosting']) return;
+  var u = window._fbAuth && window._fbAuth.currentUser;
+  if (!u || u.isAnonymous || !u.emailVerified) return;
+  _listenCollection('jobCosting');
+}
+function _clearJobCost() {
+  try { if (_listeners['jobCosting']) { _listeners['jobCosting'](); delete _listeners['jobCosting']; } } catch (e) {}
+  _jobCostSiteDays = [];
+  _jobCostSettings = { dailyOverhead: JOBCOST_DEFAULT_OVERHEAD, truckCount: JOBCOST_DEFAULT_TRUCKS };
+  state.jobCosting = [];
+  window._jobCostUnreadable = false;
+  var root = document.getElementById('jobcost-root');
+  if (root) root.innerHTML = '';
+}
+function _applyJobCostDocs(docs) {
+  var days = [];
+  var settings = null;
+  (docs || []).forEach(function(d) {
+    if (!d) return;
+    if (d.id === 'settings' || d.kind === 'settings') settings = d;
+    else if (d.kind === 'siteDay' || d.date) days.push(d);
+  });
+  _jobCostSiteDays = days;
+  if (settings) {
+    var overhead = parseFloat(settings.dailyOverhead);
+    var trucks = parseInt(settings.truckCount, 10);
+    _jobCostSettings = {
+      dailyOverhead: overhead > 0 ? overhead : JOBCOST_DEFAULT_OVERHEAD,
+      truckCount: trucks > 0 ? trucks : JOBCOST_DEFAULT_TRUCKS
+    };
+  }
+  state.jobCosting = [];
+  window._jobCostUnreadable = false;
+}
+
+function jobCostSaveSettings() {
+  if (state.role !== 'manager') return;
+  var oEl = document.getElementById('jc-overhead');
+  var tEl = document.getElementById('jc-trucks');
+  var overhead = oEl ? parseFloat(oEl.value) : NaN;
+  var trucks = tEl ? parseInt(tEl.value, 10) : NaN;
+  if (!(overhead > 0) || !(trucks > 0)) { toast('Enter overhead and truck count'); return; }
+  _jobCostSettings = { dailyOverhead: overhead, truckCount: trucks };
+  var doc = {
+    id: 'settings',
+    kind: 'settings',
+    dailyOverhead: overhead,
+    truckCount: trucks,
+    updatedAt: new Date().toISOString(),
+    updatedBy: window._managerAuthEmail || ''
+  };
+  if (!window._dlFixture) {
+    try { gsSave('jobCosting', doc); } catch (e) { console.warn('jobCosting settings save failed', e); }
+  }
+  renderJobCost();
+  toast('Break-even saved');
+}
+function jobCostFillSite(name) {
+  var sel = document.getElementById('jc-site-prop');
+  var nameEl = document.getElementById('jc-site-name');
+  var wrap = document.getElementById('jc-site-name-wrap');
+  var match = (state.properties || []).find(function(p) {
+    return p && String(p.name || '').trim().toLowerCase() === String(name || '').trim().toLowerCase();
+  });
+  if (sel) sel.value = match ? match.id : '';
+  if (nameEl) nameEl.value = match ? '' : name;
+  if (wrap) wrap.style.display = match ? 'none' : 'block';
+}
+function jobCostSitePropChanged() {
+  var sel = document.getElementById('jc-site-prop');
+  var wrap = document.getElementById('jc-site-name-wrap');
+  if (!sel || !wrap) return;
+  wrap.style.display = sel.value ? 'none' : 'block';
+}
+function jobCostSaveSiteDay() {
+  if (state.role !== 'manager') return;
+  var sel = document.getElementById('jc-site-prop');
+  var nameEl = document.getElementById('jc-site-name');
+  var dateEl = document.getElementById('jc-site-date');
+  var crewEl = document.getElementById('jc-site-crew');
+  var hoursEl = document.getElementById('jc-site-hours');
+  var peopleEl = document.getElementById('jc-site-people');
+  var trucksEl = document.getElementById('jc-site-trucks');
+  var propId = sel ? sel.value : '';
+  var propertyName = nameEl ? nameEl.value.trim() : '';
+  if (!propId && !propertyName) { toast('Choose a property or type a name'); return; }
+  var date = dateEl ? dateEl.value : '';
+  if (!date) { toast('Pick a date'); return; }
+  var hours = hoursEl ? parseFloat(hoursEl.value) : NaN;
+  if (!(hours > 0) || hours > 16) { toast('Enter hours between 0 and 16'); return; }
+  var people = peopleEl ? parseInt(peopleEl.value, 10) : 0;
+  var trucks = trucksEl ? parseInt(trucksEl.value, 10) : 1;
+  if (!(trucks > 0)) trucks = 1;
+  if (propId) {
+    var known = (state.properties || []).find(function(p) { return p.id === propId; });
+    if (known) propertyName = known.name || propertyName;
+  }
+  var doc = {
+    id: 'sd_' + uid(),
+    kind: 'siteDay',
+    propId: propId || '',
+    propertyName: propertyName || '',
+    date: date,
+    crewId: crewEl ? crewEl.value : '',
+    hours: hours,
+    people: people > 0 ? people : null,
+    trucks: trucks,
+    createdAt: new Date().toISOString(),
+    updatedBy: window._managerAuthEmail || ''
+  };
+  _jobCostSiteDays = _jobCostSiteDays.concat([doc]);
+  if (!window._dlFixture) {
+    try { gsSave('jobCosting', doc); } catch (e2) { console.warn('site day save failed', e2); }
+  }
+  renderJobCost();
+  toast(window._jobCostUnreadable ? 'Site day added on this screen only' : 'Site day added');
+}
+function jobCostDeleteSiteDay(id) {
+  if (state.role !== 'manager' || !id) return;
+  if (!confirm('Remove this site day?')) return;
+  _jobCostSiteDays = _jobCostSiteDays.filter(function(d) { return d.id !== id; });
+  if (!window._dlFixture) {
+    try { gsDelete('jobCosting', id); } catch (e) { console.warn('site day delete failed', e); }
+  }
+  renderJobCost();
+  toast('Site day removed');
+}
+function jobCostSaveBudget(propId, idx) {
+  if (state.role !== 'manager' || !propId) return;
+  var hEl = document.getElementById('jc-bh-' + idx);
+  var cEl = document.getElementById('jc-bc-' + idx);
+  var hours = hEl && hEl.value !== '' ? parseFloat(hEl.value) : NaN;
+  var crewN = cEl && cEl.value !== '' ? parseInt(cEl.value, 10) : NaN;
+  var prev = _propPrivateById[propId] || { id: propId };
+  var doc = {
+    id: propId,
+    updatedAt: new Date().toISOString(),
+    updatedBy: window._managerAuthEmail || ''
+  };
+  if (prev.monthlyRate != null && prev.monthlyRate !== '') doc.monthlyRate = prev.monthlyRate;
+  doc.budgetHoursPerVisit = hours > 0 ? hours : null;
+  doc.budgetCrewSize = crewN > 0 ? crewN : null;
+  _propPrivateById[propId] = Object.assign({}, prev, doc);
+  if (!window._dlFixture) {
+    try { gsSave('propertyPrivate', doc); } catch (e) { console.warn('budget save failed', e); }
+  }
+  renderJobCost();
+  toast('Budget saved');
+}
+function jobCostSetSort(key) {
+  var cur = _jobCostSort || { key: 'perHr', dir: 1 };
+  if (cur.key === key) cur = { key: key, dir: -cur.dir };
+  else cur = { key: key, dir: (key === 'perHr' || key === 'name') ? 1 : -1 };
+  _jobCostSort = cur;
+  renderJobCost();
+}
+function jobCostSetPreset(preset) {
+  var end = jobCostTodayEt();
+  var start = end;
+  if (preset === '7') start = jobCostAddDays(end, -6);
+  else if (preset === '28') start = jobCostAddDays(end, -27);
+  else if (preset === 'month') start = end.slice(0, 8) + '01';
+  window._jobCostStart = start;
+  window._jobCostEnd = end;
+  renderJobCost();
+}
+function jobCostApplyCustomRange() {
+  var a = document.getElementById('jc-start');
+  var b = document.getElementById('jc-end');
+  if (!a || !b || !a.value || !b.value) return;
+  window._jobCostStart = a.value;
+  window._jobCostEnd = b.value;
+  jobCostEnsureRange();
+  renderJobCost();
+}
+
+function renderJobCost() {
+  var root = document.getElementById('jobcost-root');
+  if (!root) return;
+  if (state.role !== 'manager') { root.innerHTML = ''; return; }
+  jobCostEnsureRange();
+  var report = computeJobCostReport({
+    start: window._jobCostStart,
+    end: window._jobCostEnd,
+    role: 'manager'
+  });
+  var rows = jobCostSortRows(report.rows);
+  var be = jobCostPerTruck(_jobCostSettings);
+  var rated = rows.filter(function(r) { return r.hasRate && r.perHr != null; }).slice().sort(function(a, b) { return a.perHr - b.perHr; });
+  var lowest = rated[0] || null;
+  var noRate = rows.filter(function(r) { return !r.hasRate; });
+  var totalRev = rows.reduce(function(a, r) { return a + r.rev; }, 0);
+  var totalMin = rows.reduce(function(a, r) { return a + r.onSiteMin; }, 0);
+  var dayList = Object.keys(report.days).map(function(k) { return report.days[k]; }).sort(function(a, b) {
+    if (a.date === b.date) return String(a.route).localeCompare(String(b.route));
+    return a.date < b.date ? -1 : 1;
+  });
+  function sortBtn(key, label) {
+    var on = _jobCostSort.key === key;
+    var arrow = on ? (_jobCostSort.dir > 0 ? ' ↑' : ' ↓') : '';
+    return '<button type="button" class="pill' + (on ? ' active' : '') + '" onclick="jobCostSetSort(\'' + key + '\')">' + label + arrow + '</button>';
+  }
+  var html = '';
+  if (window._dlFixtureName === 'jobcost') {
+    html += '<div style="font-size:12px;color:var(--text2);background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25);border-radius:10px;padding:10px 12px;margin-bottom:12px;">Sample week on this computer only. Same costing method as live routes. Nothing is written to Firebase.</div>';
+  }
+  html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:12px;">';
+  html += '<div><div style="font-size:20px;font-weight:800;">Job costing</div>';
+  html += '<div style="font-size:12px;color:var(--text3);margin-top:2px;">On-site hours, revenue per visit, and truck break-even.</div></div>';
+  html += '</div>';
+  html += '<div class="pills" style="margin-bottom:8px;">';
+  html += '<button type="button" class="pill" onclick="jobCostSetPreset(\'7\')">7 days</button>';
+  html += '<button type="button" class="pill" onclick="jobCostSetPreset(\'28\')">Last 4 weeks</button>';
+  html += '<button type="button" class="pill" onclick="jobCostSetPreset(\'month\')">This month</button>';
+  html += '</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">';
+  html += '<input type="date" class="inp" id="jc-start" value="' + escHtml(window._jobCostStart) + '" onchange="jobCostApplyCustomRange()" style="width:auto;color-scheme:dark;"/>';
+  html += '<input type="date" class="inp" id="jc-end" value="' + escHtml(window._jobCostEnd) + '" onchange="jobCostApplyCustomRange()" style="width:auto;color-scheme:dark;"/>';
+  html += '</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px;">';
+  html += jobCostStat('Properties', String(rows.length));
+  html += jobCostStat('On-site hours', totalMin ? (totalMin / 60).toFixed(1) : '0');
+  html += jobCostStat('Revenue', jobCostMoney(totalRev));
+  html += jobCostStat('Break-even / truck', jobCostMoney(be.perTruck));
+  html += '</div>';
+  if (lowest) {
+    var lowTone = jobCostTone(lowest.perHr, true);
+    html += '<div class="card" style="border-color:' + jobCostToneColor(lowTone) + ';margin-bottom:12px;">';
+    html += '<div class="sec-title" style="margin-bottom:4px;">Lowest $/hr</div>';
+    html += '<div style="font-size:28px;font-weight:800;color:' + jobCostToneColor(lowTone) + ';">$' + lowest.perHr.toFixed(1) + '<span style="font-size:14px;font-weight:600;color:var(--text3);"> /hr</span></div>';
+    html += '<div style="font-size:13px;margin-top:4px;">' + escHtml(lowest.name) + '</div>';
+    html += '<div style="font-size:12px;color:var(--text3);margin-top:2px;">' + jobCostHrsFromMin(lowest.onSiteMin) + ' on-site hrs · ' + jobCostMoney(lowest.rev) + ' · ' + lowest.visits + ' visit' + (lowest.visits === 1 ? '' : 's') + (lowTone === 'red' ? ' · under $80/hr' : '') + '</div>';
+    html += '</div>';
+  }
+  if (noRate.length) {
+    html += '<div class="card" style="border-color:var(--yellow);margin-bottom:12px;">';
+    html += '<div class="sec-title" style="color:var(--yellow);">No rate</div>';
+    html += '<div style="font-size:13px;line-height:1.45;">' + noRate.map(function(r) { return escHtml(r.name); }).join(' · ') + '</div>';
+    html += '<div style="font-size:11px;color:var(--text3);margin-top:4px;">These visits are in the hours. Revenue is $0 until a manager rate is saved.</div>';
+    html += '</div>';
+  }
+  var g = report.gaps;
+  html += '<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.45;">';
+  html += 'Batch-marked ' + g.batchMarked + ' · No start ' + g.firstStopNoStart + ' · Untimed ' + g.untimed;
+  html += ' · Lunch ' + report.lunchMin + ' min subtracted';
+  if (g.offDayCompletion) html += ' · ' + g.offDayCompletion + ' completion' + (g.offDayCompletion === 1 ? '' : 's') + ' outside 6:00 AM–7:00 PM on the route date';
+  if (g.over4h) html += ' · ' + g.over4h + ' over 4h';
+  html += '</div>';
+  html += '<div class="pills" style="margin-bottom:10px;">' + sortBtn('perHr', '$/hr') + sortBtn('onSiteMin', 'On-site') + sortBtn('rev', 'Revenue') + sortBtn('visits', 'Visits') + sortBtn('name', 'Name') + '</div>';
+  html += '<div style="font-size:11px;color:var(--text3);margin:-4px 0 10px;">Under $80/hr is red, $80–$150 yellow, above that green. $/hr uses on-site truck-hours. Untimed visits stay in the revenue.</div>';
+  if (!rows.length) {
+    html += '<div class="card" style="text-align:center;color:var(--text3);font-size:13px;">No completed stops or site days in this range.</div>';
+  } else {
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;margin-bottom:16px;">';
+    rows.forEach(function(r, idx) {
+      var tone = jobCostTone(r.perHr, r.hasRate);
+      var col = jobCostToneColor(tone);
+      html += '<div class="card" style="margin:0;border-left:3px solid ' + col + ';" data-jobcost-prop="' + escHtml(r.propKey) + '">';
+      html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">';
+      html += '<div style="min-width:0;"><div style="font-size:14px;font-weight:800;line-height:1.3;">' + escHtml(r.name) + '</div>';
+      html += '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + escHtml(r.frequency || 'Frequency not set');
+      if (r.missingProp) html += ' · not in the property list';
+      html += '</div></div>';
+      html += '<div style="text-align:right;flex-shrink:0;"><div style="font-size:20px;font-weight:800;color:' + col + ';">' + (r.perHr == null ? '—' : ('$' + r.perHr.toFixed(1))) + '</div>';
+      html += '<div style="font-size:10px;color:var(--text3);">$/hr</div></div></div>';
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:10px;">';
+      html += jobCostMini('Visits', r.visits + (r.timed !== r.visits ? (' · ' + r.timed + ' timed') : ''));
+      html += jobCostMini('On-site', jobCostHrsFromMin(r.onSiteMin) + 'h');
+      html += jobCostMini('Drive', r.driveKnown ? (jobCostHrsFromMin(r.driveMin) + 'h') : '—');
+      html += '</div>';
+      html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:8px;gap:8px;">';
+      html += '<div style="font-size:13px;font-weight:700;">' + jobCostMoney(r.rev) + '</div>';
+      html += '<div style="font-size:11px;color:var(--text3);">' + (r.manKnown ? ((r.manMin / 60).toFixed(1) + ' man-hrs') : 'Man-hrs —') + '</div></div>';
+      var flags = [];
+      if (!r.hasRate) flags.push('No rate');
+      if (r.batch) flags.push(r.batch + ' batch-marked');
+      if (r.noStart) flags.push(r.noStart + ' no start');
+      if (r.bareUntimed) flags.push(r.bareUntimed + ' untimed');
+      if (flags.length) html += '<div style="font-size:11px;color:var(--yellow);margin-top:6px;">' + escHtml(flags.join(' · ')) + '</div>';
+      if (r.budgetHours != null) {
+        var over = r.varianceHrs > 0.05;
+        var under = r.varianceHrs < -0.05;
+        var vcol = over ? 'var(--red)' : 'var(--green)';
+        var vtxt = over ? (r.varianceHrs.toFixed(1) + 'h over budget') : under ? (Math.abs(r.varianceHrs).toFixed(1) + 'h under budget') : 'On budget';
+        html += '<div style="font-size:12px;margin-top:6px;color:' + vcol + ';">Budget ' + r.budgetHours.toFixed(1) + 'h · actual ' + r.onSiteHrs.toFixed(1) + 'h · ' + vtxt + '</div>';
+        if (r.budgetCrewSize) html += '<div style="font-size:11px;color:var(--text3);">Budget crew size ' + r.budgetCrewSize + '</div>';
+      }
+      if (r.propId) {
+        html += '<div style="display:flex;gap:6px;margin-top:8px;">';
+        html += '<input class="inp" id="jc-bh-' + idx + '" type="number" min="0" step="0.25" placeholder="Hrs / visit" value="' + (r.budgetPerVisit != null ? escHtml(String(r.budgetPerVisit)) : '') + '" style="flex:1;min-width:0;padding:8px;"/>';
+        html += '<input class="inp" id="jc-bc-' + idx + '" type="number" min="1" max="30" placeholder="People" value="' + (r.budgetCrewSize != null ? escHtml(String(r.budgetCrewSize)) : '') + '" style="width:96px;padding:8px;"/>';
+        html += '<button type="button" class="btn-sm" onclick="jobCostSaveBudget(\'' + String(r.propId).replace(/'/g, '') + '\',' + idx + ')" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">Save</button>';
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  html += '<div style="font-size:16px;font-weight:800;margin:6px 0 4px;">Daily board</div>';
+  html += '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Each truck is measured against ' + jobCostMoney(be.perTruck) + ' (' + jobCostMoney(be.overhead) + ' ÷ ' + be.trucks + ' trucks). A site day uses the trucks entered on that row.</div>';
+  if (!dayList.length) {
+    html += '<div class="card" style="color:var(--text3);font-size:13px;">No truck-days in this range.</div>';
+  } else {
+    var lastDate = '';
+    dayList.forEach(function(d) {
+      if (d.date !== lastDate) {
+        lastDate = d.date;
+        html += '<div style="font-size:12px;font-weight:800;color:var(--text2);margin:10px 0 6px;">' + escHtml(jobCostPrettyDate(d.date)) + '</div>';
+      }
+      var target = be.perTruck * (d.trucks > 0 ? d.trucks : 1);
+      var delta = d.rev - target;
+      var dcol = delta >= 0 ? 'var(--green)' : 'var(--red)';
+      var flags = [];
+      if (d.batch) flags.push(d.batch + ' batch-marked');
+      if (d.noStart) flags.push(d.noStart + ' no start');
+      if (d.untimed) flags.push(d.untimed + ' untimed');
+      html += '<div class="card" style="margin-bottom:8px;" data-jobcost-day="' + escHtml(d.key) + '">';
+      html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">';
+      html += '<div><div style="font-size:14px;font-weight:800;">' + escHtml(d.route) + (d.siteDay && d.propName ? (' · ' + escHtml(d.propName)) : '') + '</div>';
+      html += '<div style="font-size:12px;color:var(--text3);margin-top:2px;">' + escHtml(d.crew || 'Unassigned');
+      if (d.crewCount > 0) html += ' · ' + d.crewCount + ' people';
+      if (d.trucks > 1) html += ' · ' + d.trucks + ' trucks';
+      html += '</div></div>';
+      html += '<div style="text-align:right;"><div style="font-size:16px;font-weight:800;color:' + dcol + ';">' + (delta >= 0 ? '+' : '') + jobCostMoney(delta) + '</div>';
+      html += '<div style="font-size:10px;color:var(--text3);">vs ' + jobCostMoney(target) + '</div></div></div>';
+      html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:12px;">';
+      html += '<span>Revenue <b>' + jobCostMoney(d.rev) + '</b></span>';
+      html += '<span>On-site <b>' + jobCostHrsFromMin(d.onSiteMin) + 'h</b></span>';
+      html += '<span>Drive <b>' + (d.siteDay ? '—' : (jobCostHrsFromMin(d.driveMin) + 'h')) + '</b></span>';
+      if (d.manKnown) html += '<span>Man-hrs <b>' + (d.manMin / 60).toFixed(1) + '</b></span>';
+      if (!d.siteDay) html += '<span>' + d.stops + ' stops</span>';
+      html += '</div>';
+      if (!d.siteDay) {
+        html += '<div style="font-size:11px;color:var(--text3);margin-top:4px;">';
+        html += d.startISO ? ('Start ' + formatTimeEST(d.startISO)) : 'Start —';
+        html += d.endISO ? (' · End ' + formatTimeEST(d.endISO)) : '';
+        html += '</div>';
+      }
+      if (flags.length) html += '<div style="font-size:11px;color:var(--yellow);margin-top:4px;">' + escHtml(flags.join(' · ')) + '</div>';
+      html += '</div>';
+    });
+  }
+
+  html += jobCostSiteDayForm(report);
+  html += jobCostSettingsForm(be);
+  html += jobCostMethodNote(report);
+  root.innerHTML = html;
+}
+function jobCostStat(label, value) {
+  return '<div class="card" style="margin:0;padding:10px 12px;"><div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.8px;text-transform:uppercase;">' + escHtml(label) + '</div><div style="font-size:18px;font-weight:800;margin-top:2px;">' + escHtml(value) + '</div></div>';
+}
+function jobCostMini(label, value) {
+  return '<div style="background:var(--bg3);border-radius:8px;padding:6px 8px;"><div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:.6px;text-transform:uppercase;">' + escHtml(label) + '</div><div style="font-size:13px;font-weight:700;margin-top:1px;">' + escHtml(value) + '</div></div>';
+}
+function jobCostPrettyDate(iso) {
+  var p = String(iso || '').split('-');
+  if (p.length < 3) return iso || '';
+  var dt = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2], 16));
+  try {
+    return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+  } catch (e) { return iso; }
+}
+function jobCostSiteDayForm(report) {
+  var props = (state.properties || []).slice().filter(function(p) { return p && p.name && !p.archived; }).sort(function(a, b) {
+    return String(a.name).localeCompare(String(b.name));
+  });
+  var crews = state.crew || [];
+  var html = '<div class="card" style="margin-top:16px;">';
+  html += '<div class="sec-title">Site day</div>';
+  html += '<div style="font-size:12px;color:var(--text3);margin:-4px 0 10px;line-height:1.45;">Lexington Club (Wed/Thu) and Aspen (Fri) are whole-crew days with no route stops. Log one row per truck. Aspen has no property record — type the name and it still counts.</div>';
+  if (window._jobCostUnreadable) {
+    html += '<div style="font-size:12px;color:var(--yellow);margin-bottom:8px;">These rows stay on this screen until job-costing rules are published. Route hours already calculate without them.</div>';
+  }
+  html += '<div style="display:flex;gap:6px;margin-bottom:8px;">';
+  html += '<button type="button" class="btn-sm" onclick="jobCostFillSite(\'Lexington Club\')" style="background:rgba(63,185,80,.12);color:var(--green);border:1px solid rgba(63,185,80,.3);">Lexington Club</button>';
+  html += '<button type="button" class="btn-sm" onclick="jobCostFillSite(\'Aspen\')" style="background:rgba(63,185,80,.12);color:var(--green);border:1px solid rgba(63,185,80,.3);">Aspen</button>';
+  html += '</div>';
+  html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+  html += '<select class="inp" id="jc-site-prop" onchange="jobCostSitePropChanged()"><option value="">Not in the property list</option>';
+  props.forEach(function(p) {
+    html += '<option value="' + escHtml(p.id) + '">' + escHtml(p.name) + '</option>';
+  });
+  html += '</select>';
+  html += '<div id="jc-site-name-wrap"><input class="inp" id="jc-site-name" placeholder="Property name (Aspen)"/></div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+  html += '<input type="date" class="inp" id="jc-site-date" style="flex:1;min-width:140px;color-scheme:dark;"/>';
+  html += '<select class="inp" id="jc-site-crew" style="flex:1;min-width:140px;"><option value="">Crew / truck</option>';
+  crews.forEach(function(c) { html += '<option value="' + escHtml(c.id) + '">' + escHtml(c.name || '') + '</option>'; });
+  html += '</select></div>';
+  html += '<div style="display:flex;gap:8px;">';
+  html += '<input class="inp" id="jc-site-hours" type="number" min="0.25" max="16" step="0.25" placeholder="Hours" style="flex:1;"/>';
+  html += '<input class="inp" id="jc-site-people" type="number" min="1" max="30" placeholder="People" style="width:90px;"/>';
+  html += '<input class="inp" id="jc-site-trucks" type="number" min="1" max="6" value="1" placeholder="Trucks" style="width:80px;"/>';
+  html += '</div>';
+  html += '<button type="button" class="btn btn-green" onclick="jobCostSaveSiteDay()" style="font-size:13px;">Add site day</button>';
+  html += '</div>';
+  var listed = _jobCostSiteDays.filter(function(sd) {
+    return sd && sd.date && sd.date >= window._jobCostStart && sd.date <= window._jobCostEnd;
+  }).slice().sort(function(a, b) { return a.date < b.date ? -1 : 1; });
+  if (listed.length) {
+    html += '<div style="margin-top:12px;">';
+    listed.forEach(function(sd) {
+      var crew = (state.crew || []).find(function(c) { return c.id === sd.crewId; });
+      var who = crew ? crew.name : 'Unassigned';
+      var title = sd.propertyName || sd.propId || 'Site day';
+      html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--border);">';
+      html += '<div style="font-size:12px;"><b>' + escHtml(jobCostPrettyDate(sd.date)) + '</b> · ' + escHtml(title) + ' · ' + escHtml(who) + ' · ' + escHtml(String(sd.hours)) + 'h</div>';
+      html += '<button type="button" onclick="jobCostDeleteSiteDay(\'' + String(sd.id || '').replace(/'/g, '') + '\')" style="background:none;border:none;color:var(--red);font-size:12px;cursor:pointer;">Remove</button>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+function jobCostSettingsForm(be) {
+  var html = '<div class="card">';
+  html += '<div class="sec-title">Daily break-even</div>';
+  html += '<div style="font-size:12px;color:var(--text3);margin:-4px 0 10px;">Overhead split across the trucks. Default $5,000 and 3 trucks.</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">';
+  html += '<input class="inp" id="jc-overhead" type="number" min="1" step="1" value="' + escHtml(String(be.overhead)) + '" style="width:140px;" placeholder="Daily overhead"/>';
+  html += '<input class="inp" id="jc-trucks" type="number" min="1" max="12" value="' + escHtml(String(be.trucks)) + '" style="width:80px;" placeholder="Trucks"/>';
+  html += '<button type="button" class="btn-sm" onclick="jobCostSaveSettings()" style="background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3);">Save</button>';
+  html += '</div>';
+  html += '<div style="font-size:12px;color:var(--text2);margin-top:8px;">Per truck ' + jobCostMoney(be.perTruck) + '</div>';
+  html += '</div>';
+  return html;
+}
+function jobCostMethodNote(report) {
+  var m = report.methods || {};
+  var parts = Object.keys(m).map(function(k) { return k + ' ' + m[k]; });
+  var html = '<details class="card" style="margin-bottom:24px;"><summary style="cursor:pointer;font-size:13px;font-weight:700;">How these numbers are calculated</summary>';
+  html += '<div style="font-size:12px;color:var(--text2);line-height:1.5;margin-top:8px;">';
+  html += '<p style="margin-bottom:8px;">Completed stops count only on the route date, from 6:00 AM to 7:00 PM Eastern. On-site time uses an Arrived tap when the crew recorded one. Otherwise it uses Navigate plus the Directions arrival when that tap is after the previous completion and before this one. Otherwise it uses the gap from the previous completion, minus the estimated drive, or 15 minutes when there is no estimate.</p>';
+  html += '<p style="margin-bottom:8px;">Lunch is 12:00–1:00 PM Eastern. The overlap is subtracted from whichever stop spans it, using the same lunch calculation as the rest of the app. The first stop with no Navigate tap and no Arrived tap is flagged and is not given an 8:00 AM start. Stops completed less than 5 minutes apart are batch-marked: the visit still earns its revenue, and it adds hours only when Arrived was tapped.</p>';
+  html += '<p style="margin-bottom:8px;">Revenue for a visit is the monthly rate divided by that frequency’s visits per month (weekly 4, twice a week 8, bi-weekly 2, monthly 1, twice a month 2, quarterly 0.33, as needed 1). The rate is the manager-only record. When more than one truck is at the same property the same day, including a site day, that revenue is split so it is not counted twice. $/hr is that revenue divided by on-site truck-hours.</p>';
+  html += '<p>Budget hours per visit and budget crew size live on the same private rate record. Man-hours show only when a route or site day has a people count. The daily board compares each truck’s revenue with overhead divided by the truck count.</p>';
+  if (parts.length) html += '<p>This range: ' + escHtml(parts.join(' · ')) + '.</p>';
+  html += '</div></details>';
+  return html;
+}
+
+function jobCostArrivedControl(routeId, stop) {
+  if (!stop) return '';
+  if (stop.completed) {
+    if (!stop.arrivedAtISO) return '';
+    return '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Arrived ' + formatTimeEST(stop.arrivedAtISO) + '</div>';
+  }
+  if (state.role === 'manager') return '';
+  var label = stop.arrivedAtISO ? ('✓ ' + t('Arrived') + ' · ' + formatTimeEST(stop.arrivedAtISO)) : t('Arrived');
+  var pid = String(stop.propId || '').replace(/'/g, '');
+  var rid = String(routeId || '').replace(/'/g, '');
+  return '<button type="button" data-arrived-for="' + escHtml(stop.propId || '') + '" onclick="event.stopPropagation();logStopArrived(\'' + rid + '\',\'' + pid + '\')" style="width:100%;padding:10px;margin-top:8px;background:transparent;border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;">' + label + '</button>';
+}
+function logStopArrived(routeId, propId) {
+  try {
+    var r = (state.routes || []).find(function(x) { return x.id === routeId; });
+    if (!r) return;
+    var s = (r.stops || []).find(function(x) { return x.propId === propId; });
+    if (!s || s.completed) return;
+    s.arrivedAtISO = new Date().toISOString();
+    saveAndSync('routes', r);
+    var label = '✓ ' + t('Arrived') + ' · ' + formatTimeEST(s.arrivedAtISO);
+    document.querySelectorAll('[data-arrived-for]').forEach(function(btn) {
+      if (btn.getAttribute('data-arrived-for') === propId) btn.textContent = label;
+    });
+    toast(t('Arrived') + ' · ' + formatTimeEST(s.arrivedAtISO));
+  } catch (e) { /* never block the crew screen */ }
+}
+function updateRouteCrewCount(routeId, raw) {
+  if (state.role !== 'manager') return;
+  var r = (state.routes || []).find(function(x) { return x.id === routeId; });
+  if (!r) return;
+  var n = parseInt(raw, 10);
+  if (n > 0 && n <= 30) r.crewCount = n;
+  else delete r.crewCount;
+  saveAndSync('routes', r);
+  toast('People on truck saved');
+}
+
+function jobCostSelfCheck() {
+  var failures = [];
+  function eq(name, actual, expected) {
+    if (actual !== expected) failures.push(name + ' expected ' + expected + ' got ' + actual);
+  }
+  function near(name, actual, expected, tol) {
+    if (actual == null || Math.abs(actual - expected) > (tol || 0.02)) failures.push(name + ' expected ' + expected + ' got ' + actual);
+  }
+  var day = '2026-10-06';
+  function at(h, m) { return estWallTimeISO(day + 'T16:00:00.000Z', h, m); }
+  var priv = {
+    pLunch: { monthlyRate: 400 },
+    pGap: { monthlyRate: 200 },
+    pDef: { monthlyRate: 100 },
+    pBatch: { monthlyRate: 80 },
+    pNone: { monthlyRate: 50 },
+    pArr: { monthlyRate: 160 },
+    pJoint: { monthlyRate: 400 },
+    pSite: { monthlyRate: 400, budgetHoursPerVisit: 1, budgetCrewSize: 3 },
+    pEarlyNav: { monthlyRate: 100 }
+  };
+  var props = [
+    { id: 'pLunch', name: 'Lunch Yard', address: '1 Oak', frequency: 'Weekly' },
+    { id: 'pGap', name: 'Gap House', address: '2 Oak', frequency: 'Weekly' },
+    { id: 'pDef', name: 'Default Drive', address: '3 Oak', frequency: 'Weekly' },
+    { id: 'pBatch', name: 'Batch House', address: '4 Oak', frequency: 'Weekly' },
+    { id: 'pNone', name: 'No Start', address: '5 Oak', frequency: 'Weekly' },
+    { id: 'pArr', name: 'Arrived House', address: '6 Oak', frequency: 'Weekly' },
+    { id: 'pJoint', name: 'Joint', address: '7 Oak', frequency: 'Weekly' },
+    { id: 'pSite', name: 'Lexington Club', address: '8 Oak', frequency: 'Weekly' },
+    { id: 'pEarlyNav', name: 'Early Nav', address: '9 Oak', frequency: 'Weekly' },
+    { id: 'pOff', name: 'Off Hours', address: '10 Oak', frequency: 'Weekly' }
+  ];
+  priv.pOff = { monthlyRate: 100 };
+  var routes = [
+    { id: 'lunch', date: day, name: 'Lunch', crewId: 'c1', crewCount: 2, stops: [
+      { propId: 'pLunch', completed: true, completedAtISO: at(13, 30), navigateTappedAtISO: at(11, 0), estimatedDriveMinutes: 20, estimatedArrivalAtISO: at(11, 20) }
+    ]},
+    { id: 'gap', date: day, name: 'Gap', crewId: 'c1', stops: [
+      { propId: 'pGap', completed: true, completedAtISO: at(11, 30), navigateTappedAtISO: at(10, 0), estimatedDriveMinutes: 10, estimatedArrivalAtISO: at(10, 10) },
+      { propId: 'pGap', completed: true, completedAtISO: at(13, 30), estimatedDriveMinutes: 15 }
+    ]},
+    { id: 'def', date: day, name: 'Def', crewId: 'c1', stops: [
+      { propId: 'pDef', completed: true, completedAtISO: at(9, 0), navigateTappedAtISO: at(8, 30), estimatedDriveMinutes: 10, estimatedArrivalAtISO: at(8, 40) },
+      { propId: 'pDef', completed: true, completedAtISO: at(9, 40) }
+    ]},
+    { id: 'batch', date: day, name: 'Batch', crewId: 'c1', stops: [
+      { propId: 'pBatch', completed: true, completedAtISO: at(10, 0), navigateTappedAtISO: at(9, 30), estimatedDriveMinutes: 10, estimatedArrivalAtISO: at(9, 40) },
+      { propId: 'pBatch', completed: true, completedAtISO: at(10, 3) },
+      { propId: 'pBatch', completed: true, completedAtISO: at(10, 6), arrivedAtISO: at(10, 4) }
+    ]},
+    { id: 'none', date: day, name: 'None', crewId: 'c1', stops: [
+      { propId: 'pNone', completed: true, completedAtISO: at(15, 0) }
+    ]},
+    { id: 'arr', date: day, name: 'Arr', crewId: 'c1', stops: [
+      { propId: 'pArr', completed: true, completedAtISO: at(10, 0), arrivedAtISO: at(9, 0) }
+    ]},
+    { id: 'j1', date: day, name: 'T1', crewId: 'c1', stops: [
+      { propId: 'pJoint', completed: true, completedAtISO: at(10, 0), navigateTappedAtISO: at(9, 0), estimatedDriveMinutes: 20, estimatedArrivalAtISO: at(9, 20) }
+    ]},
+    { id: 'j2', date: day, name: 'T2', crewId: 'c2', stops: [
+      { propId: 'pJoint', completed: true, completedAtISO: at(11, 0), navigateTappedAtISO: at(10, 0), estimatedDriveMinutes: 15, estimatedArrivalAtISO: at(10, 15) }
+    ]},
+    { id: 'early', date: day, name: 'Early', crewId: 'c1', stops: [
+      { propId: 'pEarlyNav', completed: true, completedAtISO: at(10, 0), navigateTappedAtISO: at(9, 0), estimatedDriveMinutes: 10, estimatedArrivalAtISO: at(9, 10) },
+      { propId: 'pEarlyNav', completed: true, completedAtISO: at(11, 0), navigateTappedAtISO: at(9, 30), estimatedDriveMinutes: 15, estimatedArrivalAtISO: at(9, 45) }
+    ]},
+    { id: 'off', date: day, name: 'Off', crewId: 'c1', stops: [
+      { propId: 'pOff', completed: true, completedAtISO: at(20, 30), navigateTappedAtISO: at(20, 0), estimatedDriveMinutes: 10, estimatedArrivalAtISO: at(20, 10) }
+    ]},
+    { id: 'five', date: day, name: 'Five', crewId: 'c1', stops: [
+      { propId: 'pDef', completed: true, completedAtISO: at(16, 0), navigateTappedAtISO: at(15, 30), estimatedDriveMinutes: 10, estimatedArrivalAtISO: at(15, 40) },
+      { propId: 'pDef', completed: true, completedAtISO: at(16, 5), estimatedDriveMinutes: 15 }
+    ]}
+  ];
+  var siteDays = [{ id: 'sd1', kind: 'siteDay', propId: 'pSite', propertyName: 'Lexington Club', date: day, crewId: 'c1', hours: 8, people: 4, trucks: 1 }];
+  var aspen = [{ id: 'sd2', kind: 'siteDay', propId: '', propertyName: 'Aspen', date: day, crewId: 'c2', hours: 7, trucks: 1 }];
+  var crew = [{ id: 'c1', name: 'Efrain' }, { id: 'c2', name: 'Rudy' }];
+  var report = computeJobCostReport({
+    routes: routes, properties: props, crew: crew, siteDays: siteDays.concat(aspen),
+    privateById: priv, start: '2026-10-01', end: '2026-10-28', role: 'manager'
+  });
+  function findVisit(routeId, index) {
+    var list = report.visits.filter(function(v) { return v.routeId === routeId && !v.siteDay; });
+    return list[index];
+  }
+  var lunchV = findVisit('lunch', 0);
+  eq('lunch method', lunchV && lunchV.method, 'nav+eta');
+  eq('lunch work', lunchV && lunchV.workMin, 70);
+  eq('lunch drive', lunchV && lunchV.driveMin, 20);
+  eq('lunch overlap', lunchV && lunchV.lunchMin, 60);
+  eq('lunch man min', lunchV && lunchV.workMin * lunchV.crewCount, 140);
+  var gapV = findVisit('gap', 1);
+  eq('gap method', gapV && gapV.method, 'gap-estDrive');
+  eq('gap work', gapV && gapV.workMin, 45);
+  eq('gap lunch', gapV && gapV.lunchMin, 60);
+  var defV = findVisit('def', 1);
+  eq('default method', defV && defV.method, 'gap-15minDrive');
+  eq('default work', defV && defV.workMin, 25);
+  eq('default drive', defV && defV.driveMin, 15);
+  var batchPlain = findVisit('batch', 1);
+  eq('batch method', batchPlain && batchPlain.method, 'batch-marked');
+  eq('batch work', batchPlain && batchPlain.workMin, null);
+  eq('batch still earns', batchPlain && batchPlain.rev > 0, true);
+  var batchArr = findVisit('batch', 2);
+  eq('arrived beats batch method', batchArr && batchArr.method, 'arrived');
+  eq('arrived beats batch work', batchArr && batchArr.workMin, 2);
+  eq('arrived beats batch flag', batchArr && batchArr.batchFlag, true);
+  var noneV = findVisit('none', 0);
+  eq('no start method', noneV && noneV.method, 'no start');
+  eq('no start work', noneV && noneV.workMin, null);
+  var arrV = findVisit('arr', 0);
+  eq('arrived method', arrV && arrV.method, 'arrived');
+  eq('arrived work', arrV && arrV.workMin, 60);
+  var j1 = findVisit('j1', 0);
+  var j2 = findVisit('j2', 0);
+  near('joint a', j1 && j1.rev, 50, 0.001);
+  near('joint b', j2 && j2.rev, 50, 0.001);
+  var early = findVisit('early', 1);
+  eq('nav before prev falls back', early && early.method, 'gap-estDrive');
+  eq('nav before prev work', early && early.workMin, 45);
+  eq('off day excluded', report.visits.some(function(v) { return v.propId === 'pOff'; }), false);
+  eq('off day gap', report.gaps.offDayCompletion >= 1, true);
+  var five = findVisit('five', 1);
+  eq('five min is not batch', five && five.method, 'gap-estDrive');
+  eq('five min work', five && five.workMin, 0);
+  var site = report.rows.find(function(r) { return r.propId === 'pSite'; });
+  eq('site hours', site && site.onSiteMin, 480);
+  near('site rev', site && site.rev, 100, 0.001);
+  near('site budget', site && site.budgetHours, 1, 0.001);
+  eq('site crew budget', site && site.budgetCrewSize, 3);
+  var aspenRow = report.rows.find(function(r) { return r.name.indexOf('Aspen') === 0; });
+  eq('aspen missing', aspenRow && aspenRow.missingProp, true);
+  eq('aspen no rate', aspenRow && aspenRow.hasRate, false);
+  eq('aspen rev', aspenRow && aspenRow.rev, 0);
+  eq('aspen hours', aspenRow && aspenRow.onSiteMin, 420);
+  var crewReport = computeJobCostReport({
+    routes: routes.slice(0, 1), properties: props, crew: crew, siteDays: [],
+    privateById: priv, start: '2026-10-01', end: '2026-10-28', role: 'field'
+  });
+  eq('crew revenue hidden', crewReport.rows.every(function(r) { return r.rev === 0 && r.monthlyRate === 0; }), true);
+  eq('per truck default', Math.round(jobCostPerTruck({ dailyOverhead: 5000, truckCount: 3 }).perTruck), 1667);
+  var lexDay = report.days['site:sd1'];
+  eq('site day crew', lexDay && lexDay.crew, 'Efrain');
+  return { ok: failures.length === 0, failures: failures };
+}
+
+function startJobCostFixture() {
+  if (window._dlFixtureName !== 'jobcost') return;
+  var check = { ok: false, failures: ['not run'] };
+  try { check = jobCostSelfCheck(); } catch (e) { check = { ok: false, failures: [String(e && e.message || e)] }; }
+  window._jobCostSelfCheck = check;
+  if (!check.ok) console.warn('job cost self-check failed', check.failures);
+  else console.log('job cost self-check ok');
+  function at(date, h, m) { return estWallTimeISO(date + 'T16:00:00.000Z', h, m); }
+  var d5 = '2026-10-05', d6 = '2026-10-06', d7 = '2026-10-07', d8 = '2026-10-08', d9 = '2026-10-09';
+  state.properties = [
+    { id: 'lauro', name: 'Lauro', address: '1160 W Magnolia Cir, Delray Beach, FL', frequency: 'Weekly', services: ['Mow'] },
+    { id: 'dwight', name: 'Dwight', address: '23 NW 17th St, Delray Beach, FL', frequency: 'Weekly', services: ['Mow'] },
+    { id: 'walter', name: 'Walter', address: '3740 Beachwood Dr, Delray Beach, FL', frequency: 'Weekly', services: ['Mow'] },
+    { id: 'ana', name: 'Ana', address: '1001 NW 3rd Ave, Delray Beach, FL', frequency: 'Weekly', services: ['Mow'] },
+    { id: 'heritage', name: 'Heritage POA', address: '1025 W. Heritage Club Circle, Delray Beach, FL', frequency: 'Monthly', services: ['Full service'] },
+    { id: 'lavers', name: 'Lavers Circle Property (JOINT JOB)', address: '1915 Lavers Cir, Delray Beach, FL', frequency: 'Weekly', services: ['Full service'] },
+    { id: 'lexington', name: 'Lexington Club', address: '7799 Lexington Club Blvd, Delray Beach, FL', frequency: 'Weekly', services: ['Full service'] },
+    { id: 'mark', name: 'Mark', address: '600 Gardenia Terrace, Delray Beach, FL', frequency: 'Weekly', services: ['Mow'] },
+    { id: 'robbie', name: 'Robbie', address: '1095 E Lancewood Pl, Delray Beach, FL', frequency: 'Weekly', services: ['Mow'] }
+  ];
+  state.crew = [
+    { id: 'efrain', name: 'Efrain', role: 'Crew Lead' },
+    { id: 'jeremias', name: 'Jeremias Mendez', role: 'Crew Lead' },
+    { id: 'rudy', name: 'Rudy', role: 'Crew Lead' }
+  ];
+  state.flags = [];
+  state.routes = [
+    { id: 't1', name: '10/5 T1', date: d5, day: 'Monday', crewId: 'efrain', status: 'Done', stops: [
+      { propId: 'ana', completed: true, completedServices: ['Mow'], completedAtISO: at(d5, 10, 10), arrivedAtISO: at(d5, 9, 0), completedBy: 'Efrain' },
+      { propId: 'heritage', completed: true, completedServices: ['Full service'], completedAtISO: at(d5, 15, 30), navigateTappedAtISO: at(d5, 10, 30), estimatedDriveMinutes: 30, estimatedArrivalAtISO: at(d5, 11, 0), completedBy: 'Efrain' }
+    ]},
+    { id: 't2', name: '10/5 T2', date: d5, day: 'Monday', crewId: 'jeremias', crewCount: 5, status: 'Done', stops: [
+      { propId: 'lavers', completed: true, completedServices: ['Full service'], completedAtISO: at(d5, 12, 30), navigateTappedAtISO: at(d5, 10, 0), estimatedDriveMinutes: 20, estimatedArrivalAtISO: at(d5, 10, 20), completedBy: 'Jeremias Mendez' }
+    ]},
+    { id: 't3', name: '10/5 T3', date: d5, day: 'Monday', crewId: 'rudy', crewCount: 5, status: 'Done', stops: [
+      { propId: 'lavers', completed: true, completedServices: ['Full service'], completedAtISO: at(d5, 13, 0), navigateTappedAtISO: at(d5, 11, 0), estimatedDriveMinutes: 15, estimatedArrivalAtISO: at(d5, 11, 15), completedBy: 'Rudy' },
+      { propId: 'walter', completed: true, completedServices: ['Mow'], completedAtISO: at(d5, 14, 0), estimatedDriveMinutes: 15, completedBy: 'Rudy' }
+    ]},
+    { id: 't4', name: '10/6 T1', date: d6, day: 'Tuesday', crewId: 'rudy', crewCount: 2, status: 'Done', stops: [
+      { propId: 'mark', completed: true, completedServices: ['Mow'], completedAtISO: at(d6, 9, 30), completedBy: 'Rudy' },
+      { propId: 'dwight', completed: true, completedServices: ['Mow'], completedAtISO: at(d6, 11, 30), navigateTappedAtISO: at(d6, 9, 40), estimatedDriveMinutes: 15, estimatedArrivalAtISO: at(d6, 10, 0), completedBy: 'Rudy' },
+      { propId: 'lauro', completed: true, completedServices: ['Mow'], completedAtISO: at(d6, 15, 0), estimatedDriveMinutes: 12, completedBy: 'Rudy' },
+      { propId: 'robbie', completed: true, completedServices: ['Mow'], completedAtISO: at(d6, 15, 2), completedBy: 'Rudy' }
+    ]},
+    { id: 'today-route', name: 'Today', date: new Date().toISOString().slice(0, 10), day: 'Thursday', crewId: 'efrain', status: 'In Progress', stops: [
+      { propId: 'ana', completed: false, completedServices: [] },
+      { propId: 'dwight', completed: true, completedServices: ['Mow'], completedAtISO: at(new Date().toISOString().slice(0, 10), 9, 40), arrivedAtISO: at(new Date().toISOString().slice(0, 10), 9, 10), completedBy: 'Efrain' }
+    ]}
+  ];
+  // Dwight is 10:00–11:30 (90 min) from Navigate. Lauro is the 11:30–3:00 gap
+  // minus a 12 min drive and the noon lunch. Robbie is 2 min later, so batch-marked.
+  _propPrivateById = {
+    lauro: { id: 'lauro', monthlyRate: 60 },
+    dwight: { id: 'dwight', monthlyRate: 160, budgetHoursPerVisit: 1 },
+    ana: { id: 'ana', monthlyRate: 800 },
+    heritage: { id: 'heritage', monthlyRate: 3750 },
+    lavers: { id: 'lavers', monthlyRate: 2625 },
+    lexington: { id: 'lexington', monthlyRate: 3200 },
+    mark: { id: 'mark', monthlyRate: 200 },
+    robbie: { id: 'robbie', monthlyRate: 150 }
+  };
+  _jobCostSettings = { dailyOverhead: 5000, truckCount: 3 };
+  _jobCostSiteDays = [
+    { id: 'sd_lex_wed', kind: 'siteDay', propId: 'lexington', propertyName: 'Lexington Club', date: d7, crewId: 'efrain', hours: 8, people: 4, trucks: 1 },
+    { id: 'sd_lex_thu', kind: 'siteDay', propId: 'lexington', propertyName: 'Lexington Club', date: d8, crewId: 'rudy', hours: 8, people: 4, trucks: 1 },
+    { id: 'sd_aspen', kind: 'siteDay', propId: '', propertyName: 'Aspen', date: d9, crewId: 'jeremias', hours: 8, people: 4, trucks: 1 }
+  ];
+  state.workOrders = [];
+  state.equipment = [];
+  state.inventory = [];
+  window._jobCostSort = { key: 'perHr', dir: 1 };
+  window._jobCostStart = '2026-10-01';
+  window._jobCostEnd = '2026-10-09';
+  try { dismissLoginScreen('manager'); } catch (e2) { console.warn(e2); }
+  setTimeout(function() {
+    switchTab('jobcost');
+    window._jobCostFixtureReady = true;
+  }, 500);
+}
+window.computeJobCostReport = computeJobCostReport;
+window.jobCostSelfCheck = jobCostSelfCheck;
 
 
 // Multi-step: Flag review → Property photo → Services → Notes/Flag → Submit
@@ -4732,6 +5929,7 @@ var UI_ES = {
   'Tap to view and resolve':      'Toca para ver y resolver',
   'Address':                      'Dirección',
   'Go':                           'Ir',
+  'Arrived':                      'Llegué',
   'Services':                     'Servicios',
   'Report an Issue':              'Reportar un Problema',
   '✓ Job Complete':               '✓ Trabajo Completado',
@@ -5702,6 +6900,8 @@ function saveRoute() {
     status: 'Scheduled', optimized: false,
     stops: selectedIds.map(pid => ({ propId: pid, completed: false, completedServices: [], photos: [], notes:'' }))
   };
+  var crewCountRaw = parseInt((document.getElementById('nr-crew-count') || {}).value, 10);
+  if (crewCountRaw > 0 && crewCountRaw <= 30) newRoute.crewCount = crewCountRaw;
   state.routes.push(newRoute);
   saveAndSync('routes', newRoute);
   save();
@@ -5925,6 +7125,15 @@ function openPropDetail(id) {
           <input class="inp" id="pe-rate-${id}" value="${_rateFor(p)||''}" placeholder="e.g. 180" type="number" min="0" step="0.01"/>
           <div style="font-size:11px;color:var(--text3);margin-top:4px;">What you charge this client per month</div>
         </div>
+        ${state.role === 'manager' ? `<div>
+          <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;">BUDGET HOURS PER VISIT</div>
+          <input class="inp" id="pe-budget-hrs-${id}" value="${(function(){ var b = _propPrivateById[id]; return b && b.budgetHoursPerVisit > 0 ? b.budgetHoursPerVisit : ''; })()}" placeholder="optional" type="number" min="0" step="0.25"/>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;">Optional. Job costing compares this with on-site hours. Crew do not see it.</div>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;">BUDGET CREW SIZE</div>
+          <input class="inp" id="pe-budget-crew-${id}" value="${(function(){ var b = _propPrivateById[id]; return b && b.budgetCrewSize > 0 ? b.budgetCrewSize : ''; })()}" placeholder="optional" type="number" min="1" max="30"/>
+        </div>` : ''}
         <div style="font-size:11px;color:var(--text3);font-weight:700;letter-spacing:1px;">SERVICE FREQUENCY</div>
         <select class="inp" id="pe-freq-${id}" onchange="onPeFreqChange('${id}',this.value)">
           <option value="">— Not set —</option>
@@ -7738,6 +8947,7 @@ function loadFieldView() {
           <div style="background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.2);border-radius:10px;padding:12px;margin-bottom:10px;">
             <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:4px;">${t('✓ Job Complete')}</div>
             ${s.completedBy?`<div style="font-size:12px;color:var(--text3);">${t('by')} ${s.completedBy}</div>`:''}
+            ${jobCostArrivedControl(route.id, s)}
             ${(s.completedServices||[]).length?`<div style="font-size:12px;color:var(--text3);margin-top:3px;">${s.completedServices.join(' · ')}</div>`:''}
             ${s.completedPhoto?`<img src="${s.completedPhoto}" referrerpolicy="no-referrer" onclick="openPhoto('${s.completedPhoto}','${prop?.name||''}')" style="width:100%;border-radius:8px;margin-top:8px;cursor:zoom-in;" onerror="this.style.display='none'"/>`:''}
           </div>` : `
@@ -7788,6 +8998,7 @@ function loadFieldView() {
           </div>` : ''}
 
           ${communityFieldButtons(s.propId)}
+          ${jobCostArrivedControl(route.id, s)}
           <button onclick="openStopCompletion('${route.id}','${s.propId}')"
             style="width:100%;padding:16px;background:var(--green2);border:none;border-radius:12px;color:#fff;font-size:16px;font-weight:700;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:8px;">
             <i class="ti ti-camera" style="font-size:20px;"></i> ${t('Complete Job')}
@@ -9219,6 +10430,7 @@ function signOut() {
   if (typeof _clearPropertyPrivate === 'function') _clearPropertyPrivate(); // RATE SPLIT: strip merged rates before the save() below caches state
   state.role = 'guest';
   if (typeof _clearCrewPrivate === 'function') _clearCrewPrivate(); // PAY SPLIT: drop crew pay before the save() below caches state
+  if (typeof _clearJobCost === 'function') _clearJobCost();
   window._crewWOSelectedCommunity = ''; // don't carry over to the next crew member on this device
   window._crewWOVillage = '';
   window._crewWOType = '';
@@ -9242,6 +10454,7 @@ function signOut() {
     <button class="nb" onclick="switchTab('inventory')" data-tab="inventory"><span class="ni">📦</span><span class="nl">Inventory</span></button>
     <button class="nb" onclick="switchTab('equipment')" data-tab="equipment"><span class="ni">🔧</span><span class="nl">Equipment</span></button>
     <button class="nb" onclick="switchTab('reports')" data-tab="reports"><span class="ni">📊</span><span class="nl">Reports</span></button>
+    <button class="nb" onclick="switchTab('jobcost')" data-tab="jobcost"><span class="ni">🧮</span><span class="nl">Job costing</span></button>
     <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
     <button class="nb" onclick="switchTab('customerrequests')" data-tab="customerrequests"><span class="ni">💬</span><span class="nl">Customer Requests</span></button>
     <button class="nb" onclick="switchTab('calls')" data-tab="calls"><span class="ni"><i class="ti ti-phone-incoming"></i></span><span class="nl">Calls</span><span class="n-badge" id="nav-calls-count" style="display:none;"></span></button>
@@ -9310,6 +10523,7 @@ function _renderActiveTab() {
     schedule:   renderSchedule,
     calendar:   renderCalendar, // so externalEvents snapshots re-render the checklist from doc.done
     calls:      renderReceptionistCalls,
+    jobcost:    renderJobCost,
   };
   try { if (renders[tab]) renders[tab](); } catch(e) { console.warn('render error:', e); }
   if (tab !== 'dashboard') try { renderDashboard(); } catch(e) {}
@@ -9388,10 +10602,30 @@ function _mergePropertyRates() {
 }
 function _stripRateFields(obj) { RATE_FIELDS.forEach(function(f) { delete obj[f]; }); return obj; }
 function _savePropertyRate(prop) {
-  if (!prop || state.role !== 'manager' || !_fbReady || !_db) return;
+  if (!prop || state.role !== 'manager') return;
+  var prev = _propPrivateById[prop.id] || {};
+  var doc = {
+    id: prop.id,
+    monthlyRate: parseFloat(prop.monthlyRate) || 0,
+    updatedAt: new Date().toISOString(),
+    updatedBy: window._managerAuthEmail || ''
+  };
+  if (prev.budgetHoursPerVisit != null) doc.budgetHoursPerVisit = prev.budgetHoursPerVisit;
+  if (prev.budgetCrewSize != null) doc.budgetCrewSize = prev.budgetCrewSize;
+  var hEl = document.getElementById('pe-budget-hrs-' + prop.id);
+  var cEl = document.getElementById('pe-budget-crew-' + prop.id);
+  if (hEl) {
+    var h = parseFloat(hEl.value);
+    doc.budgetHoursPerVisit = h > 0 ? h : null;
+  }
+  if (cEl) {
+    var c = parseInt(cEl.value, 10);
+    doc.budgetCrewSize = c > 0 ? c : null;
+  }
+  _propPrivateById[prop.id] = Object.assign({}, prev, doc);
+  if (window._dlFixture || !_fbReady || !_db) return;
   try {
-    gsSave('propertyPrivate', { id: prop.id, monthlyRate: parseFloat(prop.monthlyRate) || 0,
-      updatedAt: new Date().toISOString(), updatedBy: window._managerAuthEmail || '' });
+    gsSave('propertyPrivate', doc);
   } catch(e) { console.warn('propertyPrivate save failed:', e); }
 }
 function _ensurePropertyPrivateListener() {
@@ -9700,10 +10934,15 @@ function _listenCollection(name) {
       if (name === 'propertyPrivate') {
         // RATE SPLIT: keep rates only in the manager-memory map; never in
         // state (so the save() below cannot cache them in IndexedDB).
+        // Budget hours live on the same private doc and are not copied
+        // onto properties, which crew phones download.
         _propPrivateById = {};
         docs.forEach(function(d) { _propPrivateById[d.id] = d; });
         state.propertyPrivate = [];
         _mergePropertyRates();
+      }
+      if (name === 'jobCosting') {
+        _applyJobCostDocs(docs);
       }
       if (name === 'crewPrivate') {
         // PAY SPLIT: same rule as propertyPrivate — memory map only.
@@ -9805,6 +11044,13 @@ function _listenCollection(name) {
         window._propertyDirectoryUnreadable = true;
         window._propertyDirectoryReady = false;
         try { if (state.currentTab === 'properties' && state.role === 'field') renderCrewPropertyDirectory(); } catch (eDir) {}
+        return;
+      }
+      if (name === 'jobCosting') {
+        // Rules are not published until the owner approves them. Route
+        // hours still calculate. Don't mark the rest of the app offline.
+        window._jobCostUnreadable = true;
+        try { if (state.currentTab === 'jobcost') renderJobCost(); } catch (eJc) {}
         return;
       }
       syncOnline = false;
@@ -10001,6 +11247,7 @@ function gsLoad() {
           // password sign-in on this load. A restored session is not one.
           if (window._managerSessionUnlocked && typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener();
           if (window._managerSessionUnlocked && typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener();
+          if (window._managerSessionUnlocked && typeof _ensureJobCostListener === 'function') _ensureJobCostListener();
           // Defer secondary collections by 800ms so UI loads fast
           setTimeout(function() {
             SECONDARY.forEach(function(name) { _listenCollection(name); });
@@ -10108,6 +11355,7 @@ function gsSave(table, record, _attempt) {
   // Never store raw base64 in Firestore — photos go to Firebase Storage
   var toSave = Object.assign({}, record);
   if (table === 'properties') _stripRateFields(toSave); // RATE SPLIT: crew completion + every whole-record write-back must never (re)write monthlyRate to properties; manager rates go via _savePropertyRate()
+  if (table === 'properties') { delete toSave.budgetHoursPerVisit; delete toSave.budgetCrewSize; } // budget hours stay on propertyPrivate only
   if (table === 'properties') _publishPropertyDirectory(toSave); // name + address projection; no-op unless a manager is signed in
   if (table === 'receptionistCalls') delete toSave.id; // doc id is the CallSid; do not store a separate id field
   if (table === 'crew' || table === 'routes' || table === 'attendance') delete toSave.dailyRate; // PAY SPLIT: pay is crewPrivate-only
@@ -10126,8 +11374,9 @@ function gsSave(table, record, _attempt) {
       if ((_attempt||0) < 3) {
         setTimeout(function() { gsSave(table, record, (_attempt||0)+1); },
           Math.pow(2, (_attempt||0)+1) * 1000);
-      } else if (table === 'crewPrivate') {
-        console.warn('gsSave: crewPrivate write failed and was not stored locally. Publish crewPrivate rules, then save the rate again.', record.id);
+      } else if (table === 'crewPrivate' || table === 'jobCosting') {
+        if (table === 'jobCosting') window._jobCostUnreadable = true;
+        console.warn('gsSave: ' + table + ' write failed and was not stored locally. Publish the manager rules, then save again.', record.id);
       } else {
         // Exhausted retries — don't lose this write, queue it durably instead
         console.warn('gsSave: exhausted retries, queuing for later [' + table + ']:', record.id);
@@ -10793,6 +12042,7 @@ const MANAGER_MENU = [
   { tab:'inventory', icon:'📦', label:'Inventory' },
   { tab:'equipment', icon:'🔧', label:'Equipment' },
   { tab:'reports',   icon:'📊', label:'Reports' },
+  { tab:'jobcost',   icon:'🧮', label:'Job costing' },
   { tab:'schedule',  icon:'📅', label:'Schedule' },
   { tab:'workorders', icon:'📋', label:'Work Orders' },
   { tab:'customerrequests', icon:'💬', label:'Customer Requests' },
@@ -10842,7 +12092,8 @@ function buildDrawerItems(menuItems, activeTab) {
     'properties': 'ti-home',             'propmap':    'ti-map-pin',
     'crew':       'ti-users',
     'inventory':  'ti-package',          'equipment':  'ti-tool',
-    'reports':    'ti-chart-bar',        'attendance': 'ti-calendar-check',
+    'reports':    'ti-chart-bar',        'jobcost':    'ti-calculator',
+    'attendance': 'ti-calendar-check',
     'field':      'ti-clipboard-list',   'crew-week':  'ti-calendar-week',
     'wo-crew':    'ti-clipboard-check'
   };
@@ -10867,7 +12118,7 @@ function buildDrawerItems(menuItems, activeTab) {
       { label: 'Overview',  tabs: ['dashboard'] },
       { label: 'Operations',tabs: ['routes','schedule','workorders','customerrequests','calls','calendar'] },
       { label: 'Data',      tabs: ['properties','propmap','crew','inventory','equipment'] },
-      { label: 'Reporting', tabs: ['reports','attendance'] },
+      { label: 'Reporting', tabs: ['reports','jobcost','attendance'] },
     ];
     var byTab = {}; menuItems.forEach(function(m){ byTab[m.tab] = m; });
     html = groups.map(function(g) {
@@ -19561,6 +20812,7 @@ load().then(function() {
   if (screen) { screen.style.display = 'flex'; screen.style.opacity = '1'; }
   ls_showWho();
   if (window._dlFixtureName === 'calls') startCallsFixture();
+  else if (window._dlFixtureName === 'jobcost') startJobCostFixture();
   else if (window._dlFixture) startLexingtonFixture();
 });
 // load live data from Google Sheets
