@@ -1,0 +1,36 @@
+// FRAGMENT — paste this inside the existing
+//   match /databases/{database}/documents { ... }
+// block, next to the other matches. Do not deploy this file by itself.
+// It is not a complete ruleset. The live rules file is not in this
+// repository. The owner publishes rules separately. Do not deploy until
+// the owner approves.
+//
+// jobCosting holds manager-only site days (Lexington Club, Aspen, and any
+// other whole-crew day with no route stops) and the break-even setting.
+// Docs:
+//   settings          { kind:'settings', dailyOverhead, truckCount, updatedAt, updatedBy }
+//   sd_*              { kind:'siteDay', propId, propertyName, date, crewId, hours, people, trucks, createdAt, updatedBy }
+//
+// Crew phones must not read this collection. It is not pay, but it is a
+// manager screen and the property names here can include jobs that are
+// not on a crew route.
+//
+// isManager() is the existing helper (verified manager email).
+
+match /jobCosting/{docId} {
+  allow read, create, update, delete: if isManager();
+}
+
+// propertyPrivate already stores monthlyRate for the manager. This screen
+// also saves two optional fields on the same doc:
+//   budgetHoursPerVisit, budgetCrewSize
+// If the live propertyPrivate match lets the manager write the document
+// without a field allow-list, no change is required. If it uses
+// hasOnly([...]), add those two keys to the list. Crew still cannot read
+// propertyPrivate.
+
+// arrivedAtISO is a new field on a route stop. Crew write it with the same
+// routes/{id} update they already use to complete a stop (saveAndSync).
+// If the live route rule allows that update for any signed-in crew, no
+// change is required. If it allow-lists stop fields, add arrivedAtISO next
+// to completedAtISO and navigateTappedAtISO.
