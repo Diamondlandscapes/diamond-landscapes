@@ -1159,6 +1159,10 @@ select.inp{cursor:pointer;}
         <div style="font-size:12px;font-weight:800;color:var(--red);margin-bottom:4px;">⚠️ SERVICE DUE</div>
         <div id="eq-alert-list" style="font-size:13px;color:var(--text2);"></div>
       </div>
+      <div class="pills" id="eq-view-pills">
+        <button class="pill active" id="eq-view-active" onclick="setEqView('active')">Active</button>
+        <button class="pill" id="eq-view-archived" onclick="setEqView('archived')">📦 Archived</button>
+      </div>
       <div class="pills" id="eq-cat-pills"></div>
       <div id="equipment-list"></div>
     </div>
@@ -2441,8 +2445,9 @@ const tdEl = document.getElementById('topbar-date'); if(tdEl) tdEl.textContent =
     }).join('');
   }
 
-  // equipment service alerts on dashboard
+  // equipment service alerts on dashboard — retired machines stay out of this list
   const eqDue = (state.equipment||[]).filter(e => {
+    if (eqIsArchived(e)) return false;
     const d = e.nextService ? Math.ceil((new Date(e.nextService+'T00:00:00')-new Date())/(1000*60*60*24)) : null;
     return d !== null && d <= 7;
   });
@@ -9019,18 +9024,38 @@ function loadFieldView() {
 const EQ_CATS = ['All','Mower','Truck','Trailer','Handheld Tool','Blower','Trimmer','Edger','Chainsaw','Sprayer','Other'];
 const EQ_ICONS = {Mower:'🌿',Truck:'🚛',Trailer:'🚜','Handheld Tool':'🔧',Blower:'💨',Trimmer:'✂️',Edger:'⚙️',Chainsaw:'🪚',Sprayer:'💦',Other:'📦'};
 
+// Same flag properties already use. A missing field means active, so
+// existing machines are left alone. 'true' is accepted the same way the
+// property directory skips archived rows.
+function eqIsArchived(e) {
+  return !!(e && (e.archived === true || e.archived === 'true'));
+}
+
+function setEqView(view) {
+  window._eqView = view === 'archived' ? 'archived' : 'active';
+  renderEquipment();
+}
+
 function renderEquipment() {
   // category pills
   document.getElementById('eq-cat-pills').innerHTML = EQ_CATS.map(c =>
     `<button class="pill ${c===state.eqCategory?'active':''}" onclick="setEqCat('${c}')">${c}</button>`
   ).join('');
 
-  const eq = state.equipment || [];
-  const filtered = state.eqCategory === 'All' ? eq : eq.filter(e => e.category === state.eqCategory);
+  var eqViewPills = document.getElementById('eq-view-pills');
+  var eqView = state.role === 'manager' ? (window._eqView || 'active') : 'active';
+  if (eqViewPills) eqViewPills.style.display = state.role === 'manager' ? '' : 'none';
+  document.getElementById('eq-view-active')?.classList.toggle('active', eqView === 'active');
+  document.getElementById('eq-view-archived')?.classList.toggle('active', eqView === 'archived');
 
-  // alert banner
+  const allEq = state.equipment || [];
+  const activeEq = allEq.filter(function(e) { return !eqIsArchived(e); });
+  const inView = allEq.filter(function(e) { return eqView === 'archived' ? eqIsArchived(e) : !eqIsArchived(e); });
+  const filtered = state.eqCategory === 'All' ? inView : inView.filter(e => e.category === state.eqCategory);
+
+  // alert banner — archived machines are not service-due
   const today = new Date();
-  const due = eq.filter(e => {
+  const due = activeEq.filter(e => {
     if (e.nextService && new Date(e.nextService) <= new Date(today.getTime() + 7*24*60*60*1000)) return true;
     if (e.regExp && new Date(e.regExp) <= new Date(today.getTime() + 30*24*60*60*1000)) return true;
     if (e.insuranceExp && new Date(e.insuranceExp) <= new Date(today.getTime() + 30*24*60*60*1000)) return true;
@@ -9050,7 +9075,10 @@ function renderEquipment() {
 
   const el = document.getElementById('equipment-list');
   if (!filtered.length) {
-    el.innerHTML = `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">${state.eqCategory==='All'?'No equipment added yet. Tap + Add to start.':'No '+state.eqCategory+' equipment added.'}</div>`;
+    var emptyMsg = eqView === 'archived'
+      ? (state.eqCategory === 'All' ? 'No archived equipment.' : 'No archived ' + state.eqCategory + ' equipment.')
+      : (state.eqCategory === 'All' ? 'No equipment added yet. Tap + Add to start.' : 'No ' + state.eqCategory + ' equipment added.');
+    el.innerHTML = `<div class="card" style="text-align:center;color:var(--text4);font-size:13px;">${emptyMsg}</div>`;
     return;
   }
   el.innerHTML = filtered.map(e => {
@@ -9066,6 +9094,7 @@ function renderEquipment() {
             <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;font-weight:800;">${e.name}</div>
             <div style="font-size:12px;color:var(--text3);margin-top:2px;">${[e.year,e.make,e.model].filter(Boolean).join(' ')}</div>
             ${e.assignedCrew?`<div style="font-size:11px;color:var(--teal);margin-top:2px;">👷 ${e.assignedCrew}</div>`:''}
+            ${eqIsArchived(e)?`<div style="font-size:11px;color:var(--yellow);margin-top:2px;">📦 Archived${e.archivedAt?' · '+e.archivedAt:''}</div>`:''}
           </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">
@@ -9241,7 +9270,16 @@ function openEqDetail(id) {
     <div style="display:flex;gap:10px;margin-bottom:12px;">
       <button class="btn btn-outline" onclick="openEditEquipment('${id}')" style="font-size:13px;">✏️ Edit</button>
       <button class="btn btn-red" onclick="deleteEquipment('${id}')" style="font-size:13px;">Delete</button>
-    </div>`;
+    </div>
+
+    ${state.role === 'manager' ? (
+      eqIsArchived(e)
+        ? `<div style="background:rgba(210,153,34,.08);border:1px solid rgba(210,153,34,.25);border-radius:10px;padding:12px;margin-bottom:16px;">
+            <div style="font-size:12px;font-weight:700;color:var(--yellow);margin-bottom:8px;">📦 Archived${e.archivedAt?' · '+e.archivedAt:''}</div>
+            <button class="btn btn-green" onclick="unarchiveEquipment('${id}')" style="font-size:13px;">↩ Unarchive</button>
+          </div>`
+        : `<button class="btn" onclick="openArchiveEquipment('${id}')" style="font-size:13px;margin-bottom:16px;background:rgba(210,153,34,.1);border:1px solid rgba(210,153,34,.3);color:var(--yellow);">📦 Archive</button>`
+    ) : ''}`;
 
   document.getElementById('ep-body').innerHTML = html;
   openPanel('eq-panel');
@@ -9433,6 +9471,70 @@ function deleteEquipment(id) {
   save();
   gsDelete('equipment', id);
   closePanel('eq-panel'); renderEquipment(); toast('Deleted');
+}
+
+// Confirmation first, then the same fields properties use: archived true
+// and archivedAt as an en-US date (for example 10/30/2026). A reason, if
+// the manager types one, is one more serviceLog row (for example "Retired").
+function openArchiveEquipment(id) {
+  if (state.role !== 'manager') { toast('Manager access only'); return; }
+  var e = (state.equipment || []).find(function(x) { return x.id === id; });
+  if (!e || eqIsArchived(e)) return;
+  var existing = document.getElementById('eq-archive-sheet');
+  if (existing) existing.remove();
+  var sheet = document.createElement('div');
+  sheet.id = 'eq-archive-sheet';
+  sheet.className = 'overlay open';
+  sheet.innerHTML = '<div class="sheet">'
+    + '<div class="sheet-title">Archive equipment?</div>'
+    + '<div style="font-size:13px;color:var(--text2);line-height:1.45;margin-bottom:12px;">This hides the machine from the equipment list, service-due alerts, and counts. The record stays.</div>'
+    + '<input class="inp" id="eq-arch-reason" placeholder="Reason (optional) — e.g. Retired" maxlength="80"/>'
+    + '<button class="btn" onclick="submitArchiveEquipment(\'' + id + '\')" style="font-size:13px;margin-bottom:8px;background:rgba(210,153,34,.1);border:1px solid rgba(210,153,34,.3);color:var(--yellow);">📦 Archive</button>'
+    + '<button class="btn btn-outline" onclick="document.getElementById(\'eq-archive-sheet\').remove()">Cancel</button>'
+    + '</div>';
+  document.body.appendChild(sheet);
+  var reasonInp = document.getElementById('eq-arch-reason');
+  if (reasonInp) reasonInp.focus();
+}
+
+function submitArchiveEquipment(id) {
+  if (state.role !== 'manager') { toast('Manager access only'); return; }
+  var e = (state.equipment || []).find(function(x) { return x.id === id; });
+  if (!e) return;
+  var reasonEl = document.getElementById('eq-arch-reason');
+  var reason = reasonEl ? reasonEl.value.trim() : '';
+  e.archived = true;
+  e.archivedAt = new Date().toLocaleDateString('en-US');
+  if (reason) {
+    if (!Array.isArray(e.serviceLog)) e.serviceLog = [];
+    e.serviceLog.push({
+      id: uid(),
+      type: reason,
+      date: fmtDate(new Date().toISOString().slice(0, 10)),
+      by: 'Manager',
+      note: ''
+    });
+  }
+  saveAndSync('equipment', e);
+  var sheet = document.getElementById('eq-archive-sheet');
+  if (sheet) sheet.remove();
+  openEqDetail(id);
+  renderEquipment();
+  renderDashboard();
+  toast('📦 Equipment archived');
+}
+
+function unarchiveEquipment(id) {
+  if (state.role !== 'manager') { toast('Manager access only'); return; }
+  var e = (state.equipment || []).find(function(x) { return x.id === id; });
+  if (!e) return;
+  e.archived = false;
+  e.archivedAt = '';
+  saveAndSync('equipment', e);
+  openEqDetail(id);
+  renderEquipment();
+  renderDashboard();
+  toast('✓ Equipment restored to active');
 }
 
 
@@ -11640,7 +11742,7 @@ function renderReports() {
   const flags  = state.flags   || [];
   const crew   = state.crew    || [];
   const inv    = state.inventory || [];
-  const eq     = state.equipment || [];
+  const eq     = (state.equipment || []).filter(function(e){ return !eqIsArchived(e); });
   const filteredRoutes = filterByRange(routes);
 
   // ── Summary stats ──────────────────────────────────────────────────────
