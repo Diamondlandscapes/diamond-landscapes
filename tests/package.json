@@ -1,0 +1,9 @@
+{
+  "name": "diamond-landscapes-route-reorder-tests",
+  "private": true,
+  "type": "module",
+  "description": "Local fixture tests for route stop reorder. Does not talk to production Firebase.",
+  "dependencies": {
+    "puppeteer-core": "^24.15.0"
+  }
+}

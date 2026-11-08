@@ -193,6 +193,24 @@ select.inp{cursor:pointer;}
 .stop-head{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;}
 .stop-body{padding:0 14px 14px;border-top:1px solid var(--border);display:none;overflow:visible;}
 .stop-body.open{display:block;overflow:visible;}
+/* Grip for reordering stops. touch-action:none lets a finger drag on iPhone
+   instead of scrolling the stop list. The up/down buttons stay for keyboard. */
+.drag-handle{position:relative;z-index:2;width:44px;min-height:44px;margin-right:2px;display:flex;align-items:center;justify-content:center;
+  cursor:grab;color:var(--text2);background:var(--bg3);border:1px solid var(--border2);border-radius:10px;
+  flex-shrink:0;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+  font-size:16px;font-weight:800;letter-spacing:-2px;padding:0;line-height:1;}
+.stop-main{min-width:0;flex:1;overflow:hidden;}
+.stop-main a{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.drag-handle:hover{border-color:var(--green);color:var(--green);}
+.drag-handle:focus-visible{outline:2px solid var(--green);outline-offset:2px;}
+.drag-handle:active,.stop-card.is-dragging .drag-handle{cursor:grabbing;}
+.stop-card.is-dragging{opacity:.45;box-shadow:0 10px 28px rgba(0,0,0,.35);}
+.stop-card.is-drop-target{border-color:var(--green)!important;box-shadow:0 0 0 2px var(--green);}
+.stop-drag-ghost{position:fixed;z-index:2500;pointer-events:none;background:var(--bg2);color:var(--text);
+  border:2px solid var(--green);border-radius:10px;padding:8px 12px;font-weight:800;font-size:13px;
+  box-shadow:0 8px 24px rgba(0,0,0,.45);max-width:240px;}
+body.route-stop-dragging{cursor:grabbing;user-select:none;-webkit-user-select:none;}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
 
 /* property service item */
 .svc-item{display:flex;justify-content:space-between;align-items:center;
@@ -514,6 +532,17 @@ select.inp{cursor:pointer;}
 
   /* panels — full screen on mobile */
   .panel { max-width: 100% !important; }
+  /* Side-by-side map leaves no room for the grip and the property name.
+     Stack the map above the stops so a finger can still reorder. */
+  #route-panel.map-open .route-split { flex-direction: column; }
+  #route-panel.map-open #rp-map-pane {
+    width: 100% !important;
+    height: 34%;
+    flex: none;
+    border-left: none !important;
+    border-top: 1px solid var(--border);
+    order: -1;
+  }
   .panel-head { padding: calc(12px + var(--safe-top)) 14px 12px !important; }
 
   /* login screen — better spacing */
@@ -1385,7 +1414,7 @@ select.inp{cursor:pointer;}
         <button class="close-btn" onclick="closePanel('route-panel')">✕</button>
       </div>
     </div>
-    <div style="display:flex;height:calc(100% - 60px);">
+    <div class="route-split" style="display:flex;height:calc(100% - 60px);">
       <div style="flex:1;overflow-y:auto;overflow-x:hidden;padding:14px;-webkit-overflow-scrolling:touch;box-sizing:border-box;" id="rp-body"></div>
       <div id="rp-map-pane" style="display:none;width:50%;border-left:1px solid var(--border);position:relative;">
         <div id="rp-map" style="width:100%;height:100%;"></div>
@@ -1749,18 +1778,18 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-29-v75'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-11-08-v76'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 // Local fixtures for tests. Only localhost, and only with ?fixture=lexington,
-// ?fixture=calls, or ?fixture=jobcost. Never set on the live GitHub Pages
-// host, so a test cannot publish a version or write production Firestore.
+// ?fixture=calls, ?fixture=jobcost, or ?fixture=routes. Never set on the live
+// GitHub Pages host, so a test cannot publish a version or write production Firestore.
 window._dlFixture = false;
 window._dlFixtureName = '';
 try {
   var _dlHost = location.hostname;
   var _dlQs = new URLSearchParams(location.search);
   window._dlFixtureName = _dlQs.get('fixture') || '';
-  window._dlFixture = (_dlHost === 'localhost' || _dlHost === '127.0.0.1') && (window._dlFixtureName === 'lexington' || window._dlFixtureName === 'calls' || window._dlFixtureName === 'jobcost');
+  window._dlFixture = (_dlHost === 'localhost' || _dlHost === '127.0.0.1') && (window._dlFixtureName === 'lexington' || window._dlFixtureName === 'calls' || window._dlFixtureName === 'jobcost' || window._dlFixtureName === 'routes');
 } catch (eFix) { window._dlFixture = false; window._dlFixtureName = ''; }
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -2753,12 +2782,32 @@ function setRouteDay(d) { // legacy compat
 function openRouteDetail(id) {
   const r = state.routes.find(x => x.id === id);
   if (!r) return;
+  // Reordering (and other edits) call this while the panel is already open.
+  // Remember map/editor state first — the rebuild below used to hide the map
+  // every time, which is why a reorder closed it.
+  var panelEl = document.getElementById('route-panel');
+  var mapPaneAtOpen = document.getElementById('rp-map-pane');
+  var refreshingSame = !!(panelEl && panelEl.classList.contains('open') && window._currentRouteMapId === id);
+  var mapIsOpen = !!(mapPaneAtOpen && mapPaneAtOpen.style.display !== 'none');
+  var keepMap = refreshingSame && mapIsOpen;
+  var bodyElAtOpen = document.getElementById('rp-body');
+  var prevScroll = refreshingSame && bodyElAtOpen ? bodyElAtOpen.scrollTop : 0;
+  var openProps = [];
+  if (refreshingSame && bodyElAtOpen) {
+    Array.prototype.forEach.call(bodyElAtOpen.children, function(card) {
+      if (!card.classList || !card.classList.contains('stop-card')) return;
+      if (card.querySelector('.stop-body.open')) openProps.push(card.getAttribute('data-prop'));
+    });
+  }
+  var titleInputAtOpen = document.querySelector('#rp-title input');
+  var nameFocused = titleInputAtOpen && document.activeElement === titleInputAtOpen;
+  var draftName = (refreshingSame && titleInputAtOpen && titleInputAtOpen.value !== r.name) ? titleInputAtOpen.value : null;
   const crew = state.crew.find(c => c.id === r.crewId);
   // Build editable title
   const rpTitle = document.getElementById('rp-title');
   rpTitle.innerHTML = '';
   const nameInput = document.createElement('input');
-  nameInput.value = r.name;
+  nameInput.value = draftName != null ? draftName : r.name;
   nameInput.style.cssText = 'background:transparent;border:none;border-bottom:1px solid var(--border2);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif,sans-serif;font-size:18px;font-weight:800;width:100%;outline:none;padding:2px 0;';
   nameInput.onblur = () => {
     const val = nameInput.value.trim();
@@ -2771,6 +2820,7 @@ function openRouteDetail(id) {
   };
   nameInput.onkeydown = (e) => { if (e.key === 'Enter') nameInput.blur(); };
   rpTitle.appendChild(nameInput);
+  if (nameFocused) nameInput.focus();
   const stops = r.stops || [];
 
   let html = `
@@ -2856,7 +2906,11 @@ function openRouteDetail(id) {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
       <div style="font-size:14px;font-weight:700;">STOPS (${stops.length})</div>
       ${state.role==='manager' && stops.length ? `<button class="btn-sm" onclick="openBulkMonthlyPattern('${r.id}')" style="background:rgba(163,230,53,.12);color:var(--lime);border:1px solid rgba(163,230,53,.3);">📅 Set Monthly Pattern</button>` : ''}
-    </div>`;
+    </div>
+    <div id="route-reorder-status" class="sr-only" aria-live="polite"></div>`;
+    if (state.role === 'manager' && stops.length > 1) {
+      html += '<div style="font-size:11px;color:var(--text4);margin:-4px 0 10px;">Drag the grip to reorder stops. Up and down buttons work too.</div>';
+    }
     // Add Stop card — manager only
     if (state.role === 'manager') {
       html += '<div style="background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:12px;border:1px solid var(--border);">';
@@ -2878,15 +2932,18 @@ function openRouteDetail(id) {
     stops.forEach((s,i) => {
       const prop = state.properties.find(p => p.id === s.propId);
       const flags = state.flags.filter(f => f.propId === s.propId && !f.resolved);
-      html += `<div class="stop-card" data-idx="${i}" data-prop="${s.propId}">
+      const stopName = (prop && prop.name) ? prop.name : 'Unknown';
+      const stopNameAttr = escHtml(stopName);
+      html += `<div class="stop-card" draggable="false" data-idx="${i}" data-prop="${s.propId}" data-label="${stopNameAttr}">
         <div class="stop-head" onclick="toggleStop('stop-${id}-${i}')">
           <div style="display:flex;gap:10px;align-items:center;flex:1;min-width:0;">
-            <div style="width:26px;height:26px;border-radius:50%;background:${s.completed?'var(--green3)':'var(--bg4)'};
+            ${state.role==='manager'?`<button type="button" class="drag-handle" data-idx="${i}" data-prop="${s.propId}" draggable="false" aria-keyshortcuts="ArrowUp ArrowDown" aria-label="Drag to reorder ${stopNameAttr}. Use the arrow keys to move this stop." title="Drag to reorder" onclick="event.stopPropagation();event.preventDefault();"><span aria-hidden="true">⋮⋮</span></button>`:''}
+            <div class="stop-order-num" style="width:26px;height:26px;border-radius:50%;background:${s.completed?'var(--green3)':'var(--bg4)'};
               border:2px solid ${s.completed?'var(--green)':'var(--border2)'};flex-shrink:0;
               display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:${s.completed?'#fff':'var(--text3)'};">${i+1}</div>
-            <div style="min-width:0;flex:1;">
+            <div class="stop-main">
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                <div style="font-weight:700;font-size:14px;">${prop?.name||'Unknown'}</div>
+                <div style="font-weight:700;font-size:14px;">${stopNameAttr}</div>
                 ${s.completed?'<span style="font-size:10px;color:var(--green);font-weight:700;">✓</span>':''}
               </div>
               ${prop?.address ? `<a href="https://maps.google.com/?q=${encodeURIComponent(prop.address)}" target="_blank" onclick="event.stopPropagation();" style="font-size:11px;color:var(--blue);text-decoration:none;display:flex;align-items:center;gap:3px;"><i class="ti ti-map-pin" style="font-size:11px;"></i>${prop.address}</a>` : ''}
@@ -2896,9 +2953,9 @@ function openRouteDetail(id) {
           </div>
           <div style="display:flex;gap:5px;align-items:center;flex-shrink:0;">
             ${state.role==='manager'?`
-              <button onclick="event.stopPropagation();moveStop('${r.id}','${s.propId}',-1)" ${i===0?'disabled':''} style="background:none;border:1px solid var(--border2);border-radius:6px;color:var(--text3);font-size:11px;width:24px;height:24px;cursor:pointer;padding:0;">↑</button>
-              <button onclick="event.stopPropagation();moveStop('${r.id}','${s.propId}',1)" ${i===stops.length-1?'disabled':''} style="background:none;border:1px solid var(--border2);border-radius:6px;color:var(--text3);font-size:11px;width:24px;height:24px;cursor:pointer;padding:0;">↓</button>
-              <button onclick="event.stopPropagation();removeStop('${r.id}','${s.propId}')" style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);border-radius:6px;color:var(--red);font-size:11px;width:24px;height:24px;cursor:pointer;padding:0;">✕</button>
+              <button type="button" class="stop-move-up" aria-label="Move ${stopNameAttr} up" onclick="event.stopPropagation();moveStop('${r.id}','${s.propId}',-1)" ${i===0?'disabled':''} style="background:none;border:1px solid var(--border2);border-radius:6px;color:var(--text3);font-size:11px;width:28px;height:28px;cursor:pointer;padding:0;">↑</button>
+              <button type="button" class="stop-move-down" aria-label="Move ${stopNameAttr} down" onclick="event.stopPropagation();moveStop('${r.id}','${s.propId}',1)" ${i===stops.length-1?'disabled':''} style="background:none;border:1px solid var(--border2);border-radius:6px;color:var(--text3);font-size:11px;width:28px;height:28px;cursor:pointer;padding:0;">↓</button>
+              <button type="button" class="stop-remove" aria-label="Remove ${stopNameAttr}" onclick="event.stopPropagation();removeStop('${r.id}','${s.propId}')" style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);border-radius:6px;color:var(--red);font-size:11px;width:28px;height:28px;cursor:pointer;padding:0;">✕</button>
             `:''}
           </div>
         </div>
@@ -2972,7 +3029,20 @@ function openRouteDetail(id) {
     <button class="btn" onclick="openRescheduleRoute('${r.id}')" style="font-size:13px;flex:1;background:rgba(96,165,250,.12);color:var(--blue);border:1px solid rgba(96,165,250,.3);">📅 Reschedule</button>
     <button class="btn btn-red" onclick="deleteRoute('${r.id}')" style="font-size:13px;flex:1;">Delete Route</button>
   </div>` : '';
-  document.getElementById('rp-body').innerHTML = html;
+  var rpBody = document.getElementById('rp-body');
+  rpBody.innerHTML = html;
+  if (openProps.length) {
+    Array.prototype.forEach.call(rpBody.children, function(card) {
+      if (!card.classList || !card.classList.contains('stop-card')) return;
+      if (openProps.indexOf(card.getAttribute('data-prop')) === -1) return;
+      var stopBody = card.querySelector('.stop-body');
+      if (stopBody) stopBody.classList.add('open');
+    });
+  }
+  if (prevScroll) {
+    rpBody.scrollTop = prevScroll;
+    setTimeout(function() { if (rpBody) rpBody.scrollTop = prevScroll; }, 0);
+  }
   openPanel('route-panel');
   setTimeout(function() { patchFirebaseImages(document.getElementById('rp-body')); }, 150);
   // Show map button for managers
@@ -2980,12 +3050,20 @@ function openRouteDetail(id) {
   if (mapBtn) mapBtn.style.display = state.role === 'manager' ? '' : 'none';
   // Store current route id for map
   window._currentRouteMapId = id;
-  // Reset map pane if open
-  var mapPane = document.getElementById('rp-map-pane');
-  if (mapPane && mapPane.style.display !== 'none') {
-    mapPane.style.display = 'none';
-    document.getElementById('route-panel').classList.remove('map-open');
-    if (mapBtn) { mapBtn.innerHTML = '<i class="ti ti-map"></i> Map'; mapBtn.style.background = 'rgba(88,166,255,.12)'; mapBtn.style.color = 'var(--blue)'; }
+  // Same route, map already open: keep the pane and the camera, then refresh
+  // numbered pins. Switching to a different route (or opening fresh) still
+  // closes it — the Map button and the panel X do that on purpose.
+  if (keepMap) {
+    panelEl.classList.add('map-open');
+    if (mapBtn) { mapBtn.innerHTML = '<i class="ti ti-list"></i> List'; mapBtn.style.background = 'rgba(63,185,80,.12)'; mapBtn.style.color = 'var(--green)'; }
+    renderRouteMap(id, { preserveView: true });
+  } else {
+    var mapPane = document.getElementById('rp-map-pane');
+    if (mapPane && mapPane.style.display !== 'none') {
+      mapPane.style.display = 'none';
+      document.getElementById('route-panel').classList.remove('map-open');
+      if (mapBtn) { mapBtn.innerHTML = '<i class="ti ti-map"></i> Map'; mapBtn.style.background = 'rgba(88,166,255,.12)'; mapBtn.style.color = 'var(--blue)'; }
+    }
   }
   if (canEdit) initRouteDragDrop(r.id);
 }
@@ -6153,6 +6231,32 @@ async function renderPropertyMap() {
 // ── Route Map View ────────────────────────────────────────────────────────
 var _routeMapInstance = null;
 var _routeMapMarkers  = [];
+var _routeMapRenderGen = 0;
+var _routeGeoCache = {}; // address -> {lat,lng}. Memory only — never written back to a property.
+
+// Prefer a position already on the property. Otherwise geocode once and keep
+// the result in memory. Do not save the property: that would write Firestore.
+function _routeStopLatLng(prop, geocoder, cb) {
+  if (!prop) { cb(null); return; }
+  if (prop.lat != null && prop.lng != null && !isNaN(Number(prop.lat)) && !isNaN(Number(prop.lng))) {
+    cb({ lat: Number(prop.lat), lng: Number(prop.lng) });
+    return;
+  }
+  var query = (prop.address || '') + ', FL';
+  if (_routeGeoCache[query]) { cb(_routeGeoCache[query]); return; }
+  geocoder.geocode({ address: query }, function(results, status) {
+    if (status === 'OK' && results && results[0] && results[0].geometry) {
+      var loc = results[0].geometry.location;
+      var lat = typeof loc.lat === 'function' ? loc.lat() : loc.lat;
+      var lng = typeof loc.lng === 'function' ? loc.lng() : loc.lng;
+      if (lat == null || lng == null) { cb(null); return; }
+      _routeGeoCache[query] = { lat: Number(lat), lng: Number(lng) };
+      cb(_routeGeoCache[query]);
+      return;
+    }
+    cb(null);
+  });
+}
 
 function toggleRouteMap() {
   var pane  = document.getElementById('rp-map-pane');
@@ -6171,29 +6275,40 @@ function toggleRouteMap() {
   }
 }
 
-async function renderRouteMap(routeId) {
+async function renderRouteMap(routeId, opts) {
+  opts = opts || {};
+  var preserveView = !!opts.preserveView;
+  var gen = ++_routeMapRenderGen;
   var r = (state.routes||[]).find(function(x){return x.id===routeId;});
   if (!r) return;
   var loadingEl = document.getElementById('rp-map-loading');
   var mapEl     = document.getElementById('rp-map');
-  if (loadingEl) loadingEl.style.display = 'flex';
+  if (!mapEl) return;
+  // A reorder refresh must not cover the map with the loading scrim.
+  var hadMapAlready = !!(_routeMapInstance && _routeMapInstance.getDiv && _routeMapInstance.getDiv() === mapEl);
+  if (loadingEl) {
+    if (preserveView && hadMapAlready) loadingEl.style.display = 'none';
+    else loadingEl.style.display = 'flex';
+  }
 
   // Wait for Google Maps API
   var attempts = 0;
   while (typeof google === 'undefined' && attempts < 20) {
     await new Promise(function(res){setTimeout(res,500);});
     attempts++;
+    if (gen !== _routeMapRenderGen) return;
   }
+  if (gen !== _routeMapRenderGen) return;
   if (typeof google === 'undefined') {
     if (loadingEl) loadingEl.innerHTML = '<div style="font-size:13px;color:var(--red);text-align:center;padding:20px;">Could not load Google Maps</div>';
     return;
   }
 
-  // Clear old markers
-  _routeMapMarkers.forEach(function(m){m.setMap(null);}); _routeMapMarkers = [];
-
-  // Init or reuse map instance
-  if (!_routeMapInstance || !mapEl.querySelector('canvas')) {
+  // Reuse the live map. Recreating it on every reorder reset the camera and
+  // felt like the map had closed. getDiv() stays valid even when the pane
+  // has no <canvas> yet (vector maps, or a test double).
+  var hadMap = !!(_routeMapInstance && _routeMapInstance.getDiv && _routeMapInstance.getDiv() === mapEl);
+  if (!hadMap) {
     _routeMapInstance = new google.maps.Map(mapEl, {
       zoom: 12,
       center: {lat:26.4615, lng:-80.0728},
@@ -6211,6 +6326,16 @@ async function renderRouteMap(routeId) {
       disableDefaultUI:false, zoomControl:true, streetViewControl:false, mapTypeControl:false
     });
   }
+  var savedCenter = null, savedZoom = null;
+  if (preserveView && hadMap) {
+    try {
+      savedCenter = _routeMapInstance.getCenter();
+      savedZoom = _routeMapInstance.getZoom();
+    } catch (eView) {}
+  }
+
+  // Clear old markers
+  _routeMapMarkers.forEach(function(m){ if (m && m.setMap) m.setMap(null); }); _routeMapMarkers = [];
 
   var geocoder   = new google.maps.Geocoder();
   var infoWindow = new google.maps.InfoWindow();
@@ -6224,13 +6349,14 @@ async function renderRouteMap(routeId) {
   }
 
   stops.forEach(function(s, i) {
+    if (gen !== _routeMapRenderGen) return;
     var prop = (state.properties||[]).find(function(p){return p.id===s.propId;});
     if (!prop || !prop.address) { processed++; checkDone(); return; }
 
-    geocoder.geocode({address: prop.address + ', FL'}, function(results, status) {
+    _routeStopLatLng(prop, geocoder, function(pos) {
+      if (gen !== _routeMapRenderGen) return;
       processed++;
-      if (status === 'OK' && results[0]) {
-        var pos   = results[0].geometry.location;
+      if (pos) {
         var color = s.completed ? '#3fb950' : '#58a6ff';
         bounds.extend(pos);
 
@@ -6270,13 +6396,23 @@ async function renderRouteMap(routeId) {
       checkDone();
     });
   });
+  checkDone();
 
   function checkDone() {
+    if (gen !== _routeMapRenderGen) return;
     if (processed < stops.length) return;
     if (loadingEl) loadingEl.style.display = 'none';
+    if (!_routeMapInstance) return;
+    if (preserveView && savedCenter) {
+      _routeMapInstance.setCenter(savedCenter);
+      if (savedZoom != null) _routeMapInstance.setZoom(savedZoom);
+      return;
+    }
     if (_routeMapMarkers.length) {
       _routeMapInstance.fitBounds(bounds);
+      var capGen = gen;
       google.maps.event.addListenerOnce(_routeMapInstance, 'bounds_changed', function() {
+        if (capGen !== _routeMapRenderGen) return;
         if (_routeMapInstance.getZoom() > 15) _routeMapInstance.setZoom(15);
       });
     }
@@ -14346,18 +14482,15 @@ function addStopToRoute(routeId) {
 }
 
 function moveStop(routeId, propId, dir) {
-  const r = state.routes.find(x => x.id === routeId);
+  if (state.role !== 'manager') return;
+  var r = state.routes.find(function(x) { return x.id === routeId; });
   if (!r || !r.stops) return;
-  const idx = r.stops.findIndex(s => s.propId === propId);
+  var idx = -1;
+  for (var i = 0; i < r.stops.length; i++) {
+    if (r.stops[i] && r.stops[i].propId === propId) { idx = i; break; }
+  }
   if (idx < 0) return;
-  const newIdx = idx + dir;
-  if (newIdx < 0 || newIdx >= r.stops.length) return;
-  const tmp = r.stops[idx];
-  r.stops[idx] = r.stops[newIdx];
-  r.stops[newIdx] = tmp;
-  saveAndSync('routes', r);
-  openRouteDetail(routeId);
-  toast('Stop reordered ✓');
+  reorderRouteStop(routeId, idx, idx + dir);
 }
 
 
@@ -16534,6 +16667,49 @@ function startCallsFixture() {
   _calMonth = day.slice(0, 8) + '01';
   try { dismissLoginScreen('manager'); } catch (e) { console.warn(e); }
   setTimeout(function() { switchTab('dashboard'); updateCallsNavBadge(); }, 400);
+}
+
+// Local-only fixture (?fixture=routes on localhost). Stop order, completion,
+// and crew fields are fake and never leave this browser. gsSave returns
+// immediately while _dlFixture is set, so nothing is written to Firestore.
+function startRoutesFixture() {
+  if (window._dlFixtureName !== 'routes') return;
+  state.role = 'manager';
+  state.properties = [
+    { id: 'p-palm', name: 'Palm Court', address: '1 Palm Ct, Delray Beach, FL', lat: 26.451, lng: -80.072, services: ['Mow & Edge'] },
+    { id: 'p-oak', name: 'Oak Lane', address: '2 Oak Ln, Delray Beach, FL', lat: 26.462, lng: -80.083, services: ['Blow & Clean'] },
+    { id: 'p-bay', name: 'Bay Harbor', address: '3 Bay Harbor Dr, Delray Beach, FL', lat: 26.473, lng: -80.094, services: ['Trim Shrubs'] },
+    { id: 'p-lake', name: 'Lake View', address: '4 Lake View Rd, Delray Beach, FL', lat: 26.484, lng: -80.105, services: ['Weed Control'] },
+    { id: 'p-cove', name: 'Cove House', address: '5 Cove St, Delray Beach, FL', lat: 26.495, lng: -80.116, services: ['Fertilize'] }
+  ];
+  state.crew = [
+    { id: 'c-efrain', name: 'Efrain', role: 'Crew Lead', phone: '555-0101' },
+    { id: 'c-sergio', name: 'Sergio', role: 'Crew Member', phone: '555-0102' }
+  ];
+  state.flags = [];
+  state.routes = [
+    {
+      id: 'route-mon', name: 'Monday T1', date: '2026-11-09', day: 'Monday',
+      crewId: 'c-efrain', crewCount: 3, status: 'In Progress',
+      stops: [
+        { propId: 'p-palm', completed: true, completedBy: 'Efrain', completedServices: ['Mow & Edge'], completedAt: '11/9/2026', completedAtISO: '2026-11-09T15:00:00.000Z', completedNotes: 'Gate code 1234' },
+        { propId: 'p-oak', completed: false, completedServices: [] },
+        { propId: 'p-bay', completed: false, completedServices: [], notes: 'Side gate' },
+        { propId: 'p-lake', completed: false, completedServices: [] }
+      ]
+    },
+    {
+      id: 'route-tue', name: 'Tuesday T2', date: '2026-11-10', day: 'Tuesday',
+      crewId: 'c-sergio', crewCount: 2, status: 'Scheduled',
+      stops: [
+        { propId: 'p-cove', completed: false, completedServices: [] },
+        { propId: 'p-oak', completed: false, completedServices: [] }
+      ]
+    }
+  ];
+  state.propertyDirectory = (state.properties || []).map(function(p) { return _directoryDocFor(p); }).filter(Boolean);
+  window._dlFixtureReady = true;
+  try { dismissLoginScreen('manager'); } catch (e) { console.warn(e); }
 }
 
 // Local-only fixture (?fixture=lexington on localhost). Never starts Firebase,
@@ -20618,109 +20794,265 @@ function getWeekInstanceSummary(route, date) {
 
 
 // ─── ROUTE DRAG-AND-DROP REORDER ─────────────────────────────────────────────
+// Moves one stop and refuses the edit if a stop would be lost or duplicated.
+// The same object stays in the array, so completion, photos, and notes travel
+// with the property. Returns {ok, changed}. Does not save.
+function _stopIdCounts(stops) {
+  var counts = {};
+  for (var i = 0; i < stops.length; i++) {
+    var id = stops[i] && stops[i].propId != null ? String(stops[i].propId) : '';
+    counts[id] = (counts[id] || 0) + 1;
+  }
+  return counts;
+}
+function _sameStopCounts(a, b) {
+  var keys = {};
+  var k;
+  for (k in a) if (Object.prototype.hasOwnProperty.call(a, k)) keys[k] = true;
+  for (k in b) if (Object.prototype.hasOwnProperty.call(b, k)) keys[k] = true;
+  for (k in keys) if ((a[k] || 0) !== (b[k] || 0)) return false;
+  return true;
+}
+function moveRouteStopInPlace(stops, fromIdx, toIdx) {
+  if (!Array.isArray(stops)) return { ok: false, changed: false };
+  fromIdx = parseInt(fromIdx, 10);
+  toIdx = parseInt(toIdx, 10);
+  if (isNaN(fromIdx) || isNaN(toIdx)) return { ok: false, changed: false };
+  if (fromIdx === toIdx) return { ok: true, changed: false };
+  if (fromIdx < 0 || toIdx < 0 || fromIdx >= stops.length || toIdx >= stops.length) return { ok: false, changed: false };
+  var before = stops.slice();
+  var beforeCounts = _stopIdCounts(before);
+  var moved = stops.splice(fromIdx, 1)[0];
+  if (!moved) {
+    stops.length = 0;
+    before.forEach(function(s) { stops.push(s); });
+    return { ok: false, changed: false };
+  }
+  stops.splice(toIdx, 0, moved);
+  var sameRefs = stops.length === before.length && stops.every(function(s) { return before.indexOf(s) !== -1; });
+  if (!sameRefs || !_sameStopCounts(beforeCounts, _stopIdCounts(stops))) {
+    stops.length = 0;
+    before.forEach(function(s) { stops.push(s); });
+    return { ok: false, changed: false };
+  }
+  return { ok: true, changed: true };
+}
+
+function routeStopCards(root) {
+  var cards = [];
+  if (!root) return cards;
+  Array.prototype.forEach.call(root.children, function(el) {
+    if (el.classList && el.classList.contains('stop-card')) cards.push(el);
+  });
+  return cards;
+}
+
+// Card under the finger, ignoring the one being dragged. A small move that
+// is still in the middle of the source card is not a drop.
+function routeDropTarget(clientY, source, root) {
+  var cards = routeStopCards(root);
+  var i;
+  for (i = 0; i < cards.length; i++) {
+    if (cards[i] === source) continue;
+    var rect = cards[i].getBoundingClientRect();
+    if (clientY >= rect.top && clientY <= rect.bottom) return cards[i];
+  }
+  if (source) {
+    var sr = source.getBoundingClientRect();
+    var srcIdx = cards.indexOf(source);
+    if (clientY >= sr.top && clientY <= sr.bottom) {
+      if (clientY < sr.top + sr.height * 0.35 && srcIdx > 0) return cards[srcIdx - 1];
+      if (clientY > sr.bottom - sr.height * 0.35 && srcIdx < cards.length - 1) return cards[srcIdx + 1];
+      return null;
+    }
+  }
+  var nearest = null;
+  var best = Infinity;
+  for (i = 0; i < cards.length; i++) {
+    if (cards[i] === source) continue;
+    var r = cards[i].getBoundingClientRect();
+    var mid = (r.top + r.bottom) / 2;
+    var d = Math.abs(clientY - mid);
+    if (d < best) { best = d; nearest = cards[i]; }
+  }
+  return best <= 80 ? nearest : null;
+}
+
+// Reorder the existing stop cards so scroll position, open stops, and the
+// route name field are left alone. Returns false if the DOM doesn't match
+// the saved stops — caller can rebuild the panel.
+function syncRouteStopDom(routeId) {
+  var route = (state.routes || []).find(function(r) { return r.id === routeId; });
+  var body = document.getElementById('rp-body');
+  if (!route || !body) return false;
+  var stops = route.stops || [];
+  var cards = routeStopCards(body);
+  if (cards.length !== stops.length) return false;
+  if (!cards.length) return true;
+  var buckets = {};
+  cards.forEach(function(card) {
+    var pid = card.getAttribute('data-prop');
+    if (!buckets[pid]) buckets[pid] = [];
+    buckets[pid].push(card);
+  });
+  var ordered = [];
+  for (var i = 0; i < stops.length; i++) {
+    var q = buckets[stops[i] && stops[i].propId];
+    if (!q || !q.length) return false;
+    ordered.push(q.shift());
+  }
+  var leftover = false;
+  Object.keys(buckets).forEach(function(k) { if (buckets[k].length) leftover = true; });
+  if (leftover) return false;
+  var parent = cards[0].parentNode;
+  var anchor = cards[cards.length - 1].nextSibling;
+  ordered.forEach(function(card, idx) {
+    parent.insertBefore(card, anchor);
+    card.setAttribute('data-idx', String(idx));
+    var handle = card.querySelector('.drag-handle');
+    if (handle) handle.setAttribute('data-idx', String(idx));
+    var num = card.querySelector('.stop-order-num');
+    if (num) num.textContent = String(idx + 1);
+    var up = card.querySelector('.stop-move-up');
+    var down = card.querySelector('.stop-move-down');
+    if (up) up.disabled = idx === 0;
+    if (down) down.disabled = idx === stops.length - 1;
+  });
+  return true;
+}
+
+function refreshOpenRouteMap(routeId) {
+  var pane = document.getElementById('rp-map-pane');
+  var panel = document.getElementById('route-panel');
+  if (!pane || pane.style.display === 'none') return;
+  if (!panel || !panel.classList.contains('open')) return;
+  if (window._currentRouteMapId !== routeId) return;
+  renderRouteMap(routeId, { preserveView: true });
+}
+
 function initRouteDragDrop(routeId) {
-  var handles = document.querySelectorAll('.drag-handle');
-  var dragSrc = null;
-  var dragSrcIdx = null;
-
+  var root = document.getElementById('rp-body');
+  if (!root) return;
+  var handles = root.querySelectorAll('.drag-handle');
   handles.forEach(function(handle) {
-    var card = handle.closest('.stop-card');
-    if (!card) return;
-    var idx = parseInt(handle.dataset.idx);
+    if (handle.dataset.bound === '1') return;
+    handle.dataset.bound = '1';
 
-    // Desktop: HTML5 drag
-    card.draggable = true;
-    card.dataset.idx = idx;
-    card.dataset.prop = handle.dataset.prop;
-
-    card.addEventListener('dragstart', function(e) {
-      dragSrc = card;
-      dragSrcIdx = idx;
-      card.style.opacity = '0.4';
-      e.dataTransfer.effectAllowed = 'move';
-    });
-
-    card.addEventListener('dragend', function() {
-      card.style.opacity = '1';
-      document.querySelectorAll('.stop-card').forEach(function(c) {
-        c.style.border = '';
-      });
-    });
-
-    card.addEventListener('dragover', function(e) {
+    handle.addEventListener('keydown', function(e) {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
       e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      if (card !== dragSrc) {
-        card.style.border = '2px solid var(--green)';
-      }
-    });
-
-    card.addEventListener('dragleave', function() {
-      card.style.border = '';
-    });
-
-    card.addEventListener('drop', function(e) {
-      e.preventDefault();
-      card.style.border = '';
-      if (!dragSrc || dragSrc === card) return;
-      var destIdx = parseInt(card.dataset.idx);
-      if (isNaN(dragSrcIdx) || isNaN(destIdx)) return;
-      reorderRouteStop(routeId, dragSrcIdx, destIdx);
-    });
-
-    // Mobile: touch drag
-    var touchStartY = 0;
-    var touchCard = null;
-    var placeholder = null;
-
-    handle.addEventListener('touchstart', function(e) {
       e.stopPropagation();
-      touchStartY = e.touches[0].clientY;
-      touchCard = card;
-      dragSrcIdx = idx;
-      touchCard.style.opacity = '0.5';
-      touchCard.style.boxShadow = '0 4px 20px rgba(0,0,0,.4)';
-    }, {passive: true});
+      var card = handle.closest('.stop-card');
+      if (!card) return;
+      moveStop(routeId, card.getAttribute('data-prop'), e.key === 'ArrowUp' ? -1 : 1);
+    });
 
-    handle.addEventListener('touchmove', function(e) {
+    // Pointer events cover a mouse and a finger (iPhone). HTML5 drag is not
+    // used: iOS Safari does not reliably fire it, and dragging the whole
+    // card fought with opening a stop.
+    handle.addEventListener('pointerdown', function(e) {
+      if (e.button != null && e.button !== 0) return;
+      e.stopPropagation();
       e.preventDefault();
-      var touch = e.touches[0];
-      var el = document.elementFromPoint(touch.clientX, touch.clientY);
-      var target = el ? el.closest('.stop-card') : null;
-      document.querySelectorAll('.stop-card').forEach(function(c) {
-        c.style.border = '';
-      });
-      if (target && target !== touchCard) {
-        target.style.border = '2px solid var(--green)';
-      }
-    }, {passive: false});
+      var card = handle.closest('.stop-card');
+      if (!card) return;
+      var pointerId = e.pointerId;
+      var startX = e.clientX;
+      var startY = e.clientY;
+      var dragging = false;
+      var dropCard = null;
+      var ghost = null;
+      try { handle.setPointerCapture(pointerId); } catch (errCap) {}
 
-    handle.addEventListener('touchend', function(e) {
-      touchCard.style.opacity = '1';
-      touchCard.style.boxShadow = '';
-      var touch = e.changedTouches[0];
-      var el = document.elementFromPoint(touch.clientX, touch.clientY);
-      var target = el ? el.closest('.stop-card') : null;
-      document.querySelectorAll('.stop-card').forEach(function(c) { c.style.border = ''; });
-      if (target && target !== touchCard) {
-        var destIdx = parseInt(target.dataset.idx);
-        if (!isNaN(destIdx) && destIdx !== dragSrcIdx) {
-          reorderRouteStop(routeId, dragSrcIdx, destIdx);
+      function highlight(target) {
+        routeStopCards(root).forEach(function(el) {
+          el.classList.toggle('is-drop-target', el === target);
+        });
+      }
+      function cleanup() {
+        card.classList.remove('is-dragging');
+        document.body.classList.remove('route-stop-dragging');
+        highlight(null);
+        if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+        ghost = null;
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.removeEventListener('pointercancel', onCancel);
+      }
+      function onMove(ev) {
+        if (ev.pointerId !== pointerId) return;
+        var dx = ev.clientX - startX;
+        var dy = ev.clientY - startY;
+        if (!dragging) {
+          if (Math.hypot(dx, dy) < 8) return;
+          dragging = true;
+          card.classList.add('is-dragging');
+          document.body.classList.add('route-stop-dragging');
+          ghost = document.createElement('div');
+          ghost.className = 'stop-drag-ghost';
+          ghost.textContent = card.getAttribute('data-label') || 'Move stop';
+          document.body.appendChild(ghost);
+        }
+        ev.preventDefault();
+        ghost.style.left = (ev.clientX + 14) + 'px';
+        ghost.style.top = (ev.clientY + 14) + 'px';
+        // Scroll only while the finger is in the empty edge of the list.
+        // Scrolling while it is already on a stop pushes that stop away
+        // and the drop misses.
+        var hover = null;
+        routeStopCards(root).forEach(function(el) {
+          if (el === card) return;
+          var rct = el.getBoundingClientRect();
+          if (ev.clientX >= rct.left && ev.clientX <= rct.right && ev.clientY >= rct.top && ev.clientY <= rct.bottom) hover = el;
+        });
+        if (!hover) {
+          var rect = root.getBoundingClientRect();
+          if (ev.clientY < rect.top + 28) root.scrollTop -= 10;
+          else if (ev.clientY > rect.bottom - 28) root.scrollTop += 10;
+        }
+        dropCard = hover || routeDropTarget(ev.clientY, card, root);
+        highlight(dropCard);
+      }
+      function onCancel(ev) {
+        if (ev && ev.pointerId != null && ev.pointerId !== pointerId) return;
+        cleanup();
+      }
+      function onUp(ev) {
+        if (ev.pointerId !== pointerId) return;
+        var dest = dragging ? dropCard : null;
+        var fromIdx = parseInt(card.getAttribute('data-idx'), 10);
+        var destIdx = dest ? parseInt(dest.getAttribute('data-idx'), 10) : NaN;
+        cleanup();
+        if (dest && !isNaN(fromIdx) && !isNaN(destIdx) && fromIdx !== destIdx) {
+          reorderRouteStop(routeId, fromIdx, destIdx);
         }
       }
-    }, {passive: true});
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+      handle.addEventListener('pointercancel', onCancel);
+    });
   });
 }
 
 function reorderRouteStop(routeId, fromIdx, toIdx) {
-  var route = state.routes.find(function(r) { return r.id === routeId; });
+  if (state.role !== 'manager') return;
+  var route = (state.routes || []).find(function(r) { return r.id === routeId; });
   if (!route || !route.stops) return;
-  var stops = route.stops;
-  if (fromIdx < 0 || fromIdx >= stops.length || toIdx < 0 || toIdx >= stops.length) return;
-  var moved = stops.splice(fromIdx, 1)[0];
-  stops.splice(toIdx, 0, moved);
+  var moved = moveRouteStopInPlace(route.stops, fromIdx, toIdx);
+  if (!moved.ok || !moved.changed) return;
   saveAndSync('routes', route);
-  openRouteDetail(routeId);
+  var synced = syncRouteStopDom(routeId);
+  if (!synced) {
+    var panel = document.getElementById('route-panel');
+    if (panel && panel.classList.contains('open') && window._currentRouteMapId === routeId) openRouteDetail(routeId);
+  } else {
+    refreshOpenRouteMap(routeId);
+  }
+  var at = parseInt(toIdx, 10);
+  var placed = route.stops[at];
+  var prop = placed && (state.properties || []).find(function(p) { return p.id === placed.propId; });
+  var live = document.getElementById('route-reorder-status');
+  if (live) live.textContent = (prop && prop.name ? prop.name : 'Stop') + ' moved to position ' + (at + 1) + ' of ' + route.stops.length;
   toast('Stop reordered ✓');
 }
 
@@ -20915,6 +21247,7 @@ load().then(function() {
   ls_showWho();
   if (window._dlFixtureName === 'calls') startCallsFixture();
   else if (window._dlFixtureName === 'jobcost') startJobCostFixture();
+  else if (window._dlFixtureName === 'routes') startRoutesFixture();
   else if (window._dlFixture) startLexingtonFixture();
 });
 // load live data from Google Sheets
