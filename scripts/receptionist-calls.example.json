@@ -64,6 +64,25 @@
       "status": "new",
       "source": "ara",
       "createdAt": "2026-10-25T16:00:01.000Z"
+    },
+    {
+      "callSid": "CA_example_hungup",
+      "from": "+15555550104",
+      "callerName": null,
+      "startedAt": "2026-10-24T12:05:00.000Z",
+      "endedAt": "2026-10-24T12:05:06.000Z",
+      "durationSec": 6,
+      "kind": "no_message",
+      "callbackAt": null,
+      "reason": null,
+      "message": null,
+      "summary": "Caller hung up before leaving a message.",
+      "transcript": [
+        { "role": "ara", "text": "Diamond Landscapes, this is Ara. How can I help?" }
+      ],
+      "status": "new",
+      "source": "ara",
+      "createdAt": "2026-10-24T12:05:01.000Z"
     }
   ]
 }
