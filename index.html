@@ -1749,7 +1749,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-10-29-v75'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-11-11-v76'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 // Local fixtures for tests. Only localhost, and only with ?fixture=lexington,
 // ?fixture=calls, or ?fixture=jobcost. Never set on the live GitHub Pages
@@ -11117,6 +11117,8 @@ function _listenCollection(name) {
         setTimeout(fixStuckFlagPhotos, 2000); // slight delay to ensure auth is ready
       }
       if (name === 'receptionistCalls') {
+        // Ingest: mark ended no-message calls handled before any badge or queue render.
+        try { autoHandleNoMessageCalls(); } catch (eAuto) { console.warn('auto-handle no-message calls failed', eAuto); }
         window._callsUnreadable = false;
         var openNote = document.getElementById('call-note');
         var editingNote = openNote && document.activeElement === openNote;
@@ -14525,8 +14527,12 @@ function creqFlagSubmit(id) {
 // RECEPTIONIST CALLS (Ara) — manager only
 // ═══════════════════════════════════════════════════════════════════════
 // Collection: receptionistCalls. Doc id is the Twilio CallSid.
-// The receptionist server creates each doc. This app only sets
-// status / handledAt / handledBy / note, or deletes a doc.
+// The receptionist server creates each doc. This app sets
+// status / handledAt / handledBy / handledReason / note, or deletes a doc.
+// A call with no message is marked handled on arrival (handledBy 'auto',
+// handledReason 'no message'). It stays in history and is left out of the
+// New queue and the badge. There is no push, ntfy, FCM, or email sender
+// for calls in this repo — those badges and the New queue are the notification.
 // endedAt and durationSec are null while the call is still in progress.
 // Crew never subscribes. The listener error is ignored so the app still
 // works before the owner publishes rules.
@@ -14540,11 +14546,145 @@ function creqFlagSubmit(id) {
 
 var _callsFilter = 'new';
 
+/* NO_MESSAGE_CALLS_START */
+// What counts as "no message" for an Ara receptionistCalls doc:
+//   - not an outbound call (Ara placed it; outcome voicemail means Ara left one)
+//   - not a callback (kind callback, or any callbackAt)
+//   - no message body after trimming whitespace
+//   - no caller transcript text (Ara / agent lines do not count)
+//   - no recording, voicemail URL, or outcome voicemail
+//   - and either kind is no_message (Ara's hangup summary does not count as a message)
+//     or the call has ended and kind is message or blank, with no summary, reason, or follow-up
+// In-progress no_message calls are hidden from the open queue immediately.
+// They are written handled only after endedAt is set, so a transcript that
+// arrives before hangup is not locked in as handled.
+function _callNonEmptyString(value) {
+  if (typeof value !== 'string') return '';
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function _callHasEnded(call) {
+  if (!call) return false;
+  var v = call.endedAt;
+  if (v == null || v === '') return false;
+  if (typeof v === 'number') return isFinite(v);
+  if (Object.prototype.toString.call(v) === '[object Date]') return !isNaN(v.getTime());
+  if (typeof v === 'object') {
+    if (typeof v.toDate === 'function') return true;
+    if (v.seconds != null && isFinite(Number(v.seconds))) return true;
+    return false;
+  }
+  if (typeof v === 'string') {
+    var d = new Date(v);
+    return !isNaN(d.getTime());
+  }
+  return false;
+}
+
+function _callCallerText(call) {
+  var raw = call && call.transcript;
+  var lines = [];
+  var nonCaller = { ara: 1, assistant: 1, agent: 1, receptionist: 1, system: 1, bot: 1 };
+  if (Array.isArray(raw)) lines = raw;
+  else if (typeof raw === 'string') {
+    var trimmed = raw.replace(/\s+/g, ' ').trim();
+    if (!trimmed) return '';
+    try {
+      var parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) lines = parsed;
+      else return trimmed;
+    } catch (e) {
+      return trimmed;
+    }
+  } else return '';
+
+  var parts = [];
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (line == null) continue;
+    if (typeof line === 'string') {
+      var asText = line.replace(/\s+/g, ' ').trim();
+      if (asText) parts.push(asText);
+      continue;
+    }
+    if (typeof line !== 'object') continue;
+    var role = String(line.role || line.speaker || '').toLowerCase().trim();
+    if (nonCaller[role]) continue;
+    var text = line.text != null ? line.text : (line.content != null ? line.content : line.body);
+    if (typeof text !== 'string') continue;
+    var spoken = text.replace(/\s+/g, ' ').trim();
+    if (spoken) parts.push(spoken);
+  }
+  return parts.join('\n').trim();
+}
+
+function _callHasRecording(call) {
+  if (!call || typeof call !== 'object') return false;
+  var fields = ['recording', 'recordingUrl', 'recordingSid', 'voicemail', 'voicemailUrl', 'audioUrl', 'mediaUrl'];
+  for (var i = 0; i < fields.length; i++) {
+    if (_callNonEmptyString(call[fields[i]])) return true;
+  }
+  return _callNonEmptyString(call.outcome) === 'voicemail';
+}
+
+function _callLeftNoMessage(call) {
+  if (!call || typeof call !== 'object') return false;
+  var kind = call.kind == null ? '' : String(call.kind);
+  var direction = call.direction == null ? '' : String(call.direction);
+  if (kind === 'outbound' || direction === 'outbound') return false;
+  if (kind === 'callback') return false;
+  if (call.callbackAt != null && call.callbackAt !== '') return false;
+  if (_callNonEmptyString(call.message)) return false;
+  if (_callCallerText(call)) return false;
+  if (_callHasRecording(call)) return false;
+  if (kind === 'no_message') return true;
+  if (!_callHasEnded(call)) return false;
+  if (_callNonEmptyString(call.summary) || _callNonEmptyString(call.reason) || _callNonEmptyString(call.followUp)) return false;
+  return kind === 'message' || kind === '';
+}
+
+function _callIsOpenQueue(call) {
+  if (!call || typeof call !== 'object') return false;
+  if (String(call.status || 'new') === 'handled') return false;
+  if (_callLeftNoMessage(call)) return false;
+  return String(call.status || 'new') === 'new';
+}
+
+function _noMessageHandlePatch(call, nowIso) {
+  if (!call || typeof call !== 'object') return null;
+  if (String(call.status || 'new') === 'handled') return null;
+  if (!_callLeftNoMessage(call)) return null;
+  if (!_callHasEnded(call)) return null;
+  return {
+    status: 'handled',
+    handledAt: nowIso || new Date().toISOString(),
+    handledBy: 'auto',
+    handledReason: 'no message'
+  };
+}
+/* NO_MESSAGE_CALLS_END */
+
+// Badge + New queue. No-message calls are excluded even when Firestore still
+// says status new (existing rows, or a write that has not landed yet).
 function callsNewCount() {
   if (state.role !== 'manager') return 0;
   return (state.receptionistCalls || []).filter(function(c) {
-    return c && (c.status || 'new') === 'new';
+    return _callIsOpenQueue(c);
   }).length;
+}
+
+function autoHandleNoMessageCalls() {
+  var list = state.receptionistCalls || [];
+  var now = new Date().toISOString();
+  list.forEach(function(c) {
+    if (!c) return;
+    var patch = _noMessageHandlePatch(c, now);
+    if (!patch) return;
+    Object.keys(patch).forEach(function(k) { c[k] = patch[k]; });
+    var id = c.id || c.callSid;
+    if (!id) return;
+    _writeCallFields(String(id), patch);
+  });
 }
 
 function updateCallsNavBadge() {
@@ -14840,7 +14980,7 @@ function renderDashCalls() {
   if (countEl) countEl.textContent = n ? '(' + n + ')' : '';
   card.style.display = '';
   var rows = (state.receptionistCalls || []).filter(function(c) {
-    return c && (c.status || 'new') === 'new';
+    return _callIsOpenQueue(c);
   }).sort(function(a, b) {
     return _callSortKey(b) - _callSortKey(a);
   });
@@ -14894,7 +15034,7 @@ function renderReceptionistCalls() {
   var all = (state.receptionistCalls || []).slice().sort(function(a, b) {
     return _callSortKey(b) - _callSortKey(a);
   });
-  var nNew = all.filter(function(c) { return (c.status || 'new') === 'new'; }).length;
+  var nNew = all.filter(function(c) { return _callIsOpenQueue(c); }).length;
 
   if (pillsEl) {
     var pills = [
@@ -14911,7 +15051,7 @@ function renderReceptionistCalls() {
     return;
   }
 
-  var filtered = _callsFilter === 'all' ? all : all.filter(function(c) { return (c.status || 'new') === 'new'; });
+  var filtered = _callsFilter === 'all' ? all : all.filter(function(c) { return _callIsOpenQueue(c); });
   if (!filtered.length) {
     listEl.innerHTML = '<div class="card" style="text-align:center;padding:32px;color:var(--text4);font-size:13px;">' + (_callsFilter === 'new' ? 'No new calls' : 'No calls yet') + '</div>';
     return;
@@ -14995,6 +15135,7 @@ function openCallDetail(id) {
     handledLine = '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Handled'
       + (_callWhenLabel(c.handledAt) ? ' · ' + _callEsc(_callWhenLabel(c.handledAt)) : '')
       + (c.handledBy ? ' · ' + _callEsc(c.handledBy) : '')
+      + (c.handledReason ? ' · ' + _callEsc(c.handledReason) : '')
       + '</div>';
   }
   var safeId = _callEsc(window._openCallId);
@@ -16512,6 +16653,17 @@ function startCallsFixture() {
       status: 'new', source: 'ara', createdAt: hungStart
     },
     {
+      id: 'CA_example_blank_message', callSid: 'CA_example_blank_message',
+      from: '+15555550106', callerName: 'Blank Example',
+      startedAt: hungStart, endedAt: _fixturePlusSec(hungStart, 12), durationSec: 12,
+      kind: 'message', callbackAt: null,
+      reason: null, message: '   ', summary: null,
+      transcript: [
+        { role: 'ara', text: 'I can take a message.' }
+      ],
+      status: 'new', source: 'ara', createdAt: hungStart
+    },
+    {
       id: 'CA_example_handled', callSid: 'CA_example_handled',
       from: '+15555550105', callerName: 'Pat Example',
       startedAt: cbHandled, endedAt: _fixturePlusSec(cbHandled, 64), durationSec: 64,
@@ -16529,6 +16681,7 @@ function startCallsFixture() {
       note: 'Called back. They only had a billing question.'
     }
   ];
+  try { autoHandleNoMessageCalls(); } catch (eAuto) { console.warn(eAuto); }
   window._dlFixtureReady = true;
   _calSel = day;
   _calMonth = day.slice(0, 8) + '01';
