@@ -14,6 +14,7 @@ const NEVER_CACHE = [
   'googleapis.com',
   'index.html',
   'sw.js',
+  'bills-model.js',
 ];
 
 self.addEventListener('install', function(event) {

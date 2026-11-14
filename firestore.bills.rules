@@ -1,0 +1,183 @@
+// FRAGMENT — paste this inside the existing
+//   match /databases/{database}/documents { ... }
+// block, next to the other matches. Do not deploy this file by itself.
+// It is not a complete ruleset. The live rules file is not in this
+// repository. The owner publishes rules separately. Do not deploy until
+// the owner approves.
+//
+// Bills & Expenses is manager-only: bank snapshots, the must-pay list,
+// month payments, and QuickBooks invoice rows. Crew phones must not read
+// or write any of these. There is no live bank or QuickBooks connection;
+// the app stores what a manager types, plus an as-of date and a source.
+//
+// isManager() is the existing helper (verified manager email).
+// These matches must not sit under a broader allow. A catch-all
+// match /{document=**} that lets any signed-in user read every
+// collection would defeat them — do not add one.
+//
+// Docs:
+//   finance/balances
+//     { kind:'balances',
+//       chase0714: { amount, asOf, source },
+//       boa1003:   { amount, asOf, source },
+//       quickbooks:{ asOf, source, connected },
+//       updatedAt, updatedBy }
+//   bills/{id}
+//     monthly template (recurrence 'monthly' + dueDay) or a one-time bill.
+//     type 'credit_card' (or variableAmount true) is a card payment:
+//     the app asks for the amount paid instead of assuming the minimum.
+//   billPayments/{id}
+//     one paid month. id is pay_{billId}_{YYYY-MM}. Marking paid writes
+//     this doc only. Next month has no doc, so the template shows unpaid.
+//   financeInvoices/{id}
+//     outstanding QuickBooks (or hand-entered) invoices.
+
+function billsMoneyOk(n) {
+  return n is number && n >= 0 && n <= 100000000;
+}
+
+// The web SDK writes whole numbers as doubles, so `is int` would reject
+// a due day the manager just saved. math.round keeps 1.5 out.
+function billsWholeOk(n) {
+  return n is number && n == math.round(n);
+}
+
+function billsBalanceSlotOk(slot) {
+  return slot.keys().hasOnly(['amount', 'asOf', 'source'])
+    && (slot.amount == null || billsMoneyOk(slot.amount))
+    && (slot.asOf == null || (slot.asOf is string && slot.asOf.size() <= 40))
+    && (slot.source is string && slot.source.size() <= 40);
+}
+
+function billsQuickbooksSlotOk(slot) {
+  return slot.keys().hasOnly(['asOf', 'source', 'connected'])
+    && (slot.asOf == null || (slot.asOf is string && slot.asOf.size() <= 40))
+    && (slot.source is string && slot.source.size() <= 40)
+    && slot.connected is bool;
+}
+
+function financeBalancesOk(data) {
+  return data.keys().hasOnly([
+      'id', 'kind', 'chase0714', 'boa1003', 'quickbooks', 'updatedAt', 'updatedBy'
+    ])
+    && data.kind == 'balances'
+    && billsBalanceSlotOk(data.chase0714)
+    && billsBalanceSlotOk(data.boa1003)
+    && billsQuickbooksSlotOk(data.quickbooks)
+    && data.updatedAt is string
+    && data.updatedBy is string;
+}
+
+function billCategoryOk(category) {
+  return category in [
+    'Payroll',
+    'Vehicles & equipment',
+    'Loans',
+    'Rent & storage',
+    'Insurance',
+    'Fuel',
+    'Services/software/phone',
+    'Crew operating',
+    'Card minimums/Affirm',
+    'Personal'
+  ];
+}
+
+function billTemplateOk(data) {
+  return data.keys().hasOnly([
+      'id', 'name', 'category', 'amount', 'recurrence', 'dueDay', 'dueDate',
+      'type', 'variableAmount', 'notes', 'active', 'createdAt', 'updatedAt', 'updatedBy'
+    ])
+    && data.name is string
+    && data.name.size() > 0
+    && data.name.size() <= 200
+    && billCategoryOk(data.category)
+    && billsMoneyOk(data.amount)
+    && data.recurrence in ['monthly', 'once']
+    && data.type in ['fixed', 'credit_card']
+    && data.variableAmount is bool
+    && data.notes is string
+    && data.notes.size() <= 2000
+    && data.active is bool
+    && data.createdAt is string
+    && data.updatedAt is string
+    && data.updatedBy is string
+    && (
+      (data.recurrence == 'monthly'
+        && billsWholeOk(data.dueDay)
+        && data.dueDay >= 1
+        && data.dueDay <= 31
+        && data.dueDate == null)
+      || (data.recurrence == 'once'
+        && data.dueDate is string
+        && data.dueDate.size() == 10
+        && data.dueDay == null)
+    );
+}
+
+function billPaymentOk(data) {
+  return data.keys().hasOnly([
+      'id', 'billId', 'month', 'amountPaid', 'paidAt', 'paidBy', 'status', 'expectedAmount'
+    ])
+    && data.billId is string
+    && data.billId.size() > 0
+    && data.billId.size() <= 120
+    && data.month is string
+    && data.month.size() == 7
+    && billsMoneyOk(data.amountPaid)
+    && data.paidAt is string
+    && data.paidAt.size() == 10
+    && data.paidBy is string
+    && data.paidBy.size() <= 200
+    && data.status == 'paid'
+    && billsMoneyOk(data.expectedAmount);
+}
+
+function financeInvoiceOk(data) {
+  return data.keys().hasOnly([
+      'id', 'customer', 'invoiceNumber', 'amount', 'dueDate', 'status',
+      'source', 'notes', 'createdAt', 'updatedAt', 'updatedBy'
+    ])
+    && data.customer is string
+    && data.customer.size() > 0
+    && data.customer.size() <= 200
+    && data.invoiceNumber is string
+    && data.invoiceNumber.size() > 0
+    && data.invoiceNumber.size() <= 60
+    && billsMoneyOk(data.amount)
+    && data.dueDate is string
+    && data.dueDate.size() == 10
+    && data.status in ['open', 'paid']
+    && data.source in ['manual', 'quickbooks']
+    && data.notes is string
+    && data.notes.size() <= 2000
+    && data.createdAt is string
+    && data.updatedAt is string
+    && data.updatedBy is string;
+}
+
+match /finance/{docId} {
+  allow read: if isManager();
+  allow create, update: if isManager()
+    && docId == 'balances'
+    && financeBalancesOk(request.resource.data);
+  allow delete: if isManager();
+}
+
+match /bills/{billId} {
+  allow read: if isManager();
+  allow create, update: if isManager() && billTemplateOk(request.resource.data);
+  allow delete: if isManager();
+}
+
+match /billPayments/{paymentId} {
+  allow read: if isManager();
+  allow create, update: if isManager() && billPaymentOk(request.resource.data);
+  allow delete: if isManager();
+}
+
+match /financeInvoices/{invoiceId} {
+  allow read: if isManager();
+  allow create, update: if isManager() && financeInvoiceOk(request.resource.data);
+  allow delete: if isManager();
+}
