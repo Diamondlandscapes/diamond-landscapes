@@ -1778,7 +1778,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-11-14-v77'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-11-14-v78'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 // Local fixtures for tests. Only localhost, and only with ?fixture=lexington,
 // ?fixture=calls, ?fixture=jobcost, or ?fixture=bills. Never set on the live
@@ -2300,6 +2300,7 @@ function applyRole(r) {
     <div id="nav-tabs-wrap">
     <div class="nav-group-label">Overview</div>
     <button class="nb active" onclick="switchTab('dashboard')" data-tab="dashboard"><span class="ni"><i class="ti ti-layout-dashboard"></i></span><span class="nl">Dashboard</span></button>
+    <button class="nb" onclick="switchTab('bills')" data-tab="bills"><span class="ni"><i class="ti ti-receipt"></i></span><span class="nl">Bills & Expenses</span><i class="ti ti-lock bills-lock" aria-hidden="true"></i></button>
     <div class="nav-group-label" style="margin-top:10px;">Operations</div>
     <button class="nb" onclick="switchTab('routes')" data-tab="routes"><span class="ni"><i class="ti ti-route"></i></span><span class="nl">Routes</span></button>
     <button class="nb" onclick="switchTab('schedule')" data-tab="schedule"><span class="ni"><i class="ti ti-calendar-week"></i></span><span class="nl">Schedule</span></button>
@@ -2316,7 +2317,6 @@ function applyRole(r) {
     <div class="nav-group-label" style="margin-top:10px;">Reporting</div>
     <button class="nb" onclick="switchTab('reports')" data-tab="reports"><span class="ni"><i class="ti ti-chart-bar"></i></span><span class="nl">Reports</span></button>
     <button class="nb" onclick="switchTab('jobcost')" data-tab="jobcost"><span class="ni"><i class="ti ti-calculator"></i></span><span class="nl">Job costing</span></button>
-    <button class="nb" onclick="switchTab('bills')" data-tab="bills"><span class="ni"><i class="ti ti-receipt"></i></span><span class="nl">Bills & Expenses</span><i class="ti ti-lock bills-lock" aria-hidden="true"></i></button>
     <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni"><i class="ti ti-calendar-check"></i></span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
@@ -11205,6 +11205,7 @@ function signOut() {
   // reset nav to manager default so it's ready
   document.getElementById('nav').innerHTML = `<div id="nav-tabs-wrap">
     <button class="nb active" onclick="switchTab('dashboard')" data-tab="dashboard"><span class="ni">⚡</span><span class="nl">Dashboard</span></button>
+    <button class="nb" onclick="switchTab('bills')" data-tab="bills"><span class="ni"><i class="ti ti-receipt"></i></span><span class="nl">Bills & Expenses</span><i class="ti ti-lock bills-lock" aria-hidden="true"></i></button>
     <button class="nb" onclick="switchTab('routes')" data-tab="routes"><span class="ni">🗺️</span><span class="nl">Routes</span></button>
     <button class="nb" onclick="switchTab('schedule')" data-tab="schedule"><span class="ni">📅</span><span class="nl">Schedule</span></button>
     <button class="nb" onclick="switchTab('properties')" data-tab="properties"><span class="ni">🏡</span><span class="nl">Properties</span></button>
@@ -11214,7 +11215,6 @@ function signOut() {
     <button class="nb" onclick="switchTab('equipment')" data-tab="equipment"><span class="ni">🔧</span><span class="nl">Equipment</span></button>
     <button class="nb" onclick="switchTab('reports')" data-tab="reports"><span class="ni">📊</span><span class="nl">Reports</span></button>
     <button class="nb" onclick="switchTab('jobcost')" data-tab="jobcost"><span class="ni">🧮</span><span class="nl">Job costing</span></button>
-    <button class="nb" onclick="switchTab('bills')" data-tab="bills"><span class="ni"><i class="ti ti-receipt"></i></span><span class="nl">Bills & Expenses</span><i class="ti ti-lock bills-lock" aria-hidden="true"></i></button>
     <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
     <button class="nb" onclick="switchTab('customerrequests')" data-tab="customerrequests"><span class="ni">💬</span><span class="nl">Customer Requests</span></button>
     <button class="nb" onclick="switchTab('calls')" data-tab="calls"><span class="ni"><i class="ti ti-phone-incoming"></i></span><span class="nl">Calls</span><span class="n-badge" id="nav-calls-count" style="display:none;"></span></button>
@@ -12812,6 +12812,7 @@ function exportDailyReport() {
 // ─── HAMBURGER DRAWER ─────────────────────────────────────────────────────
 const MANAGER_MENU = [
   { tab:'dashboard', icon:'⚡', label:'Dashboard' },
+  { tab:'bills',     icon:'🔒', label:'Bills & Expenses' },
   { tab:'routes',    icon:'🗺️', label:'Routes' },
   { tab:'properties',icon:'🏡', label:'Properties' },
   { tab:'propmap',   icon:'📍', label:'Property Map' },
@@ -12820,7 +12821,6 @@ const MANAGER_MENU = [
   { tab:'equipment', icon:'🔧', label:'Equipment' },
   { tab:'reports',   icon:'📊', label:'Reports' },
   { tab:'jobcost',   icon:'🧮', label:'Job costing' },
-  { tab:'bills',     icon:'🔒', label:'Bills & Expenses' },
   { tab:'schedule',  icon:'📅', label:'Schedule' },
   { tab:'workorders', icon:'📋', label:'Work Orders' },
   { tab:'customerrequests', icon:'💬', label:'Customer Requests' },
@@ -12895,10 +12895,10 @@ function buildDrawerItems(menuItems, activeTab) {
     // Same grouping as the desktop sidebar (Overview / Operations / Data / Reporting)
     // so the mobile drawer and desktop nav look consistent, not like two different apps.
     var groups = [
-      { label: 'Overview',  tabs: ['dashboard'] },
+      { label: 'Overview',  tabs: ['dashboard','bills'] },
       { label: 'Operations',tabs: ['routes','schedule','workorders','customerrequests','calls','calendar'] },
       { label: 'Data',      tabs: ['properties','propmap','crew','inventory','equipment'] },
-      { label: 'Reporting', tabs: ['reports','jobcost','bills','attendance'] },
+      { label: 'Reporting', tabs: ['reports','jobcost','attendance'] },
     ];
     var byTab = {}; menuItems.forEach(function(m){ byTab[m.tab] = m; });
     html = groups.map(function(g) {
