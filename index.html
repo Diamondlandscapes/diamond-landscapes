@@ -154,6 +154,20 @@ select.inp{cursor:pointer;}
   cursor:pointer;white-space:nowrap;background:transparent;color:var(--text3);transition:all .2s;
   font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:.2px;}
 .pill.active{background:var(--green2);color:#fff;border-color:var(--green2);}
+.bills-balance-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;}
+.bills-bal{margin:0 !important;padding:8px 6px !important;min-width:0;}
+button.bills-bal{font-family:inherit;color:inherit;text-align:left;width:100%;cursor:pointer;background:var(--bg2);}
+.bills-bal-label{font-size:9px;font-weight:800;letter-spacing:.15px;color:var(--text3);text-transform:uppercase;line-height:1.25;}
+.bills-bal-amt{font-size:14px;font-weight:800;margin-top:3px;letter-spacing:-.3px;line-height:1.15;word-break:break-word;}
+.bills-bal-meta{font-size:9px;color:var(--text3);margin-top:3px;line-height:1.35;}
+.bills-flag{display:inline-block;font-size:8px;font-weight:800;letter-spacing:.2px;padding:1px 4px;border-radius:6px;line-height:1.35;margin-top:4px;}
+.bills-flag-warn{color:var(--yellow);background:rgba(227,179,65,.12);border:1px solid rgba(227,179,65,.35);}
+.bills-flag-off{color:var(--text2);background:var(--bg3);border:1px solid var(--border);}
+.bills-cash{font-size:12px;color:var(--text2);margin:2px 0 14px;line-height:1.4;}
+.bills-stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;}
+.bills-stat{margin:0 !important;padding:8px 10px !important;}
+.bills-split{display:flex;flex-direction:column;gap:12px;}
+.bills-lock{font-size:12px !important;margin-left:auto;opacity:.55;width:auto !important;flex-shrink:0;}
 
 /* panels */
 .panel{position:fixed;inset:0;z-index:200;display:none;flex-direction:column;
@@ -363,6 +377,16 @@ select.inp{cursor:pointer;}
 
   /* wider cards */
   .card { border-radius: 18px !important; padding: 22px !important; }
+  .bills-bal { padding: 14px 14px !important; }
+  .bills-stat { padding: 12px 14px !important; }
+  .bills-balance-row { gap: 10px; }
+  .bills-bal-label { font-size: 11px; }
+  .bills-bal-amt { font-size: 22px; }
+  .bills-bal-meta, .bills-flag { font-size: 11px; }
+  .bills-stats { grid-template-columns: repeat(5, 1fr); }
+  .bills-split { flex-direction: row; align-items: center; }
+  .bills-donut { flex: 0 0 168px; }
+  .bills-bars { flex: 1; min-width: 0; }
   .card-flat { border-radius: 12px !important; }
 
   /* dashboard — 4 col stat grid */
@@ -1173,6 +1197,10 @@ select.inp{cursor:pointer;}
       <div id="jobcost-root"></div>
     </div>
 
+    <div id="screen-bills" class="screen">
+      <div id="bills-root"></div>
+    </div>
+
     <div id="screen-reports" class="screen">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
         <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:20px;font-weight:800;">Reports</div>
@@ -1734,6 +1762,7 @@ select.inp{cursor:pointer;}
     <div class="drawer-footer" style="display:none;"></div>
   </div>
 
+<script src="scripts/bills-model.js"></script>
 <script>
 // ─── DATA ────────────────────────────────────────────────────────────────
 const SERVICES = ['Mow & Edge','Blow & Clean','Mulch Refresh','Rock Refresh','Irrigation Check','Fertilize','Trim Shrubs','Weed Control','Aeration','Leaf Removal'];
@@ -1749,18 +1778,18 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-11-11-v76'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-11-14-v77'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 // Local fixtures for tests. Only localhost, and only with ?fixture=lexington,
-// ?fixture=calls, or ?fixture=jobcost. Never set on the live GitHub Pages
-// host, so a test cannot publish a version or write production Firestore.
+// ?fixture=calls, ?fixture=jobcost, or ?fixture=bills. Never set on the live
+// GitHub Pages host, so a test cannot publish a version or write production Firestore.
 window._dlFixture = false;
 window._dlFixtureName = '';
 try {
   var _dlHost = location.hostname;
   var _dlQs = new URLSearchParams(location.search);
   window._dlFixtureName = _dlQs.get('fixture') || '';
-  window._dlFixture = (_dlHost === 'localhost' || _dlHost === '127.0.0.1') && (window._dlFixtureName === 'lexington' || window._dlFixtureName === 'calls' || window._dlFixtureName === 'jobcost');
+  window._dlFixture = (_dlHost === 'localhost' || _dlHost === '127.0.0.1') && (window._dlFixtureName === 'lexington' || window._dlFixtureName === 'calls' || window._dlFixtureName === 'jobcost' || window._dlFixtureName === 'bills');
 } catch (eFix) { window._dlFixture = false; window._dlFixtureName = ''; }
 
 // Compares two 'YYYY-MM-DD-vN' version strings correctly (numeric vN, not lexicographic —
@@ -1882,6 +1911,10 @@ async function load() {
   // in _crewPrivateById after a verified manager listener, never in IndexedDB.
   state.crewPrivate = [];
   state.jobCosting = [];
+  state.finance = [];
+  state.bills = [];
+  state.billPayments = [];
+  state.financeInvoices = [];
   (state.properties || []).forEach(function(p) {
     if (!p) return;
     delete p.budgetHoursPerVisit;
@@ -1898,7 +1931,9 @@ async function load() {
     var pq = JSON.parse(localStorage.getItem('dl_pending_writes') || '[]');
     if (Array.isArray(pq)) {
       var pqFiltered = pq.filter(function(item) {
-        if (!item || (item.table !== 'crewPrivate' && item.table !== 'jobCosting')) return true;
+        if (!item) return false;
+        if (typeof _billsPrivateTable === 'function' && _billsPrivateTable(item.table)) return false;
+        if (item.table !== 'crewPrivate' && item.table !== 'jobCosting') return true;
         return item.op === 'delete'; // id only — never keep a queued pay or job-cost payload
       });
       if (pqFiltered.length !== pq.length) localStorage.setItem('dl_pending_writes', JSON.stringify(pqFiltered));
@@ -1937,6 +1972,10 @@ function save() {
     // listener briefly assigned the collection or a crew doc still carried it.
     slim.crewPrivate = [];
     slim.jobCosting = []; // site days and break-even stay in manager memory, not the shared cache
+    slim.finance = [];
+    slim.bills = [];
+    slim.billPayments = [];
+    slim.financeInvoices = [];
     slim.receptionistCalls = []; // never cache call transcripts/numbers on device
     (slim.properties || []).forEach(function(p) {
       if (!p) return;
@@ -1998,6 +2037,10 @@ function switchTab(tab) {
   if (tab === 'jobcost' && state.role !== 'manager') {
     tab = state.role === 'field' ? 'field' : 'dashboard';
   }
+  // Bills & expenses is bank balances, must-pays, and invoices. Crew never get it.
+  if (tab === 'bills' && state.role !== 'manager') {
+    tab = state.role === 'field' ? 'field' : 'dashboard';
+  }
   // Property map is the full record (notes, rates, contact). Crew never get it.
   // The properties tab is the name/address list, and only with the permission.
   if (tab === 'propmap' && state.role !== 'manager') {
@@ -2043,7 +2086,7 @@ function switchTab(tab) {
     schedule: renderSchedule, 'crew-week': renderCrewWeek, field: renderFieldView,
     workorders: renderWorkOrders, 'wo-crew': renderCrewWorkOrders, attendance: renderAttendance,
     customerrequests: renderCustomerRequests, calls: renderReceptionistCalls, calendar: renderCalendar,
-    jobcost: renderJobCost };
+    jobcost: renderJobCost, bills: renderBills };
   renders[tab]?.();
 }
 
@@ -2163,6 +2206,7 @@ async function managerEmailLogin() {
     if (typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener();
     if (typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener();
     if (typeof _ensureJobCostListener === 'function') _ensureJobCostListener();
+    if (typeof _ensureBillsListener === 'function') _ensureBillsListener();
   } catch (e) {
     console.warn('Manager email sign-in failed:', e && e.message);
     if (errEl) errEl.textContent = '✕ Sign-in failed — check email/password.';
@@ -2214,9 +2258,11 @@ function applyRole(r) {
   if (r !== 'manager' && typeof _clearPropertyPrivate === 'function') _clearPropertyPrivate(); // RATE SPLIT: never carry rates into crew/guest (strips merged rates before save() below)
   if (r !== 'manager' && typeof _clearCrewPrivate === 'function') _clearCrewPrivate(); // PAY SPLIT: never carry crew pay into crew/guest
   if (r !== 'manager' && typeof _clearJobCost === 'function') _clearJobCost(); // job costing is rates and break-even — crew screens stay clear of it
+  if (r !== 'manager' && typeof _clearBills === 'function') _clearBills(); // bills are bank balances and must-pays — crew screens stay clear of them
   if (r === 'manager' && typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener(); // no-op until a verified manager auth session exists
   if (r === 'manager' && typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener(); // no-op until a verified manager auth session exists
   if (r === 'manager' && typeof _ensureJobCostListener === 'function') _ensureJobCostListener();
+  if (r === 'manager' && typeof _ensureBillsListener === 'function') _ensureBillsListener();
   if (r === 'manager' && typeof _ensureReceptionistCallsListener === 'function') _ensureReceptionistCallsListener();
   if (typeof _syncPropertyDirectoryAccess === 'function') _syncPropertyDirectoryAccess();
   save();
@@ -2270,6 +2316,7 @@ function applyRole(r) {
     <div class="nav-group-label" style="margin-top:10px;">Reporting</div>
     <button class="nb" onclick="switchTab('reports')" data-tab="reports"><span class="ni"><i class="ti ti-chart-bar"></i></span><span class="nl">Reports</span></button>
     <button class="nb" onclick="switchTab('jobcost')" data-tab="jobcost"><span class="ni"><i class="ti ti-calculator"></i></span><span class="nl">Job costing</span></button>
+    <button class="nb" onclick="switchTab('bills')" data-tab="bills"><span class="ni"><i class="ti ti-receipt"></i></span><span class="nl">Bills & Expenses</span><i class="ti ti-lock bills-lock" aria-hidden="true"></i></button>
     <button class="nb" onclick="switchTab('attendance')" data-tab="attendance"><span class="ni"><i class="ti ti-calendar-check"></i></span><span class="nl">Attendance</span></button>
     </div>
     <div id="nav-utils-inner">
@@ -4720,6 +4767,615 @@ function startJobCostFixture() {
 window.computeJobCostReport = computeJobCostReport;
 window.jobCostSelfCheck = jobCostSelfCheck;
 
+
+// ── Bills & Expenses (manager only) ──────────────────────────────────────
+// Bank boxes, the month's must-pays, and QuickBooks invoices. Numbers come
+// from manager-only Firestore docs. A missing amount stays an em dash.
+// Monthly templates are derived per month; a payment doc covers that month
+// only, so next month shows the bill unpaid again. Nothing here is cached
+// in IndexedDB or the offline write queue.
+var _financeBalances = null;
+var _billsTemplates = [];
+var _billPayments = [];
+var _financeInvoices = [];
+
+function _billsPrivateTable(table) {
+  return table === 'finance' || table === 'bills' || table === 'billPayments' || table === 'financeInvoices';
+}
+function _billsApi() { return window.Bills || null; }
+
+function _ensureBillsListener() {
+  if (!window._managerSessionUnlocked) return;
+  if (state.role !== 'manager' || !_db) return;
+  var u = window._fbAuth && window._fbAuth.currentUser;
+  if (!u || u.isAnonymous || !u.emailVerified) return;
+  ['finance', 'bills', 'billPayments', 'financeInvoices'].forEach(function(name) {
+    if (!_listeners[name]) _listenCollection(name);
+  });
+}
+function _clearBills() {
+  ['finance', 'bills', 'billPayments', 'financeInvoices'].forEach(function(name) {
+    try { if (_listeners[name]) { _listeners[name](); delete _listeners[name]; } } catch (e) {}
+  });
+  _financeBalances = null;
+  _billsTemplates = [];
+  _billPayments = [];
+  _financeInvoices = [];
+  state.finance = [];
+  state.bills = [];
+  state.billPayments = [];
+  state.financeInvoices = [];
+  window._billsUnreadable = false;
+  var root = document.getElementById('bills-root');
+  if (root) root.innerHTML = '';
+  var sheet = document.getElementById('bills-sheet');
+  if (sheet) sheet.remove();
+}
+function _applyBillsDocs(name, docs) {
+  docs = docs || [];
+  if (name === 'finance') {
+    var bal = null;
+    docs.forEach(function(d) { if (d && (d.id === 'balances' || d.kind === 'balances')) bal = d; });
+    _financeBalances = bal;
+  } else if (name === 'bills') _billsTemplates = docs;
+  else if (name === 'billPayments') _billPayments = docs;
+  else if (name === 'financeInvoices') _financeInvoices = docs;
+  window._billsUnreadable = false;
+}
+
+function billsCloseSheet() {
+  var sheet = document.getElementById('bills-sheet');
+  if (sheet) sheet.remove();
+}
+function billsOpenSheet(inner) {
+  billsCloseSheet();
+  var sheet = document.createElement('div');
+  sheet.id = 'bills-sheet';
+  sheet.className = 'overlay open';
+  sheet.innerHTML = '<div class="sheet" style="max-height:92vh;overflow:auto;">' + inner + '</div>';
+  document.body.appendChild(sheet);
+}
+function billsField(id) {
+  var el = document.getElementById(id);
+  return el ? el.value : '';
+}
+function billsShift(delta) {
+  var B = _billsApi();
+  if (!B || state.role !== 'manager') return;
+  if (!window._billsMonth) window._billsMonth = B.monthKeyOf(new Date());
+  window._billsMonth = B.addMonths(window._billsMonth, delta);
+  renderBills();
+}
+function billsSetFilter(f) {
+  window._billsFilter = f || 'all';
+  renderBills();
+}
+function billsScrollInvoices() {
+  var el = document.getElementById('bills-invoices');
+  if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function billsCurrentInstances() {
+  var B = _billsApi();
+  if (!B) return [];
+  var today = B.todayISO(new Date());
+  var ym = window._billsMonth || B.monthKeyOf(new Date());
+  return B.sortInstances(B.instancesForMonth(_billsTemplates, _billPayments, ym, today));
+}
+function billsFindInstance(billId) {
+  var rows = billsCurrentInstances();
+  for (var i = 0; i < rows.length; i++) if (rows[i].billId === billId) return rows[i];
+  return null;
+}
+function billsStatusPill(status) {
+  var map = {
+    overdue: ['badge-red', 'Overdue'],
+    due_soon: ['badge-yellow', 'Due soon'],
+    upcoming: ['badge-blue', 'Upcoming'],
+    paid: ['badge-green', 'Paid']
+  };
+  var pair = map[status] || ['badge-blue', status || ''];
+  return '<div style="margin-top:4px;"><span class="badge ' + pair[0] + '">' + pair[1] + '</span></div>';
+}
+function billsFlag(badge) {
+  if (badge === 'unverified') return '<div class="bills-flag bills-flag-warn">Unverified</div>';
+  if (badge === 'not_connected') return '<div class="bills-flag bills-flag-off">Not connected</div>';
+  return '';
+}
+function billsCommitPayment(inst, amount, paidAt) {
+  if (state.role !== 'manager' || !inst) return;
+  var B = _billsApi();
+  var who = window._managerAuthEmail || (window._dlFixtureName === 'bills' ? 'sample-manager' : '');
+  var pay = B.buildPayment(inst, amount, paidAt, who);
+  if (!pay) { toast('Enter the amount paid'); return; }
+  _billPayments = _billPayments.filter(function(p) {
+    return !(p && p.billId === inst.billId && p.month === inst.month);
+  }).concat([pay]);
+  if (!window._dlFixture) {
+    try { gsSave('billPayments', pay); } catch (e) { console.warn('bill payment save failed', e); }
+  }
+  billsCloseSheet();
+  renderBills();
+  toast(window._billsUnreadable ? 'Saved on this screen only' : 'Marked paid');
+}
+function billsMarkPaid(billId) {
+  if (state.role !== 'manager') return;
+  var inst = billsFindInstance(billId);
+  if (!inst || inst.paid) return;
+  if (inst.variableAmount) { billsOpenPay(billId, false); return; }
+  var B = _billsApi();
+  billsCommitPayment(inst, inst.amount, B.todayISO(new Date()));
+}
+function billsOpenPay(billId, editing) {
+  if (state.role !== 'manager') return;
+  var B = _billsApi();
+  var inst = billsFindInstance(billId);
+  if (!inst || !B) return;
+  window._billsPayId = billId;
+  var prefill = (editing && inst.amountPaid != null) ? inst.amountPaid : inst.amount;
+  var date = (editing && inst.paidAt) ? inst.paidAt : B.todayISO(new Date());
+  var title = editing ? 'Edit payment' : 'Card payment';
+  var copy = inst.variableAmount
+    ? 'Enter the amount you paid. The minimum is prefilled. This saves this month only — next month the bill shows unpaid again.'
+    : 'Change the amount or the date. Undo puts the bill back to unpaid for this month.';
+  var html = '<div class="sheet-title">' + escHtml(title) + '</div>';
+  html += '<div style="font-size:13px;font-weight:700;margin-bottom:4px;">' + escHtml(inst.name) + '</div>';
+  html += '<div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.45;">' + escHtml(copy) + '</div>';
+  html += '<div class="sec-title">Amount paid</div>';
+  html += '<input class="inp" id="bills-pay-amount" type="number" min="0" step="0.01" inputmode="decimal" value="' + escHtml(String(prefill)) + '"/>';
+  html += '<div class="sec-title">Date paid</div>';
+  html += '<input class="inp" id="bills-pay-date" type="date" value="' + escHtml(date) + '" style="color-scheme:dark;"/>';
+  html += '<button type="button" class="btn btn-green" onclick="billsConfirmPay()">Save</button>';
+  if (editing) html += '<button type="button" class="btn btn-outline" style="margin-top:8px;" onclick="billsUndoPaid(\'' + escHtml(billId) + '\')">Undo paid</button>';
+  html += '<button type="button" class="btn btn-outline" style="margin-top:8px;" onclick="billsCloseSheet()">Cancel</button>';
+  billsOpenSheet(html);
+  var input = document.getElementById('bills-pay-amount');
+  if (input) { input.focus(); input.select(); }
+}
+function billsConfirmPay() {
+  if (state.role !== 'manager') return;
+  var inst = billsFindInstance(window._billsPayId);
+  if (!inst) return;
+  billsCommitPayment(inst, billsField('bills-pay-amount'), billsField('bills-pay-date'));
+}
+function billsUndoPaid(billId) {
+  if (state.role !== 'manager') return;
+  var inst = billsFindInstance(billId);
+  if (!inst) return;
+  var id = inst.paymentId;
+  _billPayments = _billPayments.filter(function(p) {
+    return !(p && p.billId === billId && p.month === inst.month);
+  });
+  if (!window._dlFixture && id) {
+    try { gsDelete('billPayments', id); } catch (e) { console.warn('bill payment delete failed', e); }
+  }
+  billsCloseSheet();
+  renderBills();
+  toast('Marked unpaid');
+}
+function billsEditRecurrenceChanged() {
+  var v = billsField('bills-edit-recurrence');
+  var day = document.getElementById('bills-edit-day-wrap');
+  var date = document.getElementById('bills-edit-date-wrap');
+  if (day) day.style.display = v === 'monthly' ? '' : 'none';
+  if (date) date.style.display = v === 'once' ? '' : 'none';
+}
+function billsOpenEdit(billId) {
+  if (state.role !== 'manager') return;
+  var B = _billsApi();
+  if (!B) return;
+  var bill = null;
+  if (billId) _billsTemplates.forEach(function(b) { if (b && b.id === billId) bill = b; });
+  window._billsEditId = bill ? bill.id : '';
+  var html = '<div class="sheet-title">' + (bill ? 'Edit bill' : 'Add bill') + '</div>';
+  html += '<div class="sec-title">Name</div><input class="inp" id="bills-edit-name" value="' + escHtml(bill ? bill.name : '') + '" placeholder="Shop rent"/>';
+  html += '<div class="sec-title">Category</div><select class="inp" id="bills-edit-category">';
+  B.CATEGORIES.forEach(function(c) {
+    html += '<option value="' + escHtml(c) + '"' + (bill && bill.category === c ? ' selected' : '') + '>' + escHtml(c) + '</option>';
+  });
+  html += '</select>';
+  html += '<div class="sec-title">Amount</div><input class="inp" id="bills-edit-amount" type="number" min="0" step="0.01" inputmode="decimal" value="' + (bill ? escHtml(String(bill.amount)) : '') + '" placeholder="0"/>';
+  html += '<div style="display:flex;gap:8px;">';
+  html += '<div style="flex:1;"><div class="sec-title">Repeats</div><select class="inp" id="bills-edit-recurrence" onchange="billsEditRecurrenceChanged()">';
+  html += '<option value="monthly"' + (!bill || bill.recurrence !== 'once' ? ' selected' : '') + '>Monthly</option>';
+  html += '<option value="once"' + (bill && bill.recurrence === 'once' ? ' selected' : '') + '>One time</option></select></div>';
+  html += '<div style="flex:1;"><div class="sec-title">Type</div><select class="inp" id="bills-edit-type">';
+  html += '<option value="fixed"' + (!bill || bill.type !== 'credit_card' ? ' selected' : '') + '>Fixed amount</option>';
+  html += '<option value="credit_card"' + (bill && bill.type === 'credit_card' ? ' selected' : '') + '>Credit card</option></select></div></div>';
+  var showDay = !bill || bill.recurrence !== 'once';
+  html += '<div id="bills-edit-day-wrap" style="' + (showDay ? '' : 'display:none;') + '"><div class="sec-title">Due day</div>';
+  html += '<input class="inp" id="bills-edit-day" type="number" min="1" max="31" value="' + escHtml(bill && bill.dueDay ? String(bill.dueDay) : '1') + '"/></div>';
+  html += '<div id="bills-edit-date-wrap" style="' + (showDay ? 'display:none;' : '') + '"><div class="sec-title">Due date</div>';
+  html += '<input class="inp" id="bills-edit-date" type="date" value="' + escHtml(bill && bill.dueDate ? bill.dueDate : '') + '" style="color-scheme:dark;"/></div>';
+  html += '<div class="sec-title">Notes</div><textarea class="inp" id="bills-edit-notes" rows="2" placeholder="Optional">' + escHtml(bill ? (bill.notes || '') : '') + '</textarea>';
+  html += '<div style="font-size:11px;color:var(--text3);margin:-4px 0 10px;line-height:1.4;">A monthly bill shows up again next month, unpaid, until that month is marked paid. Credit card asks for the amount you actually paid.</div>';
+  html += '<button type="button" class="btn btn-green" onclick="billsSaveEdit()">Save</button>';
+  if (bill) html += '<button type="button" class="btn btn-outline" style="margin-top:8px;color:var(--red);border-color:rgba(248,81,73,.4);" onclick="billsDeleteEditing()">Delete bill</button>';
+  html += '<button type="button" class="btn btn-outline" style="margin-top:8px;" onclick="billsCloseSheet()">Cancel</button>';
+  billsOpenSheet(html);
+}
+function billsSaveEdit() {
+  if (state.role !== 'manager') return;
+  var B = _billsApi();
+  if (!B) return;
+  var id = window._billsEditId || ('bill_' + uid());
+  var prev = null;
+  _billsTemplates.forEach(function(b) { if (b && b.id === id) prev = b; });
+  var prepared = B.prepareTemplate({
+    id: id,
+    name: billsField('bills-edit-name'),
+    category: billsField('bills-edit-category'),
+    amount: billsField('bills-edit-amount'),
+    recurrence: billsField('bills-edit-recurrence'),
+    dueDay: billsField('bills-edit-day'),
+    dueDate: billsField('bills-edit-date'),
+    type: billsField('bills-edit-type'),
+    notes: billsField('bills-edit-notes'),
+    active: true,
+    createdAt: prev && prev.createdAt,
+    updatedBy: window._managerAuthEmail || ''
+  });
+  if (!prepared.ok) { toast(prepared.error); return; }
+  if (prev) _billsTemplates = _billsTemplates.map(function(b) { return b && b.id === id ? prepared.bill : b; });
+  else _billsTemplates = _billsTemplates.concat([prepared.bill]);
+  if (!window._dlFixture) {
+    try { gsSave('bills', prepared.bill); } catch (e) { console.warn('bill save failed', e); }
+  }
+  billsCloseSheet();
+  renderBills();
+  toast(window._billsUnreadable ? 'Saved on this screen only' : 'Bill saved');
+}
+function billsDeleteEditing() {
+  if (state.role !== 'manager') return;
+  var id = window._billsEditId;
+  if (!id) return;
+  if (!confirm('Delete this bill? It leaves every month, and its payment history is removed too.')) return;
+  var doomed = _billPayments.filter(function(p) { return p && p.billId === id; });
+  _billsTemplates = _billsTemplates.filter(function(b) { return !b || b.id !== id; });
+  _billPayments = _billPayments.filter(function(p) { return !p || p.billId !== id; });
+  if (!window._dlFixture) {
+    try { gsDelete('bills', id); } catch (e) {}
+    doomed.forEach(function(p) { if (p.id) { try { gsDelete('billPayments', p.id); } catch (e2) {} } });
+  }
+  billsCloseSheet();
+  renderBills();
+  toast('Bill deleted');
+}
+function billsOpenBalance(key) {
+  if (state.role !== 'manager') return;
+  if (key !== 'chase0714' && key !== 'boa1003') return;
+  var B = _billsApi();
+  var slot = (_financeBalances && _financeBalances[key]) || {};
+  window._billsBalanceKey = key;
+  var label = key === 'boa1003' ? 'Bank of America ···1003' : 'Chase checking ···0714';
+  var amt = slot.amount == null || slot.amount === '' ? '' : String(slot.amount);
+  var asOf = slot.asOf || (B ? B.todayISO(new Date()) : '');
+  var html = '<div class="sheet-title">Update balance</div>';
+  html += '<div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.45;">' + escHtml(label) + '. This is a manual snapshot, not a bank connection. Leave the amount blank to clear it. It stays unverified until a live connection exists.</div>';
+  html += '<div class="sec-title">Amount</div><input class="inp" id="bills-bal-amount" type="number" min="0" step="0.01" inputmode="decimal" value="' + escHtml(amt) + '" placeholder="—"/>';
+  html += '<div class="sec-title">As of</div><input class="inp" id="bills-bal-asof" type="date" value="' + escHtml(asOf || '') + '" style="color-scheme:dark;"/>';
+  html += '<button type="button" class="btn btn-green" onclick="billsSaveBalance()">Save</button>';
+  html += '<button type="button" class="btn btn-outline" style="margin-top:8px;" onclick="billsCloseSheet()">Cancel</button>';
+  billsOpenSheet(html);
+}
+function billsSaveBalance() {
+  if (state.role !== 'manager') return;
+  var B = _billsApi();
+  var key = window._billsBalanceKey;
+  if (!B || (key !== 'chase0714' && key !== 'boa1003')) return;
+  var raw = billsField('bills-bal-amount').trim();
+  var asOf = billsField('bills-bal-asof');
+  var amount = raw === '' ? null : Number(raw);
+  if (amount != null && (!isFinite(amount) || amount < 0)) { toast('Enter an amount'); return; }
+  if (amount != null && !B.isISODate(asOf)) { toast('Pick an as-of date'); return; }
+  var base = B.normalizeBalances(_financeBalances || {}, window._managerAuthEmail || '');
+  base[key] = {
+    amount: amount == null ? null : B.cents(amount),
+    asOf: amount == null ? null : asOf,
+    source: amount == null ? '' : 'manual'
+  };
+  base.updatedAt = new Date().toISOString();
+  base.updatedBy = window._managerAuthEmail || '';
+  _financeBalances = base;
+  if (!window._dlFixture) {
+    try { gsSave('finance', base); } catch (e) { console.warn('balance save failed', e); }
+  }
+  billsCloseSheet();
+  renderBills();
+  toast(window._billsUnreadable ? 'Saved on this screen only' : 'Balance saved');
+}
+function billsOpenInvoice(invoiceId) {
+  if (state.role !== 'manager') return;
+  var inv = null;
+  if (invoiceId) _financeInvoices.forEach(function(row) { if (row && row.id === invoiceId) inv = row; });
+  window._billsInvoiceId = inv ? inv.id : '';
+  var html = '<div class="sheet-title">' + (inv ? 'Edit invoice' : 'Add invoice') + '</div>';
+  html += '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Hand-entered until QuickBooks is connected. Open invoices show in the list above.</div>';
+  html += '<div class="sec-title">Customer</div><input class="inp" id="bills-inv-customer" value="' + escHtml(inv ? inv.customer : '') + '"/>';
+  html += '<div class="sec-title">Invoice #</div><input class="inp" id="bills-inv-number" value="' + escHtml(inv ? inv.invoiceNumber : '') + '"/>';
+  html += '<div class="sec-title">Amount</div><input class="inp" id="bills-inv-amount" type="number" min="0" step="0.01" inputmode="decimal" value="' + (inv ? escHtml(String(inv.amount)) : '') + '"/>';
+  html += '<div class="sec-title">Due date</div><input class="inp" id="bills-inv-due" type="date" value="' + escHtml(inv ? (inv.dueDate || '') : '') + '" style="color-scheme:dark;"/>';
+  html += '<button type="button" class="btn btn-green" onclick="billsSaveInvoice()">Save</button>';
+  if (inv) html += '<button type="button" class="btn btn-outline" style="margin-top:8px;color:var(--red);border-color:rgba(248,81,73,.4);" onclick="billsDeleteInvoice()">Delete</button>';
+  html += '<button type="button" class="btn btn-outline" style="margin-top:8px;" onclick="billsCloseSheet()">Cancel</button>';
+  billsOpenSheet(html);
+}
+function billsSaveInvoice() {
+  if (state.role !== 'manager') return;
+  var B = _billsApi();
+  if (!B) return;
+  var id = window._billsInvoiceId || ('inv_' + uid());
+  var prev = null;
+  _financeInvoices.forEach(function(row) { if (row && row.id === id) prev = row; });
+  var prepared = B.prepareInvoice({
+    id: id,
+    customer: billsField('bills-inv-customer'),
+    invoiceNumber: billsField('bills-inv-number'),
+    amount: billsField('bills-inv-amount'),
+    dueDate: billsField('bills-inv-due'),
+    status: prev && prev.status === 'paid' ? 'paid' : 'open',
+    source: prev && prev.source === 'quickbooks' ? 'quickbooks' : 'manual',
+    notes: prev ? (prev.notes || '') : 'Entered by hand.',
+    createdAt: prev && prev.createdAt,
+    updatedBy: window._managerAuthEmail || ''
+  });
+  if (!prepared.ok) { toast(prepared.error); return; }
+  if (prev) _financeInvoices = _financeInvoices.map(function(row) { return row && row.id === id ? prepared.invoice : row; });
+  else _financeInvoices = _financeInvoices.concat([prepared.invoice]);
+  if (!window._dlFixture) {
+    try { gsSave('financeInvoices', prepared.invoice); } catch (e) { console.warn('invoice save failed', e); }
+  }
+  var base = B.normalizeBalances(_financeBalances || {}, window._managerAuthEmail || '');
+  if (!base.quickbooks.asOf) {
+    base.quickbooks.asOf = B.todayISO(new Date());
+    if (!base.quickbooks.source) base.quickbooks.source = 'manual';
+    base.quickbooks.connected = false;
+    base.updatedAt = new Date().toISOString();
+    base.updatedBy = window._managerAuthEmail || '';
+    _financeBalances = base;
+    if (!window._dlFixture) { try { gsSave('finance', base); } catch (e2) {} }
+  }
+  billsCloseSheet();
+  renderBills();
+  toast(window._billsUnreadable ? 'Saved on this screen only' : 'Invoice saved');
+}
+function billsDeleteInvoice() {
+  if (state.role !== 'manager') return;
+  var id = window._billsInvoiceId;
+  if (!id) return;
+  if (!confirm('Remove this invoice from the list?')) return;
+  _financeInvoices = _financeInvoices.filter(function(row) { return !row || row.id !== id; });
+  if (!window._dlFixture) { try { gsDelete('financeInvoices', id); } catch (e) {} }
+  billsCloseSheet();
+  renderBills();
+  toast('Invoice removed');
+}
+function billsStat(label, value, sub) {
+  return '<div class="card bills-stat"><div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.6px;text-transform:uppercase;">' + escHtml(label) + '</div><div style="font-size:16px;font-weight:800;margin-top:2px;">' + escHtml(value) + '</div>' + (sub ? '<div style="font-size:10px;color:var(--text3);margin-top:1px;">' + escHtml(sub) + '</div>' : '') + '</div>';
+}
+function billsDonut(catMap) {
+  var B = _billsApi();
+  var parts = [];
+  B.CATEGORIES.forEach(function(c) {
+    if (catMap[c] > 0) parts.push({ amount: catMap[c], color: B.CATEGORY_COLORS[c] || '#8b949e' });
+  });
+  Object.keys(catMap).forEach(function(c) {
+    if (B.CATEGORIES.indexOf(c) < 0 && catMap[c] > 0) parts.push({ amount: catMap[c], color: '#8b949e' });
+  });
+  var total = 0;
+  parts.forEach(function(p) { total += p.amount; });
+  total = B.cents(total);
+  if (!total) {
+    return '<div style="width:132px;height:132px;margin:0 auto;border-radius:50%;border:14px solid var(--bg4);"></div>';
+  }
+  var r = 52;
+  var circ = 2 * Math.PI * r;
+  var offset = 0;
+  var circles = parts.map(function(p) {
+    var len = (p.amount / total) * circ;
+    var el = '<circle cx="70" cy="70" r="' + r + '" fill="none" stroke="' + p.color + '" stroke-width="14" stroke-dasharray="' + len.toFixed(3) + ' ' + (circ - len).toFixed(3) + '" stroke-dashoffset="' + (-offset).toFixed(3) + '" transform="rotate(-90 70 70)"/>';
+    offset += len;
+    return el;
+  }).join('');
+  return '<svg viewBox="0 0 140 140" width="148" height="148" style="display:block;margin:0 auto;" role="img" aria-label="Budget by category">' + circles
+    + '<text x="70" y="66" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="700" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif">' + escHtml(B.money(total)) + '</text>'
+    + '<text x="70" y="82" text-anchor="middle" fill="#545d68" font-size="9" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif">budget</text></svg>';
+}
+function billsBars(catMap) {
+  var B = _billsApi();
+  var entries = B.CATEGORIES.map(function(c) {
+    return { name: c, amount: catMap[c] || 0, color: B.CATEGORY_COLORS[c] || '#8b949e' };
+  });
+  Object.keys(catMap).forEach(function(c) {
+    if (B.CATEGORIES.indexOf(c) < 0) entries.push({ name: c, amount: catMap[c] || 0, color: '#8b949e' });
+  });
+  var max = 1;
+  entries.forEach(function(e) { if (e.amount > max) max = e.amount; });
+  return entries.map(function(e) {
+    var w = Math.max(0, Math.round((e.amount / max) * 100));
+    return '<div style="margin-bottom:7px;">'
+      + '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;margin-bottom:3px;"><span style="color:var(--text2);min-width:0;">' + escHtml(e.name) + '</span><b>' + escHtml(B.money(e.amount)) + '</b></div>'
+      + '<div style="background:var(--bg4);border-radius:6px;height:7px;overflow:hidden;"><div style="width:' + w + '%;height:100%;background:' + e.color + ';border-radius:6px;"></div></div>'
+      + '</div>';
+  }).join('');
+}
+function billsBalanceInner(key, title) {
+  var B = _billsApi();
+  var slot = (_financeBalances && _financeBalances[key]) || null;
+  var view = B.balanceView(slot, B.todayISO(new Date()));
+  var html = '<div class="bills-bal-label">' + escHtml(title) + '</div>';
+  html += '<div class="bills-bal-amt" id="bills-amt-' + key + '">' + escHtml(B.money(view.amount)) + '</div>';
+  html += '<div class="bills-bal-meta">as of ' + (view.asOf ? escHtml(B.prettyDate(view.asOf)) : '—') + '</div>';
+  html += billsFlag(view.badge);
+  html += '<button type="button" onclick="billsOpenBalance(\'' + key + '\')" style="margin-top:6px;background:transparent;color:var(--text3);border:1px solid var(--border);border-radius:7px;padding:3px 6px;font-size:10px;cursor:pointer;">Update</button>';
+  return html;
+}
+function billsQbInner() {
+  var B = _billsApi();
+  var meta = (_financeBalances && _financeBalances.quickbooks) || {};
+  var sum = B.invoiceSummary(_financeInvoices, B.todayISO(new Date()), meta);
+  var html = '<div class="bills-bal-label">QuickBooks invoices</div>';
+  html += '<div class="bills-bal-amt" id="bills-amt-qb">' + escHtml(B.money(sum.total)) + '</div>';
+  html += '<div class="bills-bal-meta" id="bills-qb-counts">';
+  if (sum.empty) html += 'no invoices';
+  else html += escHtml(String(sum.count)) + ' open · ' + escHtml(String(sum.overdue)) + ' overdue';
+  html += '<br>as of ' + (sum.asOf ? escHtml(B.prettyDate(sum.asOf)) : '—');
+  html += '</div>';
+  html += billsFlag(sum.badge);
+  html += '<div class="bills-bal-meta">Tap for invoices</div>';
+  return html;
+}
+
+function renderBills() {
+  var root = document.getElementById('bills-root');
+  if (!root) return;
+  if (state.role !== 'manager') { root.innerHTML = ''; return; }
+  var B = _billsApi();
+  if (!B) {
+    root.innerHTML = '<div class="card">Bills could not load. Refresh and try again.</div>';
+    return;
+  }
+  var today = B.todayISO(new Date());
+  if (!window._billsMonth) window._billsMonth = B.monthKeyOf(new Date());
+  if (!window._billsFilter) window._billsFilter = 'all';
+  var ym = window._billsMonth;
+  var rows = billsCurrentInstances();
+  var summary = B.summarize(rows);
+  var chase = B.balanceView(_financeBalances && _financeBalances.chase0714, today);
+  var boa = B.balanceView(_financeBalances && _financeBalances.boa1003, today);
+  var cash = B.cashAfter(chase.amount, boa.amount, summary.unpaid);
+  var cats = B.byCategory(rows);
+  var filter = window._billsFilter;
+  var shown = rows.filter(function(r) { return filter === 'all' || r.status === filter; });
+  var html = '';
+  if (window._dlFixtureName === 'bills') {
+    html += '<div id="bills-sample-banner" style="font-size:12px;color:var(--text);background:rgba(227,179,65,.12);border:1px solid rgba(227,179,65,.45);border-radius:10px;padding:10px 12px;margin-bottom:12px;"><b>SAMPLE DATA</b> — preview on this computer only. Not the company books. Nothing is written to Firebase.</div>';
+  }
+  if (window._billsUnreadable) {
+    html += '<div style="font-size:12px;color:var(--yellow);background:rgba(227,179,65,.08);border:1px solid rgba(227,179,65,.3);border-radius:10px;padding:10px 12px;margin-bottom:12px;">Bills stay on this screen until the manager rules are published. They are not saved to the shared phone cache.</div>';
+  }
+  html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px;">';
+  html += '<div><div style="font-size:20px;font-weight:800;">Bills &amp; Expenses</div>';
+  html += '<div style="font-size:12px;color:var(--text3);margin-top:2px;">Manager only. Monthly bills come back unpaid next month.</div></div>';
+  html += '<button type="button" class="btn-sm btn-green" onclick="billsOpenEdit(\'\')" style="flex-shrink:0;">+ Bill</button></div>';
+
+  html += '<div class="bills-balance-row">';
+  html += '<div class="card bills-bal" id="bills-box-chase">' + billsBalanceInner('chase0714', 'Chase checking ···0714') + '</div>';
+  html += '<div class="card bills-bal" id="bills-box-boa">' + billsBalanceInner('boa1003', 'Bank of America ···1003') + '</div>';
+  html += '<button type="button" class="card bills-bal" id="bills-box-qb" onclick="billsScrollInvoices()">' + billsQbInner() + '</button>';
+  html += '</div>';
+  html += '<div class="bills-cash" id="bills-cash-line">Est. cash after unpaid bills this month <b>' + escHtml(B.money(cash)) + '</b>';
+  html += '<div style="font-size:11px;color:var(--text3);font-weight:500;">';
+  if (cash == null) html += 'Needs both account balances. Unpaid this month is ' + escHtml(B.money(summary.unpaid)) + '.';
+  else html += 'Chase + Bank of America − unpaid this month.';
+  html += '</div></div>';
+
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">';
+  html += '<button type="button" class="btn-sm" onclick="billsShift(-1)" aria-label="Previous month" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);min-width:36px;min-height:36px;">‹</button>';
+  html += '<div id="bills-month-label" style="font-size:16px;font-weight:800;">' + escHtml(B.monthLabel(ym)) + '</div>';
+  html += '<button type="button" class="btn-sm" onclick="billsShift(1)" aria-label="Next month" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);min-width:36px;min-height:36px;">›</button>';
+  html += '</div>';
+
+  html += '<div class="bills-stats" id="bills-summary">';
+  html += billsStat('Budget', B.money(summary.budget), summary.count + ' bill' + (summary.count === 1 ? '' : 's'));
+  html += billsStat('Paid', B.money(summary.paid), '');
+  html += billsStat('Unpaid', B.money(summary.unpaid), '');
+  html += billsStat('Overdue', B.money(summary.overdue), summary.overdueCount ? (summary.overdueCount + ' bill' + (summary.overdueCount === 1 ? '' : 's')) : 'None');
+  html += billsStat('Due next 7 days', B.money(summary.dueSoon), summary.dueSoonCount ? (summary.dueSoonCount + ' bill' + (summary.dueSoonCount === 1 ? '' : 's')) : 'None');
+  html += '</div>';
+
+  html += '<div class="card" id="bills-categories"><div class="sec-title">By category</div><div class="bills-split">';
+  html += '<div class="bills-donut">' + billsDonut(cats) + '</div>';
+  html += '<div class="bills-bars">' + billsBars(cats) + '</div>';
+  html += '</div></div>';
+
+  html += '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:4px 0 8px;"><div style="font-size:16px;font-weight:800;">Bills</div></div>';
+  var filters = [['all', 'All'], ['overdue', 'Overdue'], ['due_soon', 'Due soon'], ['upcoming', 'Upcoming'], ['paid', 'Paid']];
+  html += '<div class="pills" id="bills-filters">';
+  filters.forEach(function(pair) {
+    html += '<button type="button" class="pill' + (filter === pair[0] ? ' active' : '') + '" onclick="billsSetFilter(\'' + pair[0] + '\')">' + pair[1] + '</button>';
+  });
+  html += '</div>';
+  if (!shown.length) {
+    html += '<div class="card" style="text-align:center;color:var(--text3);font-size:13px;">' + (rows.length ? 'Nothing in this filter.' : 'No bills this month. Add the ones you have to pay.') + '</div>';
+  } else {
+    shown.forEach(function(inst) {
+      var safeId = String(inst.billId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+      html += '<div class="card" style="margin-bottom:8px;" data-bill="' + escHtml(safeId) + '" data-status="' + escHtml(inst.status) + '">';
+      html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">';
+      html += '<div style="min-width:0;"><div style="font-size:14px;font-weight:800;">' + escHtml(inst.name) + '</div>';
+      html += '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + escHtml(inst.category) + ' · due ' + escHtml(B.prettyDate(inst.dueDate)) + '</div>';
+      if (inst.notes) html += '<div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.4;">' + escHtml(inst.notes) + '</div>';
+      if (inst.paid) html += '<div style="font-size:11px;color:var(--text3);margin-top:3px;">Paid ' + escHtml(B.prettyDate(inst.paidAt)) + (inst.paidBy ? (' · ' + escHtml(inst.paidBy)) : '') + '</div>';
+      html += '</div><div style="text-align:right;flex-shrink:0;">';
+      html += '<div style="font-size:16px;font-weight:800;">' + escHtml(inst.paid ? B.money(inst.amountPaid) : B.money(inst.amount)) + '</div>';
+      if (inst.paid && inst.amountPaid !== inst.amount) html += '<div style="font-size:10px;color:var(--text3);">of ' + escHtml(B.money(inst.amount)) + '</div>';
+      html += billsStatusPill(inst.status);
+      html += '</div></div>';
+      html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">';
+      if (!inst.paid) {
+        html += '<button type="button" class="btn-sm" style="background:var(--green2);color:#fff;min-height:36px;" onclick="billsMarkPaid(\'' + safeId + '\')">Mark paid</button>';
+      } else {
+        html += '<button type="button" class="btn-sm" style="background:rgba(88,166,255,.15);color:var(--blue);border:1px solid rgba(88,166,255,.3);min-height:36px;" onclick="billsOpenPay(\'' + safeId + '\', true)">Edit payment</button>';
+        html += '<button type="button" class="btn-sm" style="background:transparent;color:var(--text2);border:1px solid var(--border);min-height:36px;" onclick="billsUndoPaid(\'' + safeId + '\')">Undo</button>';
+      }
+      html += '<button type="button" class="btn-sm" style="background:transparent;color:var(--text2);border:1px solid var(--border);min-height:36px;" onclick="billsOpenEdit(\'' + safeId + '\')">Edit</button>';
+      html += '</div></div>';
+    });
+  }
+
+  var openInvoices = (_financeInvoices || []).filter(function(inv) { return inv && inv.status !== 'paid'; })
+    .slice().sort(function(a, b) { return String(a.dueDate || '') < String(b.dueDate || '') ? -1 : 1; });
+  html += '<div id="bills-invoices" style="margin-top:16px;">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">';
+  html += '<div style="font-size:16px;font-weight:800;">Outstanding invoices</div>';
+  html += '<button type="button" class="btn-sm" onclick="billsOpenInvoice(\'\')" style="background:rgba(88,166,255,.15);color:var(--blue);border:1px solid rgba(88,166,255,.3);">+ Invoice</button></div>';
+  if (!openInvoices.length) {
+    html += '<div class="card" id="bills-qb-empty" style="text-align:center;">';
+    html += '<div style="font-size:16px;font-weight:800;margin-bottom:6px;">' + escHtml(B.EMPTY_INVOICES_TITLE) + '</div>';
+    html += '<div style="font-size:12px;color:var(--text3);line-height:1.45;">No invoices on file. A QuickBooks connection will list what customers owe. You can add one by hand until then.</div>';
+    html += '</div>';
+  } else {
+    openInvoices.forEach(function(inv) {
+      var late = B.invoiceDaysOverdue(inv, today);
+      var safe = String(inv.id || '').replace(/[^a-zA-Z0-9_-]/g, '');
+      html += '<div class="card" style="margin-bottom:8px;" data-invoice="' + escHtml(safe) + '">';
+      html += '<div style="display:flex;justify-content:space-between;gap:8px;">';
+      html += '<div style="min-width:0;"><div style="font-size:14px;font-weight:800;">' + escHtml(inv.customer || '') + '</div>';
+      html += '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + escHtml(inv.invoiceNumber || '') + ' · due ' + escHtml(B.prettyDate(inv.dueDate)) + '</div></div>';
+      html += '<div style="text-align:right;"><div style="font-weight:800;">' + escHtml(B.money(inv.amount)) + '</div>';
+      html += '<div style="font-size:11px;color:' + (late ? 'var(--red)' : 'var(--text3)') + ';margin-top:2px;">' + (late ? (late + ' day' + (late === 1 ? '' : 's') + ' overdue') : 'Not overdue') + '</div></div></div>';
+      html += '<button type="button" class="btn-sm" style="margin-top:8px;background:transparent;color:var(--text2);border:1px solid var(--border);" onclick="billsOpenInvoice(\'' + safe + '\')">Edit</button>';
+      html += '</div>';
+    });
+  }
+  html += '</div>';
+  root.innerHTML = html;
+}
+
+function startBillsFixture() {
+  if (window._dlFixtureName !== 'bills') return;
+  var B = _billsApi();
+  if (!B) { setTimeout(startBillsFixture, 40); return; }
+  var today = B.todayISO(new Date());
+  var data = B.sampleData(today);
+  try {
+    if (new URLSearchParams(location.search).get('qb') === 'empty') {
+      data.invoices = [];
+      data.balances.quickbooks = { asOf: null, source: '', connected: false };
+    }
+  } catch (eQ) {}
+  _financeBalances = data.balances;
+  _billsTemplates = data.bills;
+  _billPayments = data.payments;
+  _financeInvoices = data.invoices;
+  window._billsMonth = B.monthKeyFromDate(today);
+  window._billsFilter = 'all';
+  try { dismissLoginScreen('manager'); } catch (e2) { console.warn(e2); }
+  setTimeout(function() {
+    switchTab('bills');
+    window._billsFixtureReady = true;
+  }, 400);
+}
 
 // Multi-step: Flag review → Property photo → Services → Notes/Flag → Submit
 function openStopCompletion(routeId, propId) {
@@ -10533,6 +11189,7 @@ function signOut() {
   state.role = 'guest';
   if (typeof _clearCrewPrivate === 'function') _clearCrewPrivate(); // PAY SPLIT: drop crew pay before the save() below caches state
   if (typeof _clearJobCost === 'function') _clearJobCost();
+  if (typeof _clearBills === 'function') _clearBills();
   window._crewWOSelectedCommunity = ''; // don't carry over to the next crew member on this device
   window._crewWOVillage = '';
   window._crewWOType = '';
@@ -10557,6 +11214,7 @@ function signOut() {
     <button class="nb" onclick="switchTab('equipment')" data-tab="equipment"><span class="ni">🔧</span><span class="nl">Equipment</span></button>
     <button class="nb" onclick="switchTab('reports')" data-tab="reports"><span class="ni">📊</span><span class="nl">Reports</span></button>
     <button class="nb" onclick="switchTab('jobcost')" data-tab="jobcost"><span class="ni">🧮</span><span class="nl">Job costing</span></button>
+    <button class="nb" onclick="switchTab('bills')" data-tab="bills"><span class="ni"><i class="ti ti-receipt"></i></span><span class="nl">Bills & Expenses</span><i class="ti ti-lock bills-lock" aria-hidden="true"></i></button>
     <button class="nb" onclick="switchTab('workorders')" data-tab="workorders"><span class="ni">📋</span><span class="nl">Work Orders</span></button>
     <button class="nb" onclick="switchTab('customerrequests')" data-tab="customerrequests"><span class="ni">💬</span><span class="nl">Customer Requests</span></button>
     <button class="nb" onclick="switchTab('calls')" data-tab="calls"><span class="ni"><i class="ti ti-phone-incoming"></i></span><span class="nl">Calls</span><span class="n-badge" id="nav-calls-count" style="display:none;"></span></button>
@@ -10626,6 +11284,7 @@ function _renderActiveTab() {
     calendar:   renderCalendar, // so externalEvents snapshots re-render the checklist from doc.done
     calls:      renderReceptionistCalls,
     jobcost:    renderJobCost,
+    bills:      renderBills,
   };
   try { if (renders[tab]) renders[tab](); } catch(e) { console.warn('render error:', e); }
   if (tab !== 'dashboard') try { renderDashboard(); } catch(e) {}
@@ -11046,6 +11705,10 @@ function _listenCollection(name) {
       if (name === 'jobCosting') {
         _applyJobCostDocs(docs);
       }
+      if (name === 'finance' || name === 'bills' || name === 'billPayments' || name === 'financeInvoices') {
+        state[name] = [];
+        if (typeof _applyBillsDocs === 'function') _applyBillsDocs(name, docs);
+      }
       if (name === 'crewPrivate') {
         // PAY SPLIT: same rule as propertyPrivate — memory map only.
         _crewPrivateById = {};
@@ -11155,6 +11818,11 @@ function _listenCollection(name) {
         // hours still calculate. Don't mark the rest of the app offline.
         window._jobCostUnreadable = true;
         try { if (state.currentTab === 'jobcost') renderJobCost(); } catch (eJc) {}
+        return;
+      }
+      if (name === 'finance' || name === 'bills' || name === 'billPayments' || name === 'financeInvoices') {
+        window._billsUnreadable = true;
+        try { if (state.currentTab === 'bills') renderBills(); } catch (eBills) {}
         return;
       }
       syncOnline = false;
@@ -11352,6 +12020,7 @@ function gsLoad() {
           if (window._managerSessionUnlocked && typeof _ensurePropertyPrivateListener === 'function') _ensurePropertyPrivateListener();
           if (window._managerSessionUnlocked && typeof _ensureCrewPrivateListener === 'function') _ensureCrewPrivateListener();
           if (window._managerSessionUnlocked && typeof _ensureJobCostListener === 'function') _ensureJobCostListener();
+          if (window._managerSessionUnlocked && typeof _ensureBillsListener === 'function') _ensureBillsListener();
           // Defer secondary collections by 800ms so UI loads fast
           setTimeout(function() {
             SECONDARY.forEach(function(name) { _listenCollection(name); });
@@ -11396,10 +12065,10 @@ function gsLoad() {
 // item, so there's no sign anything went wrong, but the record survives on
 // the server and every other device keeps seeing it.
 function queuePendingWrite(table, record) {
-  if (table === 'crewPrivate') {
-    // PAY SPLIT: a failed pay write stays in manager memory only. Never
-    // land dailyRate in localStorage, even as a retry payload.
-    console.warn('crewPrivate pay is kept in memory only — not queued to localStorage');
+  if (table === 'crewPrivate' || table === 'jobCosting' || (typeof _billsPrivateTable === 'function' && _billsPrivateTable(table))) {
+    // Pay, job costing, and bills stay in manager memory. Never land the
+    // payload in localStorage, where a shared crew phone could keep it.
+    console.warn(table + ' is kept in memory only — not queued to localStorage');
     return;
   }
   try {
@@ -11470,7 +12139,8 @@ function gsSave(table, record, _attempt) {
   // Sanitize undefined values — Firestore rejects them
   var safe = JSON.parse(JSON.stringify(toSave, function(k,v) { return v === undefined ? null : v; }));
 
-  window._fbSDK.setDoc(window._fbSDK.doc(_db, table, String(record.id)), safe, { merge: true })
+  var replaceDoc = (typeof _billsPrivateTable === 'function' && _billsPrivateTable(table));
+  window._fbSDK.setDoc(window._fbSDK.doc(_db, table, String(record.id)), safe, { merge: !replaceDoc })
     .then(function() { syncOnline = true; })
     .catch(function(err) {
       console.warn('gsSave failed [' + table + ']:', err.message);
@@ -11478,8 +12148,9 @@ function gsSave(table, record, _attempt) {
       if ((_attempt||0) < 3) {
         setTimeout(function() { gsSave(table, record, (_attempt||0)+1); },
           Math.pow(2, (_attempt||0)+1) * 1000);
-      } else if (table === 'crewPrivate' || table === 'jobCosting') {
+      } else if (table === 'crewPrivate' || table === 'jobCosting' || (typeof _billsPrivateTable === 'function' && _billsPrivateTable(table))) {
         if (table === 'jobCosting') window._jobCostUnreadable = true;
+        if (typeof _billsPrivateTable === 'function' && _billsPrivateTable(table)) window._billsUnreadable = true;
         console.warn('gsSave: ' + table + ' write failed and was not stored locally. Publish the manager rules, then save again.', record.id);
       } else {
         // Exhausted retries — don't lose this write, queue it durably instead
@@ -11509,6 +12180,8 @@ function gsDelete(table, id, _attempt) {
       if ((_attempt||0) < 3) {
         setTimeout(function() { gsDelete(table, id, (_attempt||0)+1); },
           Math.pow(2, (_attempt||0)+1) * 1000);
+      } else if (table === 'crewPrivate' || table === 'jobCosting' || (typeof _billsPrivateTable === 'function' && _billsPrivateTable(table))) {
+        console.warn('gsDelete: ' + table + ' was not stored locally. Publish the manager rules, then delete again.', id);
       } else {
         // Exhausted retries — don't let this delete silently vanish. The
         // local screen already shows it as gone (no visible error), but
@@ -12147,6 +12820,7 @@ const MANAGER_MENU = [
   { tab:'equipment', icon:'🔧', label:'Equipment' },
   { tab:'reports',   icon:'📊', label:'Reports' },
   { tab:'jobcost',   icon:'🧮', label:'Job costing' },
+  { tab:'bills',     icon:'🔒', label:'Bills & Expenses' },
   { tab:'schedule',  icon:'📅', label:'Schedule' },
   { tab:'workorders', icon:'📋', label:'Work Orders' },
   { tab:'customerrequests', icon:'💬', label:'Customer Requests' },
@@ -12197,6 +12871,7 @@ function buildDrawerItems(menuItems, activeTab) {
     'crew':       'ti-users',
     'inventory':  'ti-package',          'equipment':  'ti-tool',
     'reports':    'ti-chart-bar',        'jobcost':    'ti-calculator',
+    'bills':      'ti-receipt',
     'attendance': 'ti-calendar-check',
     'field':      'ti-clipboard-list',   'crew-week':  'ti-calendar-week',
     'wo-crew':    'ti-clipboard-check'
@@ -12209,9 +12884,10 @@ function buildDrawerItems(menuItems, activeTab) {
       var n = (typeof callsNewCount === 'function') ? callsNewCount() : 0;
       badge = '<span class="d-badge" id="drawer-calls-count" style="' + (n ? '' : 'display:none;') + '">' + (n || '') + '</span>';
     }
+    var lock = m.tab === 'bills' ? '<i class="ti ti-lock" aria-hidden="true" style="font-size:12px;margin-left:auto;opacity:.55;"></i>' : '';
     return '<button class="drawer-item ' + (m.tab === activeTab ? 'active' : '') + '" onclick="drawerNav(\'' + m.tab + '\')">' +
       '<span class="d-icon"><i class="ti ' + icon + '" style="font-size:17px;"></i></span>' +
-      '<span class="d-label">' + m.label + '</span>' + badge + '</button>';
+      '<span class="d-label">' + m.label + '</span>' + badge + lock + '</button>';
   }
 
   let html;
@@ -12222,7 +12898,7 @@ function buildDrawerItems(menuItems, activeTab) {
       { label: 'Overview',  tabs: ['dashboard'] },
       { label: 'Operations',tabs: ['routes','schedule','workorders','customerrequests','calls','calendar'] },
       { label: 'Data',      tabs: ['properties','propmap','crew','inventory','equipment'] },
-      { label: 'Reporting', tabs: ['reports','jobcost','attendance'] },
+      { label: 'Reporting', tabs: ['reports','jobcost','bills','attendance'] },
     ];
     var byTab = {}; menuItems.forEach(function(m){ byTab[m.tab] = m; });
     html = groups.map(function(g) {
@@ -21068,6 +21744,7 @@ load().then(function() {
   ls_showWho();
   if (window._dlFixtureName === 'calls') startCallsFixture();
   else if (window._dlFixtureName === 'jobcost') startJobCostFixture();
+  else if (window._dlFixtureName === 'bills') startBillsFixture();
   else if (window._dlFixture) startLexingtonFixture();
 });
 // load live data from Google Sheets
