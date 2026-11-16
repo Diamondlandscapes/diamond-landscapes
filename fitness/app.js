@@ -1027,8 +1027,8 @@ function drawChart() {
   const span = Math.max(1, daysBetween(model.from, model.to));
   const xOf = (date) => pad.l + (daysBetween(model.from, date) / span) * (width - pad.l - pad.r);
   const yOf = (weight) => pad.t + (1 - (weight - min) / (max - min)) * (height - pad.t - pad.b);
-  ctx.strokeStyle = 'rgba(246,241,231,.12)';
-  ctx.fillStyle = '#a39e93';
+  ctx.strokeStyle = 'rgba(230,237,245,.14)';
+  ctx.fillStyle = '#8A97A8';
   ctx.font = '11px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif';
   ctx.lineWidth = 1;
   for (let i = 0; i < 3; i++) {
@@ -1045,7 +1045,7 @@ function drawChart() {
   });
   ctx.save();
   ctx.setLineDash([5, 4]);
-  ctx.strokeStyle = '#ffb25a';
+  ctx.strokeStyle = '#00A3FF';
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(xOf(model.target[0].date), yOf(model.target[0].weight));
@@ -1054,13 +1054,13 @@ function drawChart() {
   ctx.restore();
   model.points.forEach((point) => {
     ctx.beginPath();
-    ctx.fillStyle = '#ffb25a';
+    ctx.fillStyle = '#00A3FF';
     ctx.arc(xOf(point.date), yOf(point.weight), 3.5, 0, Math.PI * 2);
     ctx.fill();
   });
   if (model.avg.length) {
     ctx.beginPath();
-    ctx.strokeStyle = '#f6f1e7';
+    ctx.strokeStyle = '#E6EDF5';
     ctx.lineWidth = 2.4;
     model.avg.forEach((point, i) => {
       const x = xOf(point.date);
@@ -1090,9 +1090,9 @@ function drawFluidChart() {
   const gap = 4;
   const barW = Math.max(4, (width - pad.l - pad.r - gap * series.length) / series.length);
   ctx.font = '11px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif';
-  ctx.fillStyle = '#a39e93';
+  ctx.fillStyle = '#8A97A8';
   ctx.fillText(String(Math.round(max)), 2, pad.t + 4);
-  ctx.strokeStyle = 'rgba(246,241,231,.12)';
+  ctx.strokeStyle = 'rgba(230,237,245,.14)';
   ctx.beginPath();
   ctx.moveTo(pad.l, height - pad.b);
   ctx.lineTo(width - pad.r, height - pad.b);
@@ -1101,16 +1101,16 @@ function drawFluidChart() {
     const x = pad.l + i * (barW + gap);
     const h = ((height - pad.t - pad.b) * row.oz) / max;
     const y = height - pad.b - h;
-    ctx.fillStyle = row.oz + 0.5 >= row.goal ? '#8fd0c6' : '#ffb25a';
+    ctx.fillStyle = row.oz + 0.5 >= row.goal ? '#3DDC97' : '#00A3FF';
     ctx.fillRect(x, y, barW, Math.max(h, row.oz ? 2 : 0));
     const gy = height - pad.b - ((height - pad.t - pad.b) * row.goal) / max;
-    ctx.strokeStyle = 'rgba(246,241,231,.85)';
+    ctx.strokeStyle = '#E6EDF5';
     ctx.beginPath();
     ctx.moveTo(x, gy);
     ctx.lineTo(x + barW, gy);
     ctx.stroke();
   });
-  ctx.fillStyle = '#a39e93';
+  ctx.fillStyle = '#8A97A8';
   ctx.fillText(formatLong(series[0].date).replace(/^[A-Za-z]+, /, ''), pad.l, height - 8);
   const last = formatLong(series[series.length - 1].date).replace(/^[A-Za-z]+, /, '');
   ctx.fillText(last, width - pad.r - 48, height - 8);
