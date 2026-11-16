@@ -10,9 +10,9 @@ import {
   formatClock, formatHeight, profileIssue, dexaIssue, checkinIssue,
   strengthRows, mealTotals, paceLabel, PLAN_START, normalizeProfile,
   fluidGoalOz, fluidStatus, reminderDue, fluidTotal, inQuietHours, fluidSeries,
-  rulesRefusal
+  rulesRefusal, firestoreDoc, sanitizeCache, emptyCheckin, emptyFluids
 } from '../fitness/model.js';
-import { usualMealEntries, foodLogTotals, makeFoodEntry, foodById } from '../fitness/foods.js';
+import { emptyFoodLog, usualMealEntries, foodLogTotals, makeFoodEntry, foodById } from '../fitness/foods.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -263,6 +263,32 @@ test('day name length is capped in the app, and the rules banner names the opera
     rulesRefusal('setDoc', 'fitness/abc'),
     'Firestore refused setDoc on fitness/abc. Publish the fitness rules, then try that save again. Changes stay on this phone until then.'
   );
+});
+
+test('saving a loaded doc drops id and other non-schema keys', function () {
+  const now = '2026-11-16T18:00:00.000Z';
+  const loaded = {
+    profile: Object.assign({ id: 'uid', extra: true }, seedProfile(now)),
+    checkins: { '2026-11-16': Object.assign({ id: '2026-11-16', extra: 1 }, emptyCheckin('2026-11-16')) },
+    sessions: { '2026-11-16': { id: '2026-11-16', date: '2026-11-16', dayKey: 'mon', planName: 'Push', kind: 'lift', deload: false, notes: '', walkDone: false, exercises: [], updatedAt: now, extra: true } },
+    measurements: [{ id: '2026-11-16', date: '2026-11-16', waistIn: 34, armIn: null, shoulderIn: null, calfIn: null, notes: '', updatedAt: now, extra: true }],
+    dexa: [Object.assign({ id: '2026-01-02', extra: true }, seedDexa(now))],
+    fluids: { '2026-11-16': Object.assign({ id: '2026-11-16', extra: true }, emptyFluids('2026-11-16'), { updatedAt: now }) },
+    foodlog: { '2026-11-16': Object.assign({ id: '2026-11-16', extra: true }, emptyFoodLog('2026-11-16'), { updatedAt: now }) }
+  };
+  const clean = sanitizeCache(loaded);
+  ['profile', 'checkins', 'sessions', 'measurements', 'dexa', 'fluids', 'foodlog'].forEach(function (kind) {
+    const rows = kind === 'profile' ? [clean.profile]
+      : (Array.isArray(clean[kind]) ? clean[kind] : Object.keys(clean[kind]).map(function (id) { return clean[kind][id]; }));
+    rows.forEach(function (row) {
+      assert.equal(Object.prototype.hasOwnProperty.call(row, 'id'), false, kind + ' still has id');
+      assert.equal(Object.prototype.hasOwnProperty.call(row, 'extra'), false, kind + ' still has extra');
+      const again = firestoreDoc(kind, Object.assign({ id: 'keep-me-out', extra: 1 }, row));
+      assert.deepEqual(Object.keys(again).sort(), Object.keys(row).sort());
+    });
+  });
+  assert.equal(clean.fluids['2026-11-16'].date, '2026-11-16');
+  assert.equal(clean.foodlog['2026-11-16'].date, '2026-11-16');
 });
 
 test('usual chicken and rice and a scaled serving', function () {

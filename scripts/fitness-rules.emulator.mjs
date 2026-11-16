@@ -56,7 +56,8 @@ const { pathToFileURL } = await import('node:url');
 const { initializeApp } = await import(pathToFileURL(sdk + '/app/dist/index.mjs').href);
 const { getAuth, connectAuthEmulator, signInWithEmailAndPassword } = await import(pathToFileURL(sdk + '/auth/dist/index.mjs').href);
 const { getFirestore, connectFirestoreEmulator, doc, getDoc, setDoc } = await import(pathToFileURL(sdk + '/firestore/dist/index.mjs').href);
-const { seedProfile } = await import('../fitness/model.js');
+const { seedProfile, seedDexa, buildSession, emptyCheckin, emptyFluids, firestoreDoc } = await import('../fitness/model.js');
+const { emptyFoodLog, makeFoodEntry, foodById } = await import('../fitness/foods.js');
 
 const uid = 'dlVFarsoyDSG45vETl69qx19zDg2';
 const email = 'dustin-rules@example.com';
@@ -104,4 +105,56 @@ if (!saved.exists() || saved.data().calories !== 2300) {
   process.exit(1);
 }
 console.log('seedProfile create and update allowed');
+
+const now = new Date().toISOString();
+const session = buildSession(seedProfile(now), '2026-11-16', {});
+session.updatedAt = now;
+const checkin = emptyCheckin('2026-11-16');
+checkin.weightLb = 193;
+checkin.updatedAt = now;
+const fluids = emptyFluids('2026-11-16');
+fluids.entries = [{ id: 'water-1', name: 'Water', kind: 'water', oz: 16, at: now }];
+fluids.updatedAt = now;
+const foodlog = emptyFoodLog('2026-11-16');
+foodlog.entries = [makeFoodEntry(foodById('chicken-breast-6'), 1, now)];
+foodlog.updatedAt = now;
+const measure = {
+  date: '2026-11-16', waistIn: 34, armIn: null, shoulderIn: null, calfIn: null,
+  notes: '', updatedAt: now
+};
+const dexa = seedDexa(now);
+
+const collections = [
+  ['profile', ['fitness', uid], created],
+  ['checkins', ['fitness', uid, 'checkins', '2026-11-16'], checkin],
+  ['sessions', ['fitness', uid, 'sessions', '2026-11-16'], session],
+  ['measurements', ['fitness', uid, 'measurements', '2026-11-16'], measure],
+  ['dexa', ['fitness', uid, 'dexa', '2026-01-02'], dexa],
+  ['fluids', ['fitness', uid, 'fluids', '2026-11-16'], fluids],
+  ['foodlog', ['fitness', uid, 'foodlog', '2026-11-16'], foodlog]
+];
+
+for (const [kind, segments, body] of collections) {
+  const ref = doc(db, ...segments);
+  const docId = segments[segments.length - 1];
+  await setDoc(ref, firestoreDoc(kind, body));
+  const loaded = Object.assign({ id: docId, extra: true }, body);
+  let rawDenied = false;
+  try {
+    await setDoc(ref, loaded);
+  } catch (err) {
+    rawDenied = String(err.code || err.message || '').toLowerCase().indexOf('permission') !== -1;
+  }
+  if (!rawDenied) {
+    console.error(kind + ' accepted a document that still has id');
+    process.exit(1);
+  }
+  await setDoc(ref, firestoreDoc(kind, loaded));
+  const snap = await getDoc(ref);
+  if (!snap.exists() || Object.prototype.hasOwnProperty.call(snap.data(), 'id')) {
+    console.error(kind + ' resave did not stick without id');
+    process.exit(1);
+  }
+  console.log(kind + ' reload with id then save allowed');
+}
 process.exit(0);
