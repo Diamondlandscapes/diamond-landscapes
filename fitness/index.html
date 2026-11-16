@@ -9,8 +9,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="Fitness"/>
-<title>Fitness</title>
+<meta name="apple-mobile-web-app-title" content="Dustin Fitness"/>
+<title>Dustin Fitness</title>
 <link rel="manifest" href="./manifest.json"/>
 <link rel="icon" href="./icon-192.png"/>
 <link rel="apple-touch-icon" href="./icon-192.png"/>
@@ -302,6 +302,10 @@
   }
   .oz-picks button.on, .oz-picks button:hover, .drink-grid button:hover { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); box-shadow: var(--glow); }
   .drink-grid button:hover { background: var(--accent-hover); }
+  .macro-track { height: 8px; border-radius: 99px; background: var(--bg); overflow: hidden; margin-top: 4px; }
+  .macro-fill { height: 100%; background: var(--accent); box-shadow: 0 0 10px rgba(0, 163, 255, .45); }
+  .macro-fill.over { background: var(--warn); box-shadow: none; }
+  .food-list { max-height: 280px; overflow: auto; margin-top: 8px; }
   .behind { color: var(--warn); font-weight: 750; }
   .onpace { color: var(--sage); font-weight: 750; }
   .split { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
@@ -312,13 +316,13 @@
 </head>
 <body>
   <div id="boot">
-    <p class="eyebrow">Fitness</p>
+    <p class="eyebrow">Dustin Fitness</p>
     <h1>Loading…</h1>
   </div>
 
   <div id="login-screen" hidden>
     <p class="eyebrow">Vacation · Dec 23</p>
-    <h1>Fitness</h1>
+    <h1>Dustin Fitness</h1>
     <p class="lede">185 lb and about 15% fat by Dec 22. Log the work.</p>
     <div class="count-block"><b id="login-count">37</b><span id="login-count-label">days until vacation</span></div>
     <form id="login-form">
@@ -327,7 +331,7 @@
       <p class="err" id="login-error" role="alert"></p>
       <button class="primary" id="login-btn" type="submit">Sign in</button>
     </form>
-    <p class="fine">Verified email and password on the Diamond Landscapes Firebase project. The same manager account works. This page does not open Diamond Ops.</p>
+    <p class="fine">Verified email and password. This account is the only one that can read the log.</p>
   </div>
 
   <div id="verify-screen" hidden>
@@ -343,7 +347,7 @@
   <div id="shell" hidden>
     <header>
       <div>
-        <p class="brand">Fitness</p>
+        <p class="brand">Dustin Fitness</p>
         <p id="header-date"></p>
       </div>
       <div class="header-side">
@@ -372,6 +376,6 @@
       });
     }
   </script>
-  <script type="module" src="./app.js?v=2026-11-16-2"></script>
+  <script type="module" src="./app.js?v=2026-11-16-3"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 {
   "id": "./",
-  "name": "Fitness",
-  "short_name": "Fitness",
+  "name": "Dustin Fitness",
+  "short_name": "Dustin",
   "description": "Training log through Dec 23",
   "start_url": "./index.html",
   "scope": "./",

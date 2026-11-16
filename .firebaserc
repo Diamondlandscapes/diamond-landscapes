@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "diamond-landscapes-f676b"
+  },
+  "targets": {
+    "diamond-landscapes-f676b": {
+      "hosting": {
+        "fitness": [
+          "dustin-fitness"
+        ]
+      }
+    }
+  }
+}

@@ -9,8 +9,10 @@ import {
   buildSession, lastPerformance, formatLast, dayPlan, previewBundle,
   formatClock, formatHeight, profileIssue, dexaIssue, checkinIssue,
   strengthRows, mealTotals, paceLabel, PLAN_START, normalizeProfile,
-  fluidGoalOz, fluidStatus, reminderDue, fluidTotal, inQuietHours, fluidSeries
+  fluidGoalOz, fluidStatus, reminderDue, fluidTotal, inQuietHours, fluidSeries,
+  rulesRefusal
 } from '../fitness/model.js';
+import { usualMealEntries, foodLogTotals, makeFoodEntry, foodById } from '../fitness/foods.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -253,6 +255,29 @@ test('fluid goals, pace, and reminders', function () {
   assert.equal(profileIssue(profile), '');
 });
 
+test('day name length is capped in the app, and the rules banner names the operation', function () {
+  const profile = seedProfile();
+  profile.week[0].name = 'x'.repeat(81);
+  assert.match(profileIssue(profile), /too long/);
+  assert.equal(
+    rulesRefusal('setDoc', 'fitness/abc'),
+    'Firestore refused setDoc on fitness/abc. Publish the fitness rules, then try that save again. Changes stay on this phone until then.'
+  );
+});
+
+test('usual chicken and rice and a scaled serving', function () {
+  const totals = foodLogTotals(usualMealEntries('usual-chicken-rice', 1));
+  assert.equal(totals.kcal, 486);
+  assert.equal(totals.protein, 57);
+  const beef = foodLogTotals(usualMealEntries('usual-beef-rice', 1));
+  assert.equal(beef.kcal, 574);
+  assert.equal(beef.protein, 48);
+  const scaled = makeFoodEntry(foodById('chicken-breast-4'), 1.5);
+  assert.equal(scaled.kcal, 280.5);
+  assert.equal(scaled.protein, 52.5);
+  assert.equal(foodById('franks-tsp').kcal, 0);
+});
+
 test('rules fragments are owner-only and are not deployable alone', function () {
   const firestore = fs.readFileSync(path.join(root, 'firestore.fitness.rules'), 'utf8');
   const storage = fs.readFileSync(path.join(root, 'storage.fitness.rules'), 'utf8');
@@ -269,6 +294,10 @@ test('rules fragments are owner-only and are not deployable alone', function () 
   assert.match(firestore, /match \/dexa\/\{id\}/);
   assert.match(firestore, /match \/fluids\/\{day\}/);
   assert.match(firestore, /fitnessFluidOk/);
+  assert.match(firestore, /day is map/);
+  assert.match(firestore, /match \/foodlog\/\{day\}/);
+  assert.match(firestore, /fitnessFoodLogOk/);
+  assert.equal(/day\.name\.size\(\)/.test(firestore), false);
   const profile = seedProfile();
   Object.keys(profile).forEach(function (key) {
     assert.ok(firestore.includes("'" + key + "'"), 'rules allow-list missing ' + key);

@@ -1,6 +1,8 @@
 // Pure training-plan and progress math for the fitness log.
 // No DOM and no Firebase. The browser app and the node tests both import this.
 
+import { usualMealEntries } from './foods.js';
+
 export const APP_VERSION = '2026-11-16-2';
 
 export const VACATION_DATE = '2026-12-23';
@@ -652,6 +654,9 @@ export function profileIssue(profile) {
     const d = profile.week[i];
     if (!d || d.kind !== 'lift' && d.kind !== 'recovery' && d.kind !== 'rest') return 'Each day needs a type.';
     if (!d.name || String(d.name).trim().length === 0) return 'Each day needs a name.';
+    if (String(d.name).length > 80) return 'A day name is too long.';
+    if (String(d.key || '').length > 12) return 'A day key is too long.';
+    if (d.notes != null && String(d.notes).length > 500) return 'A day note is too long.';
     if (d.key !== keys[i]) return 'Day order is Monday through Sunday.';
     if ((d.exercises || []).length > 20) return 'Too many exercises on ' + d.name + '.';
   }
@@ -838,8 +843,16 @@ export function newExercise(name) {
 }
 
 export function isPermissionDenied(err) {
-  const code = String((err && (err.code || err.message)) || '');
-  return code.indexOf('permission-denied') !== -1 || code.indexOf('storage/unauthorized') !== -1;
+  const code = String((err && (err.code || err.message)) || '').toLowerCase();
+  return code.indexOf('permission-denied') !== -1
+    || code.indexOf('permission_denied') !== -1
+    || code.indexOf('storage/unauthorized') !== -1;
+}
+
+export function rulesRefusal(operation, path) {
+  const op = operation || 'write';
+  const doc = path || 'fitness';
+  return 'Firestore refused ' + op + ' on ' + doc + '. Publish the fitness rules, then try that save again. Changes stay on this phone until then.';
 }
 
 // Sample logs for local preview screenshots. Not Dustin's measurements.
@@ -930,6 +943,12 @@ export function previewBundle(today) {
   }
   built.updatedAt = '2026-11-16T16:10:00.000Z';
   sessions['2026-11-16'] = built;
+  const foodlog = {};
+  foodlog['2026-11-16'] = {
+    date: '2026-11-16',
+    entries: usualMealEntries('usual-chicken-rice', 1),
+    updatedAt: '2026-11-16T12:00:00.000Z'
+  };
   const fluids = {};
   function sip(date, name, kind, oz, hm) {
     return { id: kind + '-' + hm.replace(':', ''), name: name, kind: kind, oz: oz, at: date + 'T' + hm + ':00' };
@@ -954,6 +973,7 @@ export function previewBundle(today) {
     checkins: checkins,
     sessions: sessions,
     fluids: fluids,
+    foodlog: foodlog,
     measurements: [],
     dexa: [seedDexa()],
     today: day
