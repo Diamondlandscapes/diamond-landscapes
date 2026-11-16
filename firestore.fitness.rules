@@ -52,6 +52,8 @@
 //     Jan 2, 2026 scan is dexa/2026-01-02.
 //   fitness/{uid}/fluids/{YYYY-MM-DD}
 //     That day's drinks: { date, entries: [{ id, name, kind, oz, at }], updatedAt }
+//   fitness/{uid}/foodlog/{YYYY-MM-DD}
+//     That day's foods: { date, entries: [{ id, foodId, name, serving, multiplier, kcal, protein, carbs, fat }], updatedAt }
 //
 // Photos are NOT in Firestore. They go to Cloud Storage at
 // fitness/{uid}/... and need storage.fitness.rules pasted separately.
@@ -85,16 +87,13 @@ function fitnessClock(v) {
   return v is string && v.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
 }
 
+// Keep this small. String length checks on key, name, and notes, repeated
+// for all 7 days, push a full starter week over Firestore's 1000-expression
+// limit and the create is denied. Length caps are enforced in the app.
 function fitnessDayOk(day) {
-  return day.keys().hasOnly(['key', 'name', 'kind', 'notes', 'exercises'])
-    && day.key is string
-    && day.key.size() <= 12
-    && day.name is string
-    && day.name.size() > 0
-    && day.name.size() <= 80
+  return day is map
+    && day.keys().hasOnly(['key', 'name', 'kind', 'notes', 'exercises'])
     && day.kind in ['lift', 'recovery', 'rest']
-    && day.notes is string
-    && day.notes.size() <= 500
     && day.exercises is list
     && day.exercises.size() <= 20;
 }
@@ -218,6 +217,14 @@ function fitnessFluidOk(data) {
     && fitnessStamp(data.updatedAt);
 }
 
+function fitnessFoodLogOk(data) {
+  return data.keys().hasOnly(['date', 'entries', 'updatedAt'])
+    && fitnessDate(data.date)
+    && data.entries is list
+    && data.entries.size() <= 40
+    && fitnessStamp(data.updatedAt);
+}
+
 function fitnessDexaOk(data) {
   return data.keys().hasOnly([
       'date', 'weightLb', 'bfPct', 'fatMassG', 'leanBmcG', 'visceralFatG',
@@ -273,6 +280,14 @@ match /fitness/{uid} {
     allow read: if fitnessOwner(uid);
     allow create, update: if fitnessOwner(uid)
       && fitnessFluidOk(request.resource.data)
+      && request.resource.data.date == day;
+    allow delete: if fitnessOwner(uid);
+  }
+
+  match /foodlog/{day} {
+    allow read: if fitnessOwner(uid);
+    allow create, update: if fitnessOwner(uid)
+      && fitnessFoodLogOk(request.resource.data)
       && request.resource.data.date == day;
     allow delete: if fitnessOwner(uid);
   }

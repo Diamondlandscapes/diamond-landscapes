@@ -8,8 +8,12 @@ import {
   measurementIssue, dexaIssue, profileIssue, slug, newExercise, normalizeProfile,
   isPermissionDenied, previewBundle, paceLabel, daysBetween, addDays,
   DRINKS, SIP_OUNCES, fluidStatus, fluidGoalOz, fluidSeries, emptyFluids,
-  makeFluidEntry, fluidEntryIssue, reminderDue, fluidTotal
-} from './model.js?v=2026-11-16-2';
+  makeFluidEntry, fluidEntryIssue, reminderDue, fluidTotal, rulesRefusal
+} from './model.js?v=2026-11-16-3';
+import {
+  FOOD_LIBRARY, USUAL_MEALS, SERVING_MULTIPLIERS, foodById, makeFoodEntry,
+  usualMealEntries, emptyFoodLog, foodLogTotals, foodEntryIssue
+} from './foods.js?v=2026-11-16-3';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyBYcBBQ2IFVgL4Oq0Oob54ttzxuntwdY2Q',
@@ -35,6 +39,8 @@ const state = {
   measurements: [],
   dexa: [],
   fluids: {},
+  foodlog: {},
+  foodMult: 1,
   sipOz: 16,
   expand: null,
   expandDate: '',
@@ -144,19 +150,33 @@ async function loadAll(uid) {
   const { doc, getDoc, setDoc } = state.fs;
   const root = doc(state.db, 'fitness', uid);
   try {
-    const snap = await getDoc(root);
+    let snap;
+    try {
+      snap = await getDoc(root);
+    } catch (err) {
+      throw tagOp(err, 'getDoc', 'fitness/' + uid);
+    }
     if (!snap.exists()) {
       const now = new Date().toISOString();
       const profile = seedProfile(now);
       const dexa = seedDexa(now);
-      await setDoc(root, profile);
-      await setDoc(doc(state.db, 'fitness', uid, 'dexa', dexa.date), dexa);
+      try {
+        await setDoc(root, profile);
+      } catch (err) {
+        throw tagOp(err, 'setDoc', 'fitness/' + uid);
+      }
+      try {
+        await setDoc(doc(state.db, 'fitness', uid, 'dexa', dexa.date), dexa);
+      } catch (err) {
+        throw tagOp(err, 'setDoc', 'fitness/' + uid + '/dexa/' + dexa.date);
+      }
       state.profile = profile;
       state.dexa = [Object.assign({ id: dexa.date }, dexa)];
       state.checkins = {};
       state.sessions = {};
       state.measurements = [];
       state.fluids = {};
+      state.foodlog = {};
     } else {
       state.profile = normalizeProfile(snap.data());
       state.checkins = indexByDate(await readCol(uid, 'checkins'));
@@ -164,9 +184,14 @@ async function loadAll(uid) {
       state.measurements = (await readCol(uid, 'measurements')).sort(byDateDesc);
       state.dexa = (await readCol(uid, 'dexa')).sort(byDateDesc);
       state.fluids = indexByDate(await readCol(uid, 'fluids'));
+      state.foodlog = indexByDate(await readCol(uid, 'foodlog'));
       if (!state.dexa.length) {
         const dexa = seedDexa(new Date().toISOString());
-        await setDoc(doc(state.db, 'fitness', uid, 'dexa', dexa.date), dexa);
+        try {
+          await setDoc(doc(state.db, 'fitness', uid, 'dexa', dexa.date), dexa);
+        } catch (err) {
+          throw tagOp(err, 'setDoc', 'fitness/' + uid + '/dexa/' + dexa.date);
+        }
         state.dexa = [Object.assign({ id: dexa.date }, dexa)];
       }
     }
@@ -183,12 +208,16 @@ async function loadAll(uid) {
       state.measurements = cached.measurements || [];
       state.dexa = cached.dexa && cached.dexa.length ? cached.dexa : [seedDexa()];
       state.fluids = cached.fluids || {};
+      state.foodlog = cached.foodlog || {};
     } else {
       state.profile = seedProfile(new Date().toISOString());
       state.dexa = [Object.assign({ id: '2026-01-02' }, seedDexa())];
       state.fluids = {};
+      state.foodlog = {};
     }
-    state.rulesProblem = isPermissionDenied(err);
+    state.rulesProblem = isPermissionDenied(err)
+      ? rulesRefusal(err.fitnessOp, err.fitnessPath)
+      : false;
     state.offline = !state.rulesProblem;
   }
   if (gen !== loadGen) return;
@@ -207,9 +236,20 @@ function byDateDesc(a, b) {
   return String(b.date || '').localeCompare(String(a.date || ''));
 }
 
+function tagOp(err, operation, path) {
+  if (err && !err.fitnessOp) err.fitnessOp = operation;
+  if (err && !err.fitnessPath) err.fitnessPath = path;
+  return err;
+}
+
 async function readCol(uid, name) {
-  const snap = await state.fs.getDocs(state.fs.collection(state.db, 'fitness', uid, name));
-  return snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+  const path = 'fitness/' + uid + '/' + name;
+  try {
+    const snap = await state.fs.getDocs(state.fs.collection(state.db, 'fitness', uid, name));
+    return snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+  } catch (err) {
+    throw tagOp(err, 'getDocs', path);
+  }
 }
 
 function cacheKey(uid) { return 'fitness-v1:' + uid; }
@@ -223,7 +263,8 @@ function writeCache(uid) {
       sessions: state.sessions,
       measurements: state.measurements,
       dexa: state.dexa,
-      fluids: state.fluids
+      fluids: state.fluids,
+      foodlog: state.foodlog
     }));
   } catch (e) { /* private mode */ }
 }
@@ -249,6 +290,7 @@ async function putDoc(parts, data) {
   data.updatedAt = new Date().toISOString();
   if (state.user) writeCache(state.user.uid);
   if (state.preview || !state.user) return;
+  const path = 'fitness/' + state.user.uid + (parts.length ? '/' + parts.join('/') : '');
   try {
     const ref = state.fs.doc(state.db, 'fitness', state.user.uid, ...parts);
     await state.fs.setDoc(ref, strip(data));
@@ -256,16 +298,16 @@ async function putDoc(parts, data) {
     state.offline = false;
     renderBanner();
   } catch (err) {
-    handleWriteError(err);
+    handleWriteError(tagOp(err, 'setDoc', path));
   }
 }
 
 function handleWriteError(err) {
   console.warn('Fitness save', err);
   if (isPermissionDenied(err)) {
-    state.rulesProblem = true;
+    state.rulesProblem = rulesRefusal(err.fitnessOp, err.fitnessPath);
     renderBanner();
-    toast('Saved on this phone. Firestore refused the write.');
+    toast('Saved on this phone. ' + state.rulesProblem);
     return;
   }
   state.offline = true;
@@ -372,7 +414,9 @@ function renderBanner() {
   }
   if (state.rulesProblem) {
     el.hidden = false;
-    el.textContent = 'Firestore refused fitness/' + (state.user ? state.user.uid : '') + '. Merge firestore.fitness.rules into the live rules and publish them. Changes stay on this phone until then.';
+    el.textContent = typeof state.rulesProblem === 'string'
+      ? state.rulesProblem
+      : rulesRefusal('write', 'fitness/' + (state.user ? state.user.uid : ''));
     return;
   }
   if (state.offline) {
@@ -454,6 +498,7 @@ function renderToday() {
   html += '<p class="screen-kicker">' + esc(plan.kind === 'lift' ? 'Lift' : plan.kind === 'recovery' ? 'Recovery' : 'Rest') + '</p>';
   html += '<h1 class="screen-title">' + esc(session.planName || plan.name) + '</h1>';
   html += '<p class="meta">' + progress + ' · ' + esc(macros) + '</p>';
+  html += renderFoodProgress(state.viewDate);
   if (session.deload) {
     html += '<div class="note">Deload week. Lifting sets are cut in half. Same movements, less volume.</div>';
   }
@@ -605,7 +650,6 @@ function fieldInput(label, field, ex, set, value, mode) {
 
 function renderCheckin() {
   const row = ensureCheckin(state.viewDate);
-  const totals = mealTotals(row.meals);
   let html = '';
   html += '<p class="screen-kicker">Daily check-in</p>';
   html += '<h1 class="screen-title">' + esc(formatLong(state.viewDate)) + '</h1>';
@@ -632,43 +676,109 @@ function renderCheckin() {
   html += '<button type="button" class="step-btn" data-act="sleep-step" data-dir="1" aria-label="More sleep">+</button>';
   html += '</div>';
   html += '<label class="stack" style="margin-top:8px;">Notes<textarea class="text-input" data-field="notes" maxlength="2000" placeholder="How the day felt">' + esc(row.notes || '') + '</textarea></label>';
-  html += '<section class="card" style="margin-top:12px;"><h2>Foods</h2>';
-  html += '<p class="hint">Add what you actually ate. The daily totals above stay editable.</p>';
-  if (row.meals && row.meals.length) {
-    row.meals.forEach((meal, i) => {
-      html += '<div class="meal"><div><b>' + esc(meal.name) + '</b><div class="hint">' + esc(mealLine(meal)) + '</div></div>';
-      html += '<button type="button" class="mini" data-act="remove-meal" data-meal="' + i + '" aria-label="Remove food" style="min-width:44px;min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);">✕</button></div>';
-    });
-    html += '<p class="hint">From foods: ' + Math.round(totals.kcal) + ' kcal · ' + Math.round(totals.protein) + ' g protein</p>';
-    html += '<button type="button" class="ghost" data-act="use-totals" style="width:100%;margin-top:8px;">Use food totals</button>';
-  }
-  html += '<div class="grid-2" style="margin-top:10px;">';
-  if ((state.profile.foods || []).length) {
-    html += '<label class="stack" style="grid-column:1/-1;">Saved food<select class="text-input" id="meal-pick"><option value="">Type a new one</option>';
-    state.profile.foods.forEach((food) => {
-      html += '<option value="' + esc(food.id) + '">' + esc(food.name) + '</option>';
-    });
-    html += '</select></label>';
-  }
-  html += '<label class="stack" style="grid-column:1/-1;">Name<input class="text-input" id="meal-name" maxlength="80" placeholder="Chicken, rice, a shake"></label>';
-  html += '<label class="stack">Kcal<input class="text-input" id="meal-kcal" inputmode="numeric"></label>';
-  html += '<label class="stack">Protein<input class="text-input" id="meal-protein" inputmode="decimal"></label>';
-  html += '</div>';
-  html += '<label class="hint" style="display:flex;gap:8px;align-items:center;margin:8px 0;"><input type="checkbox" id="meal-remember" checked> Remember this food</label>';
-  html += '<button type="button" class="primary" data-act="add-meal">Add food</button>';
-  html += '</section>';
-  html += '<section class="card"><h2>Progress photo</h2><p class="hint">Optional. Stored in Firebase Storage under your account, compressed on this phone first.</p>';
-  html += '<input id="photo-input" type="file" accept="image/*" capture="environment" hidden>';
-  html += '<button type="button" class="ghost" data-act="pick-photo" style="width:100%;margin-top:8px;">Add photo</button>';
-  html += '<img id="photo-preview" class="photo-preview" alt="Progress photo" hidden>';
-  if (row.photoPath) html += '<button type="button" class="linkish" data-act="clear-photo">Remove photo from this day</button>';
-  html += '</section>';
+  html += renderFoodLog();
   html += '<div class="savebar"><button type="button" class="primary" data-act="save-checkin" style="width:100%;">Save check-in</button><p class="hint" id="save-state" style="text-align:center;margin-top:6px;"></p></div>';
   return html;
 }
 
 function stackNum(label, field, value, mode, placeholder) {
   return '<label class="stack">' + label + '<input class="text-input" inputmode="' + mode + '" autocomplete="off" data-field="' + field + '" placeholder="' + esc(placeholder) + '" value="' + esc(value ?? '') + '"></label>';
+}
+
+function foodBars(date) {
+  const doc = state.foodlog[date] || emptyFoodLog(date);
+  const totals = foodLogTotals(doc.entries);
+  const kcalGoal = Number(state.profile.calories) || 2250;
+  const proteinGoal = Number(state.profile.proteinG) || 190;
+  return macroBar('Calories', totals.kcal, kcalGoal, 'kcal')
+    + macroBar('Protein', totals.protein, proteinGoal, 'g')
+    + '<p class="hint">' + Math.round(totals.carbs) + ' g carbs · ' + Math.round(totals.fat) + ' g fat</p>';
+}
+
+function renderFoodProgress(date) {
+  return '<section class="card" id="food-progress"><h2>Food</h2>'
+    + foodBars(date)
+    + '<button type="button" class="linkish" data-act="tab" data-tab="checkin">Open the food log</button></section>';
+}
+
+function macroBar(label, value, goal, unit) {
+  const pct = goal > 0 ? Math.min(100, Math.round((value / goal) * 100)) : 0;
+  const over = value > goal + 0.5;
+  return '<div style="margin-top:8px;"><div class="split"><span class="hint" style="margin:0;">' + esc(label) + '</span><b>'
+    + Math.round(value) + ' / ' + Math.round(goal) + ' ' + unit + '</b></div>'
+    + '<div class="macro-track"><div class="macro-fill' + (over ? ' over' : '') + '" style="width:' + pct + '%"></div></div></div>';
+}
+
+function renderFoodLog() {
+  const doc = ensureFoodLog(state.viewDate);
+  const mult = state.foodMult;
+  let html = '<section class="card" id="food-log"><h2>Food log</h2>';
+  html += foodBars(state.viewDate);
+  html += '<p class="hint">Servings</p><div class="oz-picks">';
+  SERVING_MULTIPLIERS.forEach((n) => {
+    html += '<button type="button" data-act="food-mult" data-mult="' + n + '" class="' + (mult === n ? 'on' : '') + '">' + n + 'x</button>';
+  });
+  html += '</div>';
+  html += '<label class="stack" style="margin:8px 0;">Custom servings<input class="text-input" id="food-custom-mult" inputmode="decimal" placeholder="2.5" value="' + (SERVING_MULTIPLIERS.indexOf(mult) === -1 ? esc(mult) : '') + '"></label>';
+  html += '<div class="drink-grid">';
+  USUAL_MEALS.forEach((meal) => {
+    html += '<button type="button" data-act="add-usual" data-meal="' + esc(meal.id) + '">' + esc(meal.name) + '</button>';
+  });
+  html += '</div><div class="food-list">';
+  FOOD_LIBRARY.forEach((food) => {
+    const scaled = makeFoodEntry(food, mult);
+    html += '<button type="button" class="compact" data-act="add-food-item" data-food="' + esc(food.id) + '"><span>'
+      + esc(food.name) + '<i class="pill">' + esc(food.serving) + '</i></span><em>'
+      + Math.round(scaled.kcal) + ' kcal</em></button>';
+  });
+  html += '</div>';
+  html += '<h2 style="margin-top:12px;">Custom food</h2><div class="grid-2">';
+  html += '<label class="stack" style="grid-column:1/-1;">Name<input class="text-input" id="custom-food-name" maxlength="80"></label>';
+  html += '<label class="stack">Serving<input class="text-input" id="custom-food-serving" maxlength="40" placeholder="1 bowl"></label>';
+  html += '<label class="stack">Kcal<input class="text-input" id="custom-food-kcal" inputmode="decimal"></label>';
+  html += '<label class="stack">Protein<input class="text-input" id="custom-food-protein" inputmode="decimal"></label>';
+  html += '<label class="stack">Carbs<input class="text-input" id="custom-food-carbs" inputmode="decimal"></label>';
+  html += '<label class="stack">Fat<input class="text-input" id="custom-food-fat" inputmode="decimal"></label>';
+  html += '</div><button type="button" class="ghost" data-act="add-custom-food" style="width:100%;margin-top:8px;">Add custom food</button>';
+  (doc.entries || []).slice().reverse().forEach((entry) => {
+    html += '<div class="meal"><div><b>' + esc(entry.name) + '</b><div class="hint">'
+      + esc(entry.multiplier) + ' × ' + esc(entry.serving || '') + ' · '
+      + Math.round(entry.kcal) + ' kcal · ' + Math.round(entry.protein) + ' g protein</div></div>';
+    html += '<button type="button" data-act="remove-food-entry" data-id="' + esc(entry.id) + '" aria-label="Remove food" style="min-width:44px;min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);">✕</button></div>';
+  });
+  html += '<button type="button" class="ghost" data-act="copy-food-totals" style="width:100%;margin-top:8px;">Copy totals into check-in</button>';
+  html += '</section>';
+  return html;
+}
+
+function ensureFoodLog(date) {
+  if (!state.foodlog[date]) state.foodlog[date] = emptyFoodLog(date);
+  return state.foodlog[date];
+}
+
+function activeFoodMultiplier() {
+  const custom = document.getElementById('food-custom-mult');
+  if (custom && String(custom.value || '').trim()) {
+    const n = Number(custom.value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return state.foodMult || 1;
+}
+
+function saveFoodSoon() {
+  const doc = ensureFoodLog(state.viewDate);
+  const bad = (doc.entries || []).map(foodEntryIssue).find(Boolean);
+  if (bad) { toast(bad); return; }
+  schedule('food', () => putDoc(['foodlog', doc.date], doc));
+}
+
+function addFoodToDay(entry) {
+  const issue = foodEntryIssue(entry);
+  if (issue) { toast(issue); return; }
+  const doc = ensureFoodLog(state.viewDate);
+  doc.entries = (doc.entries || []).concat(entry);
+  saveFoodSoon();
+  render();
 }
 
 function mealLine(meal) {
@@ -709,7 +819,6 @@ function renderProgress() {
   html += renderMeasures();
   html += renderDexa();
   html += renderStrength();
-  html += renderPhotos();
   return html;
 }
 
@@ -835,26 +944,6 @@ function renderStrength() {
   return html;
 }
 
-function renderPhotos() {
-  const rows = Object.keys(state.checkins).filter((d) => state.checkins[d] && state.checkins[d].photoPath).sort().reverse();
-  let html = '<section class="card"><h2>Photos</h2>';
-  if (!rows.length) {
-    html += '<p class="hint">Progress photos land here after you add one on Check-in.</p></section>';
-    return html;
-  }
-  html += '<div id="photo-strip">';
-  rows.slice(0, 12).forEach((date) => {
-    const known = state.photoUrls && state.photoUrls[state.checkins[date].photoPath];
-    html += '<figure style="margin:8px 0;"><figcaption class="hint">' + esc(formatLong(date)) + '</figcaption>';
-    if (known) html += '<img class="photo-preview" alt="Progress photo from ' + esc(formatLong(date)) + '" src="' + esc(known) + '">';
-    html += '</figure>';
-  });
-  html += '</div>';
-  if (!state.preview) html += '<button type="button" class="ghost" data-act="load-photos" style="width:100%;">Load photos</button>';
-  html += '</section>';
-  return html;
-}
-
 function renderPlan() {
   const p = state.profile;
   const open = state.openDay == null ? weekdayMon0(todayISO()) : state.openDay;
@@ -923,7 +1012,7 @@ function renderPlan() {
   }
   html += '</section>';
   if (state.user && state.user.email) html += '<p class="fine">Signed in as ' + esc(state.user.email) + '</p>';
-  html += '<details class="rules"><summary>Where this data lives</summary><p>Logs are stored at fitness/{your account} in the Diamond Landscapes Firebase project. Only that signed-in, verified account can read or write them, after firestore.fitness.rules is merged into the live rules and published. Photos need the same treatment for storage.fitness.rules. Diamond Ops is a separate app and does not link here.</p></details>';
+  html += '<details class="rules"><summary>Where this data lives</summary><p>Logs stay under fitness/{your account}. Only that signed-in, verified account can read or write them, after the fitness rules are published.</p></details>';
   html += '<p class="fine">App ' + esc(APP_VERSION) + '</p>';
   return html;
 }
@@ -944,7 +1033,7 @@ function renderHydrationSettings() {
   html += '<label class="stack">Quiet end<input class="text-input" type="time" data-field="quietEnd" value="' + esc(p.quietEnd) + '"></label>';
   html += '</div>';
   html += '<button type="button" class="ghost" data-act="allow-notifications" style="width:100%;margin-top:10px;">' + (perm === 'granted' ? 'Drink alerts are on' : 'Allow drink reminders') + '</button>';
-  html += '<p class="hint">On iPhone, alerts arrive only after you add Fitness to your Home Screen and open it from that icon, on iOS 16.4 or later. While this tab is open, a reminder still shows here.</p>';
+  html += '<p class="hint">On iPhone, alerts arrive only after you add Dustin Fitness to your Home Screen and open it from that icon, on iOS 16.4 or later. While this tab is open, a reminder still shows here.</p>';
   html += '<p class="hint">Background alerts can fire when the browser wakes this app. Alerts on a closed phone need Firebase Cloud Messaging, which is not turned on.</p>';
   html += '</section>';
   return html;
@@ -1184,7 +1273,7 @@ function paintTimer() {
   const el = $('timer');
   if (!t) {
     el.hidden = true;
-    document.title = 'Fitness';
+    document.title = 'Dustin Fitness';
     return;
   }
   let left = t.paused ? t.remaining : Math.ceil((t.endsAt - Date.now()) / 1000);
@@ -1196,7 +1285,7 @@ function paintTimer() {
   $('timer-clock').textContent = formatClock(left);
   $('timer-label').textContent = t.label || 'Rest';
   $('timer-pause').textContent = t.paused ? 'Resume' : 'Pause';
-  document.title = formatClock(left) + ' · Fitness';
+  document.title = formatClock(left) + ' · Dustin Fitness';
 }
 
 function finishTimer() {
@@ -1205,7 +1294,7 @@ function finishTimer() {
   clearInterval(timerHandle);
   state.timer = null;
   $('timer').hidden = true;
-  document.title = 'Fitness';
+  document.title = 'Dustin Fitness';
   beep();
   try { if (navigator.vibrate) navigator.vibrate([180, 80, 180]); } catch (e) {}
   toast('Rest done');
@@ -1256,6 +1345,49 @@ const actions = {
   'sip-oz'(btn) {
     state.sipOz = Number(btn.dataset.oz) || 16;
     render();
+  },
+  'food-mult'(btn) {
+    state.foodMult = Number(btn.dataset.mult) || 1;
+    render();
+  },
+  'add-usual'(btn) {
+    usualMealEntries(btn.dataset.meal, activeFoodMultiplier()).forEach((entry) => addFoodToDay(entry));
+  },
+  'add-food-item'(btn) {
+    const food = foodById(btn.dataset.food);
+    if (!food) return;
+    addFoodToDay(makeFoodEntry(food, activeFoodMultiplier()));
+  },
+  'add-custom-food'() {
+    const name = (($('custom-food-name') && $('custom-food-name').value) || '').trim();
+    if (!name) { toast('Name the food'); return; }
+    const food = {
+      id: 'custom',
+      name: name,
+      serving: (($('custom-food-serving') && $('custom-food-serving').value) || '').trim() || '1 serving',
+      kcal: Number($('custom-food-kcal') && $('custom-food-kcal').value) || 0,
+      protein: Number($('custom-food-protein') && $('custom-food-protein').value) || 0,
+      carbs: Number($('custom-food-carbs') && $('custom-food-carbs').value) || 0,
+      fat: Number($('custom-food-fat') && $('custom-food-fat').value) || 0
+    };
+    addFoodToDay(makeFoodEntry(food, activeFoodMultiplier()));
+  },
+  'remove-food-entry'(btn) {
+    const doc = ensureFoodLog(state.viewDate);
+    doc.entries = (doc.entries || []).filter((entry) => entry.id !== btn.dataset.id);
+    saveFoodSoon();
+    render();
+  },
+  'copy-food-totals'() {
+    const totals = foodLogTotals((state.foodlog[state.viewDate] || {}).entries);
+    const row = ensureCheckin(state.viewDate);
+    row.calories = Math.round(totals.kcal);
+    row.protein = Math.round(totals.protein);
+    row.carbs = Math.round(totals.carbs);
+    row.fat = Math.round(totals.fat);
+    saveCheckinSoon();
+    render();
+    toast('Totals copied');
   },
   'add-drink'(btn) { addDrink(btn.dataset.name, btn.dataset.kind); },
   'add-custom'() {
@@ -1342,7 +1474,7 @@ const actions = {
     clearInterval(timerHandle);
     state.timer = null;
     $('timer').hidden = true;
-    document.title = 'Fitness';
+    document.title = 'Dustin Fitness';
   },
   'sleep-step'(btn) {
     const row = ensureCheckin(state.viewDate);
@@ -1731,12 +1863,13 @@ async function signOut() {
   state.measurements = [];
   state.dexa = [];
   state.fluids = {};
+  state.foodlog = {};
   state.user = null;
   if (state.auth && state.authMod) {
     try { await state.authMod.signOut(state.auth); } catch (e) {}
   }
   show('login-screen');
-  document.title = 'Fitness';
+  document.title = 'Dustin Fitness';
 }
 
 function fillLoginCountdown() {
@@ -1889,6 +2022,7 @@ function bootPreview() {
   state.checkins = bundle.checkins;
   state.sessions = bundle.sessions;
   state.fluids = bundle.fluids || {};
+  state.foodlog = bundle.foodlog || {};
   state.measurements = bundle.measurements;
   state.dexa = bundle.dexa.map((row) => Object.assign({ id: row.date }, row));
   state.user = { email: 'preview@localhost', uid: 'preview' };
@@ -1899,7 +2033,7 @@ function bootPreview() {
 
 async function boot() {
   fillLoginCountdown();
-  document.title = 'Fitness';
+  document.title = 'Dustin Fitness';
   if (isPreview()) {
     bootPreview();
     return;

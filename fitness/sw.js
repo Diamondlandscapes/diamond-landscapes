@@ -1,12 +1,9 @@
-// Fitness log service worker.
-// Scope is the directory of this file. On GitHub Pages that is
-// /diamond-landscapes/fitness/ — the /fitness/ path of the Diamond Ops site.
-// Register with scope "./" only. Scope "/fitness/" is rejected: this script
-// does not live at the domain root.
+// Dustin Fitness service worker.
+// Scope is the directory of this file. Relative scope "./" works at the
+// site root (Firebase Hosting) and under a subpath such as /fitness/.
+// Register with scope "./" only.
 //
-// Cache names are prefixed fitness- so this worker never deletes the
-// Diamond Ops cache (diamond-static-v4), and the root worker's cleanup
-// must not be copied here.
+// Cache names are prefixed fitness- so this worker only deletes its own caches.
 
 const CACHE = 'fitness-static-v1';
 const ICON = /\/icon-\d+\.png$/;

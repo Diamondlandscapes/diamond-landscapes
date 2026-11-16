@@ -1,0 +1,13 @@
+{
+  "hosting": [
+    {
+      "target": "fitness",
+      "public": "fitness",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ]
+    }
+  ]
+}
