@@ -1,0 +1,43 @@
+// FRAGMENT — paste this inside the existing
+//   match /b/{bucket}/o { ... }
+// block of the LIVE Cloud Storage rules. Do not deploy this file by itself.
+// It is not a complete ruleset. Deploying it alone REPLACES every Storage
+// rule and can lock Diamond Ops out of photos/ or open those files up.
+// Storage rules are a different ruleset from Firestore. Publishing
+// firestore.fitness.rules does not publish this file.
+//
+// The live Storage rules are not in this repository. The owner publishes
+// them separately. Do not deploy until the owner approves.
+//
+// Progress photos for the fitness log only:
+//   fitness/{uid}/{filename}.jpg
+// Diamond Ops photos stay under photos/... and are not touched here.
+//
+// How to publish:
+// 1. Console: Build → Storage → Rules. Copy the live rules out first.
+// 2. Paste the function and the match below inside the existing
+//    `match /b/{bucket}/o { ... }` block. Do not remove the matches that
+//    already allow Diamond Ops to use photos/.
+// 3. Same catch-all warning as Firestore: if a broader
+//      match /{allPaths=**} { allow read: if request.auth != null; }
+//    exists, it wins, and anonymous crew phones could read a photo if they
+//    can guess the path. Narrow that before relying on this fragment.
+// 4. Publish, then add a photo on the fitness Check-in screen.
+//
+// A verified password user can read and write only fitness/{his uid}/...
+// Files must be images under 5 MB. The app compresses to JPEG first.
+
+function fitnessStorageOwner(uid) {
+  return request.auth != null
+    && request.auth.uid == uid
+    && request.auth.token.email_verified == true
+    && request.auth.token.firebase.sign_in_provider == 'password';
+}
+
+match /fitness/{uid}/{allPaths=**} {
+  allow read: if fitnessStorageOwner(uid);
+  allow create, update: if fitnessStorageOwner(uid)
+    && request.resource.size < 5 * 1024 * 1024
+    && request.resource.contentType.matches('image/.*');
+  allow delete: if fitnessStorageOwner(uid);
+}
