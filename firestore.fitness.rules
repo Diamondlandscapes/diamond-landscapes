@@ -1,0 +1,279 @@
+// FRAGMENT — paste this inside the existing
+//   match /databases/{database}/documents { ... }
+// block, next to the other matches. Do not deploy this file by itself.
+// It is not a complete ruleset. The live rules file is not in this
+// repository. The owner publishes rules separately. Do not deploy until
+// the owner approves.
+//
+// This is personal health data (body weight, photos, measurements, DEXA).
+// It is NOT part of Diamond Ops. Do not reuse isManager(). Do not let crew
+// phones, anonymous auth, or any other account read it.
+//
+// How to publish (Firebase Console or the CLI — same result):
+// 1. Open the LIVE Firestore rules. That file is not in this repo. In the
+//    console: Build → Firestore Database → Rules. Copy them out before
+//    editing so you can undo.
+// 2. Inside the existing `match /databases/{database}/documents { ... }`
+//    block, paste the functions and the `match /fitness/{uid}` block from
+//    this file. Put them next to the other collection matches. Do not wrap
+//    them in a second `service cloud.firestore` block. Do not delete or
+//    edit the Diamond Ops matches (properties, routes, crew, bills,
+//    jobCosting, receptionistCalls, and the rest).
+// 3. Search the live file for a catch-all such as
+//      match /{document=**} { allow read: if request.auth != null; }
+//    Firestore ORs every matching allow. A broader allow wins over this
+//    fragment and would let every signed-in client — including anonymous
+//    crew phones — read every fitness document. If that catch-all exists,
+//    narrow it BEFORE relying on this file. This fragment cannot override
+//    an allow.
+// 4. Publish. Rules usually take about a minute. Then sign in at
+//    /fitness/ and save a weigh-in.
+// 5. Playground check (Rules → Playground), using the real uid from
+//    Authentication → Users:
+//      - Signed out, read fitness/{uid}                         → deny
+//      - Anonymous auth, read fitness/{uid}                     → deny
+//      - Password auth, email NOT verified, read fitness/{uid}  → deny
+//      - Verified password auth whose uid matches the path      → allow
+//      - Verified password auth whose uid does NOT match        → deny
+//
+// CLI, only if the owner already deploys a combined rules file from his
+// own machine: paste this fragment into THAT file, then
+//   firebase deploy --only firestore:rules
+// Never point the CLI at this fragment alone. `firebase deploy` replaces
+// the entire live ruleset with the file you give it.
+//
+// Docs, all under the signed-in account's own uid:
+//   fitness/{uid}
+//     profile + plan + macros. One document.
+//   fitness/{uid}/checkins/{YYYY-MM-DD}
+//   fitness/{uid}/sessions/{YYYY-MM-DD}
+//   fitness/{uid}/measurements/{id}
+//   fitness/{uid}/dexa/{id}
+//     Jan 2, 2026 scan is dexa/2026-01-02.
+//   fitness/{uid}/fluids/{YYYY-MM-DD}
+//     That day's drinks: { date, entries: [{ id, name, kind, oz, at }], updatedAt }
+//
+// Photos are NOT in Firestore. They go to Cloud Storage at
+// fitness/{uid}/... and need storage.fitness.rules pasted separately.
+// Storage rules are a different ruleset. Publishing Firestore rules does
+// not change them.
+
+function fitnessOwner(uid) {
+  return request.auth != null
+    && request.auth.uid == uid
+    && request.auth.token.email_verified == true
+    && request.auth.token.firebase.sign_in_provider == 'password';
+}
+
+function fitnessNum(n, lo, hi) {
+  return n is number && n >= lo && n <= hi;
+}
+
+function fitnessNumOrNull(n, lo, hi) {
+  return n == null || fitnessNum(n, lo, hi);
+}
+
+function fitnessDate(d) {
+  return d is string && d.size() == 10;
+}
+
+function fitnessStamp(d) {
+  return d is string && d.size() >= 10 && d.size() <= 40;
+}
+
+function fitnessClock(v) {
+  return v is string && v.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+}
+
+function fitnessDayOk(day) {
+  return day.keys().hasOnly(['key', 'name', 'kind', 'notes', 'exercises'])
+    && day.key is string
+    && day.key.size() <= 12
+    && day.name is string
+    && day.name.size() > 0
+    && day.name.size() <= 80
+    && day.kind in ['lift', 'recovery', 'rest']
+    && day.notes is string
+    && day.notes.size() <= 500
+    && day.exercises is list
+    && day.exercises.size() <= 20;
+}
+
+function fitnessProfileOk(data) {
+  return data.keys().hasOnly([
+      'v', 'heightIn', 'startDate', 'startWeightLb', 'targetWeightLb', 'targetBfPct',
+      'targetDate', 'vacationDate', 'deloadStart', 'deloadEnd',
+      'calories', 'proteinG', 'carbsG', 'fatG', 'stepsGoal', 'walkMin', 'plungeGapHours',
+      'fluidTrainOz', 'fluidRestOz', 'paceStart', 'paceEnd',
+      'remindOn', 'remindEveryMin', 'quietStart', 'quietEnd',
+      'equipment', 'guidelines', 'foods', 'week', 'createdAt', 'updatedAt'
+    ])
+    && data.v == 1
+    && fitnessNum(data.heightIn, 48, 96)
+    && fitnessDate(data.startDate)
+    && fitnessNum(data.startWeightLb, 50, 500)
+    && fitnessNum(data.targetWeightLb, 50, 500)
+    && fitnessNum(data.targetBfPct, 1, 60)
+    && fitnessDate(data.targetDate)
+    && fitnessDate(data.vacationDate)
+    && fitnessDate(data.deloadStart)
+    && fitnessDate(data.deloadEnd)
+    && fitnessNum(data.calories, 0, 20000)
+    && fitnessNum(data.proteinG, 0, 2000)
+    && fitnessNum(data.carbsG, 0, 2000)
+    && fitnessNum(data.fatG, 0, 2000)
+    && fitnessNum(data.stepsGoal, 0, 100000)
+    && fitnessNum(data.walkMin, 0, 300)
+    && fitnessNum(data.plungeGapHours, 0, 48)
+    && fitnessNum(data.fluidTrainOz, 16, 400)
+    && fitnessNum(data.fluidRestOz, 16, 400)
+    && fitnessClock(data.paceStart)
+    && fitnessClock(data.paceEnd)
+    && data.remindOn is bool
+    && fitnessNum(data.remindEveryMin, 15, 360)
+    && fitnessClock(data.quietStart)
+    && fitnessClock(data.quietEnd)
+    && data.equipment is list
+    && data.equipment.size() <= 40
+    && data.guidelines is list
+    && data.guidelines.size() <= 20
+    && data.foods is list
+    && data.foods.size() <= 200
+    && data.week is list
+    && data.week.size() == 7
+    && fitnessDayOk(data.week[0])
+    && fitnessDayOk(data.week[1])
+    && fitnessDayOk(data.week[2])
+    && fitnessDayOk(data.week[3])
+    && fitnessDayOk(data.week[4])
+    && fitnessDayOk(data.week[5])
+    && fitnessDayOk(data.week[6])
+    && fitnessStamp(data.createdAt)
+    && fitnessStamp(data.updatedAt);
+}
+
+function fitnessCheckinOk(data, uid) {
+  return data.keys().hasOnly([
+      'date', 'weightLb', 'steps', 'calories', 'protein', 'carbs', 'fat', 'sleepHours',
+      'sauna', 'coldPlunge', 'notes', 'meals', 'photoPath', 'updatedAt'
+    ])
+    && fitnessDate(data.date)
+    && fitnessNumOrNull(data.weightLb, 50, 500)
+    && fitnessNumOrNull(data.steps, 0, 200000)
+    && fitnessNumOrNull(data.calories, 0, 20000)
+    && fitnessNumOrNull(data.protein, 0, 2000)
+    && fitnessNumOrNull(data.carbs, 0, 2000)
+    && fitnessNumOrNull(data.fat, 0, 2000)
+    && fitnessNumOrNull(data.sleepHours, 0, 24)
+    && data.sauna is bool
+    && data.coldPlunge is bool
+    && data.notes is string
+    && data.notes.size() <= 2000
+    && data.meals is list
+    && data.meals.size() <= 30
+    && data.photoPath is string
+    && data.photoPath.size() <= 300
+    && (data.photoPath == '' || data.photoPath.matches('^fitness/' + uid + '/.+'))
+    && fitnessStamp(data.updatedAt);
+}
+
+function fitnessSessionOk(data) {
+  return data.keys().hasOnly([
+      'date', 'dayKey', 'planName', 'kind', 'deload', 'notes', 'walkDone', 'exercises', 'updatedAt'
+    ])
+    && fitnessDate(data.date)
+    && data.dayKey is string
+    && data.dayKey.size() <= 12
+    && data.planName is string
+    && data.planName.size() <= 80
+    && data.kind in ['lift', 'recovery', 'rest']
+    && data.deload is bool
+    && data.notes is string
+    && data.notes.size() <= 2000
+    && data.walkDone is bool
+    && data.exercises is list
+    && data.exercises.size() <= 24
+    && fitnessStamp(data.updatedAt);
+}
+
+function fitnessMeasureOk(data) {
+  return data.keys().hasOnly([
+      'date', 'waistIn', 'armIn', 'shoulderIn', 'calfIn', 'notes', 'updatedAt'
+    ])
+    && fitnessDate(data.date)
+    && fitnessNumOrNull(data.waistIn, 0, 100)
+    && fitnessNumOrNull(data.armIn, 0, 100)
+    && fitnessNumOrNull(data.shoulderIn, 0, 100)
+    && fitnessNumOrNull(data.calfIn, 0, 100)
+    && data.notes is string
+    && data.notes.size() <= 2000
+    && fitnessStamp(data.updatedAt);
+}
+
+function fitnessFluidOk(data) {
+  return data.keys().hasOnly(['date', 'entries', 'updatedAt'])
+    && fitnessDate(data.date)
+    && data.entries is list
+    && data.entries.size() <= 80
+    && fitnessStamp(data.updatedAt);
+}
+
+function fitnessDexaOk(data) {
+  return data.keys().hasOnly([
+      'date', 'weightLb', 'bfPct', 'fatMassG', 'leanBmcG', 'visceralFatG',
+      'androidPct', 'gynoidPct', 'notes', 'updatedAt'
+    ])
+    && fitnessDate(data.date)
+    && fitnessNum(data.weightLb, 50, 500)
+    && fitnessNum(data.bfPct, 1, 80)
+    && fitnessNum(data.fatMassG, 0, 200000)
+    && fitnessNum(data.leanBmcG, 0, 200000)
+    && fitnessNum(data.visceralFatG, 0, 20000)
+    && fitnessNum(data.androidPct, 0, 80)
+    && fitnessNum(data.gynoidPct, 0, 80)
+    && data.notes is string
+    && data.notes.size() <= 2000
+    && fitnessStamp(data.updatedAt);
+}
+
+match /fitness/{uid} {
+  allow read: if fitnessOwner(uid);
+  allow create, update: if fitnessOwner(uid) && fitnessProfileOk(request.resource.data);
+  allow delete: if fitnessOwner(uid);
+
+  match /checkins/{day} {
+    allow read: if fitnessOwner(uid);
+    allow create, update: if fitnessOwner(uid)
+      && fitnessCheckinOk(request.resource.data, uid)
+      && request.resource.data.date == day;
+    allow delete: if fitnessOwner(uid);
+  }
+
+  match /sessions/{day} {
+    allow read: if fitnessOwner(uid);
+    allow create, update: if fitnessOwner(uid)
+      && fitnessSessionOk(request.resource.data)
+      && request.resource.data.date == day;
+    allow delete: if fitnessOwner(uid);
+  }
+
+  match /measurements/{id} {
+    allow read: if fitnessOwner(uid);
+    allow create, update: if fitnessOwner(uid) && fitnessMeasureOk(request.resource.data);
+    allow delete: if fitnessOwner(uid);
+  }
+
+  match /dexa/{id} {
+    allow read: if fitnessOwner(uid);
+    allow create, update: if fitnessOwner(uid) && fitnessDexaOk(request.resource.data);
+    allow delete: if fitnessOwner(uid);
+  }
+
+  match /fluids/{day} {
+    allow read: if fitnessOwner(uid);
+    allow create, update: if fitnessOwner(uid)
+      && fitnessFluidOk(request.resource.data)
+      && request.resource.data.date == day;
+    allow delete: if fitnessOwner(uid);
+  }
+}
