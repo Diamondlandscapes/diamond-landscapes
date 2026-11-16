@@ -8,8 +8,8 @@ import {
   measurementIssue, dexaIssue, profileIssue, slug, newExercise, normalizeProfile,
   isPermissionDenied, previewBundle, paceLabel, daysBetween, addDays,
   DRINKS, SIP_OUNCES, fluidStatus, fluidGoalOz, fluidSeries, emptyFluids,
-  makeFluidEntry, fluidEntryIssue, reminderDue, fluidTotal, rulesRefusal
-} from './model.js?v=2026-11-16-3';
+  makeFluidEntry, fluidEntryIssue, reminderDue,   fluidTotal, rulesRefusal, firestoreDoc, sanitizeCache
+} from './model.js?v=2026-11-16-4';
 import {
   FOOD_LIBRARY, USUAL_MEALS, SERVING_MULTIPLIERS, foodById, makeFoodEntry,
   usualMealEntries, emptyFoodLog, foodLogTotals, foodEntryIssue
@@ -254,23 +254,33 @@ async function readCol(uid, name) {
 
 function cacheKey(uid) { return 'fitness-v1:' + uid; }
 
+function cachePayload() {
+  return sanitizeCache({
+    profile: state.profile,
+    checkins: state.checkins,
+    sessions: state.sessions,
+    measurements: state.measurements,
+    dexa: state.dexa,
+    fluids: state.fluids,
+    foodlog: state.foodlog
+  });
+}
+
 function writeCache(uid) {
   if (state.preview || !uid) return;
   try {
-    localStorage.setItem(cacheKey(uid), JSON.stringify({
-      profile: state.profile,
-      checkins: state.checkins,
-      sessions: state.sessions,
-      measurements: state.measurements,
-      dexa: state.dexa,
-      fluids: state.fluids,
-      foodlog: state.foodlog
-    }));
+    localStorage.setItem(cacheKey(uid), JSON.stringify(cachePayload()));
   } catch (e) { /* private mode */ }
 }
 
 function readCache(uid) {
-  try { return JSON.parse(localStorage.getItem(cacheKey(uid)) || 'null'); } catch (e) { return null; }
+  try {
+    const cached = JSON.parse(localStorage.getItem(cacheKey(uid)) || 'null');
+    if (!cached) return null;
+    const clean = sanitizeCache(cached);
+    localStorage.setItem(cacheKey(uid), JSON.stringify(clean));
+    return clean;
+  } catch (e) { return null; }
 }
 
 function strip(value) {
@@ -287,13 +297,16 @@ function strip(value) {
 }
 
 async function putDoc(parts, data) {
-  data.updatedAt = new Date().toISOString();
+  const kind = parts.length ? parts[0] : 'profile';
+  const payload = firestoreDoc(kind, data);
+  payload.updatedAt = new Date().toISOString();
+  data.updatedAt = payload.updatedAt;
   if (state.user) writeCache(state.user.uid);
   if (state.preview || !state.user) return;
   const path = 'fitness/' + state.user.uid + (parts.length ? '/' + parts.join('/') : '');
   try {
     const ref = state.fs.doc(state.db, 'fitness', state.user.uid, ...parts);
-    await state.fs.setDoc(ref, strip(data));
+    await state.fs.setDoc(ref, strip(payload));
     state.rulesProblem = false;
     state.offline = false;
     renderBanner();

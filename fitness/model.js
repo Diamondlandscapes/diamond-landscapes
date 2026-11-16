@@ -849,6 +849,62 @@ export function isPermissionDenied(err) {
     || code.indexOf('storage/unauthorized') !== -1;
 }
 
+export const FIRESTORE_KEYS = {
+  profile: [
+    'v', 'heightIn', 'startDate', 'startWeightLb', 'targetWeightLb', 'targetBfPct',
+    'targetDate', 'vacationDate', 'deloadStart', 'deloadEnd',
+    'calories', 'proteinG', 'carbsG', 'fatG', 'stepsGoal', 'walkMin', 'plungeGapHours',
+    'fluidTrainOz', 'fluidRestOz', 'paceStart', 'paceEnd',
+    'remindOn', 'remindEveryMin', 'quietStart', 'quietEnd',
+    'equipment', 'guidelines', 'foods', 'week', 'createdAt', 'updatedAt'
+  ],
+  checkins: [
+    'date', 'weightLb', 'steps', 'calories', 'protein', 'carbs', 'fat', 'sleepHours',
+    'sauna', 'coldPlunge', 'notes', 'meals', 'photoPath', 'updatedAt'
+  ],
+  sessions: [
+    'date', 'dayKey', 'planName', 'kind', 'deload', 'notes', 'walkDone', 'exercises', 'updatedAt'
+  ],
+  measurements: [
+    'date', 'waistIn', 'armIn', 'shoulderIn', 'calfIn', 'notes', 'updatedAt'
+  ],
+  dexa: [
+    'date', 'weightLb', 'bfPct', 'fatMassG', 'leanBmcG', 'visceralFatG',
+    'androidPct', 'gynoidPct', 'notes', 'updatedAt'
+  ],
+  fluids: ['date', 'entries', 'updatedAt'],
+  foodlog: ['date', 'entries', 'updatedAt']
+};
+
+export function firestoreDoc(kind, data) {
+  const keys = FIRESTORE_KEYS[kind];
+  if (!data || typeof data !== 'object' || !keys) return data;
+  const out = {};
+  keys.forEach(function (key) {
+    if (data[key] !== undefined) out[key] = data[key];
+  });
+  return out;
+}
+
+export function sanitizeCache(cached) {
+  if (!cached || typeof cached !== 'object') return cached;
+  const next = Object.assign({}, cached);
+  if (next.profile) next.profile = firestoreDoc('profile', next.profile);
+  ['checkins', 'sessions', 'fluids', 'foodlog'].forEach(function (kind) {
+    if (!next[kind] || typeof next[kind] !== 'object') return;
+    const bag = {};
+    Object.keys(next[kind]).forEach(function (id) {
+      bag[id] = firestoreDoc(kind, next[kind][id]);
+    });
+    next[kind] = bag;
+  });
+  ['measurements', 'dexa'].forEach(function (kind) {
+    if (!Array.isArray(next[kind])) return;
+    next[kind] = next[kind].map(function (row) { return firestoreDoc(kind, row); });
+  });
+  return next;
+}
+
 export function rulesRefusal(operation, path) {
   const op = operation || 'write';
   const doc = path || 'fitness';
