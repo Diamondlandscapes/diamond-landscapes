@@ -82,13 +82,23 @@ if (raw && raw._comment) console.log(String(raw._comment));
 console.log('Balances doc: finance/balances');
 console.log('  Chase ···0714: ' + Bills.money(parsed.balances.chase0714.amount) + (parsed.balances.chase0714.asOf ? (' as of ' + parsed.balances.chase0714.asOf) : ''));
 console.log('  BoA ···1003: ' + Bills.money(parsed.balances.boa1003.amount) + (parsed.balances.boa1003.asOf ? (' as of ' + parsed.balances.boa1003.asOf) : ''));
-console.log('Bills: ' + parsed.bills.length);
+console.log('Templates: ' + parsed.bills.length);
+var plan = Bills.migrationPlan(raw.bills || []);
+var planCounts = { reclassify_budget: 0, keep_bill: 0, needs_review: 0, already_budget: 0 };
+plan.forEach(function(row) { planCounts[row.action] = (planCounts[row.action] || 0) + 1; });
+console.log('Running budgets: ' + (planCounts.reclassify_budget || 0));
+console.log('Fixed bills kept: ' + (planCounts.keep_bill || 0));
+console.log('Needs review: ' + (planCounts.needs_review || 0));
 parsed.bills.forEach(function(b) {
+  var row = null;
+  plan.forEach(function(item) { if (item.id === b.id) row = item; });
   var when = b.recurrence === 'monthly' ? ('day ' + b.dueDay) : b.dueDate;
-  console.log('  ' + b.name + ' · ' + b.category + ' · ' + Bills.money(b.amount) + ' · ' + b.recurrence + ' ' + when + (b.type === 'credit_card' ? ' · card' : ''));
+  var tag = row && row.action === 'reclassify_budget' ? ' · running budget' : (row && row.action === 'needs_review' ? ' · needs review' : '');
+  console.log('  ' + b.name + ' · ' + b.category + ' · ' + Bills.money(b.amount) + ' · ' + b.recurrence + ' ' + when + (b.type === 'credit_card' ? ' · card' : '') + tag);
 });
 console.log('Payments: ' + parsed.payments.length);
 console.log('Invoices: ' + parsed.invoices.length);
+console.log('Rules-safe write keeps the existing bill fields only. funding and settlementAccountId wait on owner-authorized rules.');
 
 if (!write) {
   console.log('');

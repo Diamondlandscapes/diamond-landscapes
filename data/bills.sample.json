@@ -1,195 +1,34 @@
 {
-  "_comment": "SAMPLE ONLY. Not Diamond Landscapes books. Do not import to production without the owner's OK. Replace this file with the real must-pay list, then dry-run scripts/seed-bills.mjs before any emulator load.",
+  "_comment": "SAMPLE ONLY. Not Diamond Landscapes books. Round preview figures. Do not import to production. Dry-run scripts/seed-bills.mjs before any emulator load. Running expense notes are classified by scripts/bills-model.js; card minimums stay bills.",
   "balances": {
-    "chase0714": {
-      "amount": 18420.55,
-      "asOf": "2026-11-12",
-      "source": "manual"
-    },
-    "boa1003": {
-      "amount": 6110,
-      "asOf": "2026-11-12",
-      "source": "manual"
-    },
-    "quickbooks": {
-      "asOf": "2026-11-12",
-      "source": "manual",
-      "connected": false
-    }
+    "chase0714": { "amount": 18420.55, "asOf": "2026-11-12", "source": "manual" },
+    "boa1003": { "amount": 6110, "asOf": "2026-11-12", "source": "manual" },
+    "quickbooks": { "asOf": "2026-11-12", "source": "manual", "connected": false }
   },
   "bills": [
-    {
-      "id": "bill_payroll",
-      "name": "Crew payroll",
-      "category": "Payroll",
-      "amount": 8500,
-      "recurrence": "monthly",
-      "dueDay": 1,
-      "dueDate": null,
-      "type": "fixed",
-      "variableAmount": false,
-      "notes": "Sample figure for preview.",
-      "active": true
-    },
-    {
-      "id": "bill_rent",
-      "name": "Shop rent",
-      "category": "Rent & storage",
-      "amount": 2200,
-      "recurrence": "monthly",
-      "dueDay": 3,
-      "dueDate": null,
-      "type": "fixed",
-      "variableAmount": false,
-      "notes": "Sample figure for preview.",
-      "active": true
-    },
-    {
-      "id": "bill_truck",
-      "name": "Truck payment",
-      "category": "Vehicles & equipment",
-      "amount": 740,
-      "recurrence": "monthly",
-      "dueDay": 8,
-      "dueDate": null,
-      "type": "fixed",
-      "variableAmount": false,
-      "notes": "Sample figure for preview.",
-      "active": true
-    },
-    {
-      "id": "bill_phone",
-      "name": "Phone & software",
-      "category": "Services/software/phone",
-      "amount": 285,
-      "recurrence": "monthly",
-      "dueDay": 12,
-      "dueDate": null,
-      "type": "fixed",
-      "variableAmount": false,
-      "notes": "Sample figure for preview.",
-      "active": true
-    },
-    {
-      "id": "bill_insurance",
-      "name": "Liability insurance",
-      "category": "Insurance",
-      "amount": 640,
-      "recurrence": "monthly",
-      "dueDay": 16,
-      "dueDate": null,
-      "type": "fixed",
-      "variableAmount": false,
-      "notes": "Sample figure for preview.",
-      "active": true
-    },
-    {
-      "id": "bill_supplies",
-      "name": "Crew supplies",
-      "category": "Crew operating",
-      "amount": 350,
-      "recurrence": "monthly",
-      "dueDay": 19,
-      "dueDate": null,
-      "type": "fixed",
-      "variableAmount": false,
-      "notes": "Sample figure for preview.",
-      "active": true
-    },
-    {
-      "id": "bill_affirm",
-      "name": "Affirm mower",
-      "category": "Card minimums/Affirm",
-      "amount": 175,
-      "recurrence": "monthly",
-      "dueDay": 22,
-      "dueDate": null,
-      "type": "credit_card",
-      "variableAmount": true,
-      "notes": "Sample card minimum. Mark paid asks for the real amount.",
-      "active": true
-    },
-    {
-      "id": "bill_fuel",
-      "name": "Fuel card",
-      "category": "Fuel",
-      "amount": 900,
-      "recurrence": "monthly",
-      "dueDay": 25,
-      "dueDate": null,
-      "type": "fixed",
-      "variableAmount": false,
-      "notes": "Sample figure for preview.",
-      "active": true
-    },
-    {
-      "id": "bill_loan",
-      "name": "Equipment loan",
-      "category": "Loans",
-      "amount": 410,
-      "recurrence": "monthly",
-      "dueDay": 27,
-      "dueDate": null,
-      "type": "fixed",
-      "variableAmount": false,
-      "notes": "Sample figure for preview.",
-      "active": true
-    },
-    {
-      "id": "bill_draw",
-      "name": "Owner draw",
-      "category": "Personal",
-      "amount": 1000,
-      "recurrence": "monthly",
-      "dueDay": 28,
-      "dueDate": null,
-      "type": "fixed",
-      "variableAmount": false,
-      "notes": "Sample figure for preview.",
-      "active": true
-    }
+    { "id": "bill_payroll", "name": "Crew payroll", "category": "Payroll", "amount": 8500, "recurrence": "monthly", "dueDay": 1, "type": "fixed", "notes": "Sample figure for preview.", "active": true },
+    { "id": "bill_rent", "name": "Shop rent", "category": "Rent & storage", "amount": 2200, "recurrence": "monthly", "dueDay": 3, "type": "fixed", "notes": "Sample figure for preview.", "active": true },
+    { "id": "bill_truck", "name": "Truck payment", "category": "Vehicles & equipment", "amount": 740, "recurrence": "monthly", "dueDay": 8, "type": "fixed", "notes": "Sample figure for preview.", "active": true },
+    { "id": "bill_phone", "name": "Phone & software", "category": "Services/software/phone", "amount": 285, "recurrence": "monthly", "dueDay": 12, "type": "fixed", "notes": "Sample figure for preview.", "active": true },
+    { "id": "bill_insurance", "name": "Liability insurance", "category": "Insurance", "amount": 640, "recurrence": "monthly", "dueDay": 16, "type": "fixed", "notes": "Sample figure for preview.", "active": true },
+    { "id": "bill_affirm", "name": "Affirm mower", "category": "Card minimums/Affirm", "amount": 175, "recurrence": "monthly", "dueDay": 22, "type": "credit_card", "notes": "Sample card minimum. Mark paid asks for the real amount.", "active": true },
+    { "id": "bill_loan", "name": "Equipment loan", "category": "Loans", "amount": 410, "recurrence": "monthly", "dueDay": 27, "type": "fixed", "notes": "Sample figure for preview.", "active": true },
+    { "id": "bill_draw", "name": "Owner draw", "category": "Personal", "amount": 1000, "recurrence": "monthly", "dueDay": 28, "type": "fixed", "notes": "Sample figure for preview.", "active": true },
+    { "id": "bill_cardmin", "name": "Sample card minimum", "category": "Card minimums/Affirm", "amount": 90, "recurrence": "monthly", "dueDay": 28, "type": "credit_card", "notes": "Estimated minimums; due day unknown (28th placeholder). Enter actual. SAMPLE card minimum, not a budget.", "active": true, "settlementAccountId": "capone-9618" },
+    { "id": "bill_person", "name": "Sample note payable", "category": "Loans", "amount": 500, "recurrence": "monthly", "dueDay": 29, "type": "fixed", "notes": "Purpose unconfirmed. SAMPLE.", "active": true },
+    { "id": "bill_fee", "name": "Sample checking fee", "category": "Services/software/phone", "amount": 15, "recurrence": "monthly", "dueDay": 30, "type": "fixed", "notes": "Only if the balance is under the bank limit. SAMPLE.", "active": true },
+    { "id": "bill_fuel_card", "name": "Sample fuel card", "category": "Fuel", "amount": 800, "recurrence": "monthly", "dueDay": 30, "type": "fixed", "notes": "Paid off weekly; owner estimate. Enter actual. SAMPLE.", "active": true, "funding": "card", "fundingAccountId": "capone-9618" },
+    { "id": "bill_fuel_debit", "name": "Sample fuel debit", "category": "Fuel", "amount": 120, "recurrence": "monthly", "dueDay": 30, "type": "fixed", "notes": "SAMPLE May-Sep average. Enter actual. Paid directly (debit).", "active": true, "funding": "bank", "fundingAccountId": "boa-1003" },
+    { "id": "bill_dump", "name": "Sample dump fees", "category": "Crew operating", "amount": 200, "recurrence": "monthly", "dueDay": 30, "type": "fixed", "notes": "Monthly estimate. Enter actual. Paid from checking. SAMPLE.", "active": true, "funding": "bank", "fundingAccountId": "chase-0714" },
+    { "id": "bill_supplies", "name": "Sample crew supplies", "category": "Crew operating", "amount": 450, "recurrence": "monthly", "dueDay": 30, "type": "fixed", "notes": "Monthly estimate. Enter actual. SAMPLE.", "active": true, "funding": "unknown", "fundingAccountId": "capone-2529" }
   ],
   "payments": [
-    {
-      "id": "pay_bill_payroll_2026-11",
-      "billId": "bill_payroll",
-      "month": "2026-11",
-      "amountPaid": 8500,
-      "paidAt": "2026-11-01",
-      "paidBy": "sample-manager",
-      "expectedAmount": 8500
-    }
+    { "id": "pay_bill_payroll_2026-11", "billId": "bill_payroll", "month": "2026-11", "amountPaid": 8500, "paidAt": "2026-11-01", "paidBy": "sample-manager", "expectedAmount": 8500 },
+    { "id": "pay_bill_rent_2026-11", "billId": "bill_rent", "month": "2026-11", "amountPaid": 1000, "paidAt": "2026-11-03", "paidBy": "sample-manager", "expectedAmount": 2200 }
   ],
   "invoices": [
-    {
-      "id": "inv_1044",
-      "customer": "Palm Court HOA",
-      "invoiceNumber": "INV-1044",
-      "amount": 2400,
-      "dueDate": "2026-11-01",
-      "status": "open",
-      "source": "manual",
-      "notes": "Sample invoice."
-    },
-    {
-      "id": "inv_1045",
-      "customer": "Sample Residence",
-      "invoiceNumber": "INV-1045",
-      "amount": 1250,
-      "dueDate": "2026-11-20",
-      "status": "open",
-      "source": "manual",
-      "notes": "Sample invoice."
-    },
-    {
-      "id": "inv_1046",
-      "customer": "Harbor Club",
-      "invoiceNumber": "INV-1046",
-      "amount": 1200,
-      "dueDate": "2026-11-28",
-      "status": "open",
-      "source": "manual",
-      "notes": "Sample invoice."
-    }
+    { "id": "inv_1044", "customer": "Palm Court HOA", "invoiceNumber": "INV-1044", "amount": 2400, "dueDate": "2026-11-01", "status": "open", "source": "manual", "notes": "Sample invoice." },
+    { "id": "inv_1045", "customer": "Sample Residence", "invoiceNumber": "INV-1045", "amount": 1250, "dueDate": "2026-11-20", "status": "open", "source": "manual", "notes": "Sample invoice." },
+    { "id": "inv_1046", "customer": "Harbor Club", "invoiceNumber": "INV-1046", "amount": 1200, "dueDate": "2026-11-28", "status": "open", "source": "manual", "notes": "Sample invoice." }
   ]
 }
