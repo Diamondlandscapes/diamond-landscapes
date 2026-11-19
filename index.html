@@ -168,6 +168,15 @@ button.bills-bal{font-family:inherit;color:inherit;text-align:left;width:100%;cu
 .bills-stat{margin:0 !important;padding:8px 10px !important;}
 .bills-split{display:flex;flex-direction:column;gap:12px;}
 .bills-lock{font-size:12px !important;margin-left:auto;opacity:.55;width:auto !important;flex-shrink:0;}
+.bills-track{background:var(--bg4);border-radius:8px;height:10px;overflow:hidden;margin:8px 0 4px;}
+.bills-fill{display:block;height:100%;border-radius:8px;background:var(--green);}
+.bills-fill.over{background:var(--red);}
+.bills-fill.unknown{width:100%;background:repeating-linear-gradient(90deg,transparent,transparent 6px,rgba(227,179,65,.45) 6px,rgba(227,179,65,.45) 12px);}
+.bills-acct{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--border);font-size:12px;line-height:1.35;}
+.bills-line{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;font-size:12px;line-height:1.35;padding:5px 0;}
+.bills-line b{flex-shrink:0;text-align:right;}
+.bills-note{font-size:11px;color:var(--text3);line-height:1.4;}
+button.bills-budget{font-family:inherit;color:inherit;text-align:left;width:100%;cursor:pointer;background:var(--bg2);}
 
 /* panels */
 .panel{position:fixed;inset:0;z-index:200;display:none;flex-direction:column;
@@ -1778,7 +1787,7 @@ const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturd
 const PRIORITIES = ['Low','Medium','High','Urgent'];
 const PCOLORS = {Low:'green',Medium:'yellow',High:'orange',Urgent:'red'};
 
-var APP_VERSION='2026-11-14-v78'; // auto-synced to Firestore on load — do not need to change manually
+var APP_VERSION='2026-11-19-v79'; // auto-synced to Firestore on load — do not need to change manually
 (function(){try{var v=localStorage.getItem('app_version');if(v!==APP_VERSION){localStorage.setItem('app_version',APP_VERSION);if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(x){return caches.delete(x);}));}).then(function(){window.location.reload(true);});}else{window.location.reload(true);}}}catch(e){}})();
 // Local fixtures for tests. Only localhost, and only with ?fixture=lexington,
 // ?fixture=calls, ?fixture=jobcost, or ?fixture=bills. Never set on the live
@@ -1915,6 +1924,8 @@ async function load() {
   state.bills = [];
   state.billPayments = [];
   state.financeInvoices = [];
+  state.financeTransactions = [];
+  state.financeAccounts = [];
   (state.properties || []).forEach(function(p) {
     if (!p) return;
     delete p.budgetHoursPerVisit;
@@ -1976,6 +1987,8 @@ function save() {
     slim.bills = [];
     slim.billPayments = [];
     slim.financeInvoices = [];
+    slim.financeTransactions = [];
+    slim.financeAccounts = [];
     slim.receptionistCalls = []; // never cache call transcripts/numbers on device
     (slim.properties || []).forEach(function(p) {
       if (!p) return;
@@ -4769,18 +4782,23 @@ window.jobCostSelfCheck = jobCostSelfCheck;
 
 
 // ── Bills & Expenses (manager only) ──────────────────────────────────────
-// Bank boxes, the month's must-pays, and QuickBooks invoices. Numbers come
-// from manager-only Firestore docs. A missing amount stays an em dash.
-// Monthly templates are derived per month; a payment doc covers that month
-// only, so next month shows the bill unpaid again. Nothing here is cached
-// in IndexedDB or the offline write queue.
+// Bank boxes, fixed bills, running expense budgets, and invoices.
+// A missing amount stays an em dash. Budgets are not marked paid.
+// Transaction imports are files, not a live bank connection.
 var _financeBalances = null;
 var _billsTemplates = [];
 var _billPayments = [];
 var _financeInvoices = [];
+var _financeTransactions = [];
+var _financeAccounts = [];
+var _financeImportMeta = null;
 
 function _billsPrivateTable(table) {
-  return table === 'finance' || table === 'bills' || table === 'billPayments' || table === 'financeInvoices';
+  return table === 'finance' || table === 'bills' || table === 'billPayments' || table === 'financeInvoices'
+    || table === 'financeTransactions' || table === 'financeAccounts';
+}
+function _financeImportTable(table) {
+  return table === 'financeTransactions' || table === 'financeAccounts';
 }
 function _billsApi() { return window.Bills || null; }
 
@@ -4789,22 +4807,27 @@ function _ensureBillsListener() {
   if (state.role !== 'manager' || !_db) return;
   var u = window._fbAuth && window._fbAuth.currentUser;
   if (!u || u.isAnonymous || !u.emailVerified) return;
-  ['finance', 'bills', 'billPayments', 'financeInvoices'].forEach(function(name) {
+  ['finance', 'bills', 'billPayments', 'financeInvoices', 'financeTransactions', 'financeAccounts'].forEach(function(name) {
     if (!_listeners[name]) _listenCollection(name);
   });
 }
 function _clearBills() {
-  ['finance', 'bills', 'billPayments', 'financeInvoices'].forEach(function(name) {
+  ['finance', 'bills', 'billPayments', 'financeInvoices', 'financeTransactions', 'financeAccounts'].forEach(function(name) {
     try { if (_listeners[name]) { _listeners[name](); delete _listeners[name]; } } catch (e) {}
   });
   _financeBalances = null;
   _billsTemplates = [];
   _billPayments = [];
   _financeInvoices = [];
+  _financeTransactions = [];
+  _financeAccounts = [];
+  _financeImportMeta = null;
   state.finance = [];
   state.bills = [];
   state.billPayments = [];
   state.financeInvoices = [];
+  state.financeTransactions = [];
+  state.financeAccounts = [];
   window._billsUnreadable = false;
   var root = document.getElementById('bills-root');
   if (root) root.innerHTML = '';
@@ -4820,6 +4843,9 @@ function _applyBillsDocs(name, docs) {
   } else if (name === 'bills') _billsTemplates = docs;
   else if (name === 'billPayments') _billPayments = docs;
   else if (name === 'financeInvoices') _financeInvoices = docs;
+  else if (name === 'financeTransactions') _financeTransactions = docs;
+  else if (name === 'financeAccounts') _financeAccounts = docs;
+  if (name === 'financeTransactions' || name === 'financeAccounts') window._financeImportUnreadable = false;
   window._billsUnreadable = false;
 }
 
@@ -4869,6 +4895,7 @@ function billsFindInstance(billId) {
 function billsStatusPill(status) {
   var map = {
     overdue: ['badge-red', 'Overdue'],
+    partial: ['badge-yellow', 'Partial'],
     due_soon: ['badge-yellow', 'Due soon'],
     upcoming: ['badge-blue', 'Upcoming'],
     paid: ['badge-green', 'Paid']
@@ -4887,15 +4914,19 @@ function billsCommitPayment(inst, amount, paidAt) {
   var who = window._managerAuthEmail || (window._dlFixtureName === 'bills' ? 'sample-manager' : '');
   var pay = B.buildPayment(inst, amount, paidAt, who);
   if (!pay) { toast('Enter the amount paid'); return; }
+  var doomed = _billPayments.filter(function(p) {
+    return p && p.billId === inst.billId && p.month === inst.month && p.id !== pay.id;
+  });
   _billPayments = _billPayments.filter(function(p) {
     return !(p && p.billId === inst.billId && p.month === inst.month);
   }).concat([pay]);
   if (!window._dlFixture) {
     try { gsSave('billPayments', pay); } catch (e) { console.warn('bill payment save failed', e); }
+    doomed.forEach(function(p) { if (p.id) { try { gsDelete('billPayments', p.id); } catch (e2) {} } });
   }
   billsCloseSheet();
   renderBills();
-  toast(window._billsUnreadable ? 'Saved on this screen only' : 'Marked paid');
+  toast(window._billsUnreadable ? 'Saved on this screen only' : 'Payment saved');
 }
 function billsMarkPaid(billId) {
   if (state.role !== 'manager') return;
@@ -4903,7 +4934,9 @@ function billsMarkPaid(billId) {
   if (!inst || inst.paid) return;
   if (inst.variableAmount) { billsOpenPay(billId, false); return; }
   var B = _billsApi();
-  billsCommitPayment(inst, inst.amount, B.todayISO(new Date()));
+  var soFar = inst.amountPaid || 0;
+  var target = B.cents(soFar + (inst.remaining != null ? inst.remaining : inst.amount));
+  billsCommitPayment(inst, target, B.todayISO(new Date()));
 }
 function billsOpenPay(billId, editing) {
   if (state.role !== 'manager') return;
@@ -4915,8 +4948,8 @@ function billsOpenPay(billId, editing) {
   var date = (editing && inst.paidAt) ? inst.paidAt : B.todayISO(new Date());
   var title = editing ? 'Edit payment' : 'Card payment';
   var copy = inst.variableAmount
-    ? 'Enter the amount you paid. The minimum is prefilled. This saves this month only — next month the bill shows unpaid again.'
-    : 'Change the amount or the date. Undo puts the bill back to unpaid for this month.';
+    ? 'Enter the total paid this month. The minimum is prefilled. A smaller amount stays open as a partial payment. Next month the bill shows unpaid again.'
+    : 'Enter the total paid so far this month. A smaller amount stays open as a partial payment. Undo clears this month.';
   var html = '<div class="sheet-title">' + escHtml(title) + '</div>';
   html += '<div style="font-size:13px;font-weight:700;margin-bottom:4px;">' + escHtml(inst.name) + '</div>';
   html += '<div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.45;">' + escHtml(copy) + '</div>';
@@ -5015,10 +5048,19 @@ function billsSaveEdit() {
     updatedBy: window._managerAuthEmail || ''
   });
   if (!prepared.ok) { toast(prepared.error); return; }
-  if (prev) _billsTemplates = _billsTemplates.map(function(b) { return b && b.id === id ? prepared.bill : b; });
-  else _billsTemplates = _billsTemplates.concat([prepared.bill]);
+  var clean = prepared.bill;
+  var bill = JSON.parse(JSON.stringify(clean));
+  if (prev) {
+    if (prev.funding) bill.funding = prev.funding;
+    if (prev.fundingAccountId) bill.fundingAccountId = prev.fundingAccountId;
+    if (prev.settlementAccountId) bill.settlementAccountId = prev.settlementAccountId;
+    if (prev.kind) bill.kind = prev.kind;
+    if (prev.classification) bill.classification = prev.classification;
+  }
+  if (prev) _billsTemplates = _billsTemplates.map(function(b) { return b && b.id === id ? bill : b; });
+  else _billsTemplates = _billsTemplates.concat([bill]);
   if (!window._dlFixture) {
-    try { gsSave('bills', prepared.bill); } catch (e) { console.warn('bill save failed', e); }
+    try { gsSave('bills', clean); } catch (e) { console.warn('bill save failed', e); }
   }
   billsCloseSheet();
   renderBills();
@@ -5225,6 +5267,164 @@ function billsQbInner() {
   return html;
 }
 
+function billsPicture() {
+  var B = _billsApi();
+  if (!B) return null;
+  var today = B.todayISO(new Date());
+  if (!window._billsMonth) window._billsMonth = B.monthKeyOf(new Date());
+  return B.monthPicture({
+    today: today,
+    month: window._billsMonth,
+    bills: _billsTemplates,
+    payments: _billPayments,
+    transactions: _financeTransactions,
+    accounts: _financeAccounts,
+    balances: _financeBalances,
+    invoices: _financeInvoices,
+    importMeta: _financeImportMeta
+  });
+}
+function billsWhen(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso);
+  try {
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
+  } catch (e) { return String(iso); }
+}
+function billsTxLines(rows, B) {
+  if (!rows || !rows.length) return '<div class="bills-note">No confirmed transactions in this month.</div>';
+  return rows.map(function(tx) {
+    var when = 'Purchased ' + B.prettyDate(tx.purchaseDate);
+    if (tx.effectiveDate && tx.effectiveDate !== tx.purchaseDate) when += ' · bank date ' + B.prettyDate(tx.effectiveDate);
+    var signed = tx.signed != null ? tx.signed : tx.amount;
+    var amt = signed < 0 ? ('−' + B.money(Math.abs(signed))) : B.money(signed);
+    var stateLabel = tx.status === 'pending' ? 'Pending' : 'Posted';
+    var acct = tx.accountName || tx.accountId || '';
+    if (tx.mask && acct.indexOf(tx.mask) < 0) acct += ' ···' + tx.mask;
+    return '<div class="bills-acct"><div style="min-width:0;"><b>' + escHtml(tx.merchant || 'Transaction') + '</b><div class="bills-note">' + escHtml(when) + '<br>' + escHtml(acct) + ' · ' + stateLabel + '</div></div><b>' + escHtml(amt) + '</b></div>';
+  }).join('');
+}
+function billsOpenBudget(budgetId) {
+  if (state.role !== 'manager') return;
+  var B = _billsApi();
+  var picture = billsPicture();
+  if (!B || !picture) return;
+  var budget = null;
+  picture.budgets.forEach(function(b) { if (b.id === budgetId) budget = b; });
+  if (!budget) return;
+  var html = '<div class="sheet-title">' + escHtml(budget.name) + '</div>';
+  html += '<div class="bills-note" style="margin-bottom:10px;">Running expense · ' + escHtml(budget.category) + '. This is a monthly budget, not a bill. There is no Mark paid.</div>';
+  if (budget.actual.state === 'unknown') {
+    html += '<div style="font-size:18px;font-weight:800;color:var(--yellow);">Actual unknown</div>';
+    html += '<div class="bills-note" style="margin:6px 0 10px;">' + escHtml(budget.actual.reason || 'Not $0.') + ' Budget estimate ' + escHtml(B.money(budget.budget)) + '.</div>';
+  } else {
+    html += '<div style="font-size:18px;font-weight:800;">' + escHtml(B.money(budget.actual.amount)) + ' <span style="font-size:13px;color:var(--text3);font-weight:700;">of ' + escHtml(B.money(budget.budget)) + '</span></div>';
+    html += '<div class="bills-note" style="margin:6px 0 10px;">' + (budget.actual.amount === 0 ? 'Confirmed actual is $0. No confirmed charges this month.' : ('Remaining ' + escHtml(B.money(budget.remaining)) + '.')) + ' ' + escHtml(budget.pace.text) + '.</div>';
+  }
+  if (budget.notes) html += '<div class="bills-note" style="margin-bottom:10px;">' + escHtml(budget.notes) + '</div>';
+  html += '<div class="sec-title">Transactions</div>';
+  html += billsTxLines(budget.transactions, B);
+  html += '<button type="button" class="btn btn-outline" style="margin-top:12px;" onclick="billsOpenEdit(\'' + escHtml(budgetId) + '\')">Edit budget</button>';
+  html += '<button type="button" class="btn btn-outline" style="margin-top:8px;" onclick="billsCloseSheet()">Close</button>';
+  billsOpenSheet(html);
+}
+function billsOpenAssign(txId) {
+  if (state.role !== 'manager') return;
+  var B = _billsApi();
+  var picture = billsPicture();
+  var tx = null;
+  (picture ? picture.unmatched : []).forEach(function(row) { if (row.id === txId) tx = row; });
+  if (!tx || !B) return;
+  window._billsAssignId = txId;
+  var html = '<div class="sheet-title">Assign charge</div>';
+  html += '<div style="font-weight:800;margin-bottom:4px;">' + escHtml(tx.merchant) + '</div>';
+  html += '<div class="bills-note" style="margin-bottom:10px;">' + escHtml(B.money(tx.amount)) + ' · purchased ' + escHtml(B.prettyDate(tx.purchaseDate)) + (tx.effectiveDate && tx.effectiveDate !== tx.purchaseDate ? (' · bank date ' + escHtml(B.prettyDate(tx.effectiveDate))) : '') + '<br>' + escHtml(tx.accountName) + ' · ' + (tx.status === 'pending' ? 'Pending' : 'Posted') + '</div>';
+  if (tx.suggestion && (tx.suggestion.category || tx.suggestion.budgetId)) {
+    html += '<div class="bills-flag bills-flag-warn">Suggested ' + escHtml(tx.suggestion.category || tx.suggestion.target || '') + ' · not confirmed</div>';
+  }
+  html += '<div class="sec-title">Assign to</div><select class="inp" id="bills-assign-target">';
+  html += '<option value="unmatched">Leave unmatched</option>';
+  html += '<option value="personal">Personal</option>';
+  html += '<option value="transfer">Transfer</option>';
+  (picture.budgets || []).forEach(function(b) {
+    html += '<option value="budget:' + escHtml(b.id) + '">Budget · ' + escHtml(b.name) + '</option>';
+  });
+  (picture.instances || []).forEach(function(inst) {
+    html += '<option value="bill:' + escHtml(inst.billId) + '">Bill · ' + escHtml(inst.name) + '</option>';
+  });
+  html += '</select>';
+  html += '<div class="bills-note" style="margin-bottom:10px;">A manual assignment is the only one that counts. A suggestion stays visible until you confirm it.</div>';
+  html += '<button type="button" class="btn btn-green" onclick="billsSaveAssign()">Save assignment</button>';
+  html += '<button type="button" class="btn btn-outline" style="margin-top:8px;" onclick="billsCloseSheet()">Cancel</button>';
+  billsOpenSheet(html);
+}
+function billsSaveAssign() {
+  if (state.role !== 'manager') return;
+  var id = window._billsAssignId;
+  var target = billsField('bills-assign-target');
+  var tx = null;
+  _financeTransactions.forEach(function(row) { if (row && row.id === id) tx = row; });
+  if (!tx) return;
+  var assignment = { target: 'unmatched', category: '', budgetId: '', billId: '', confidence: 'none', confirmed: false };
+  if (target === 'personal' || target === 'transfer') {
+    assignment = { target: target, category: '', budgetId: '', billId: '', confidence: 'manual', confirmed: true };
+  } else if (target.indexOf('budget:') === 0) {
+    var budgetId = target.slice(7);
+    var budget = null;
+    _billsTemplates.forEach(function(b) { if (b && b.id === budgetId) budget = b; });
+    assignment = { target: 'budget', category: budget ? budget.category : '', budgetId: budgetId, billId: '', confidence: 'manual', confirmed: true };
+  } else if (target.indexOf('bill:') === 0) {
+    assignment = { target: 'bill', category: '', budgetId: '', billId: target.slice(5), confidence: 'manual', confirmed: true };
+  }
+  tx.assignment = assignment;
+  tx.suggestion = assignment.confirmed ? null : tx.suggestion;
+  if (!window._dlFixture) {
+    try { gsSave('financeTransactions', JSON.parse(JSON.stringify(tx))); } catch (e) {}
+    toast('Saved on this screen. Publishing transaction rules is still required.');
+  } else toast('Assignment saved in this preview');
+  billsCloseSheet();
+  renderBills();
+}
+function billsBudgetCard(budget, B) {
+  var html = '<button type="button" class="card bills-budget" data-budget="' + escHtml(budget.id) + '" onclick="billsOpenBudget(\'' + escHtml(budget.id) + '\')">';
+  html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">';
+  html += '<div style="min-width:0;font-size:14px;font-weight:800;">' + escHtml(budget.name) + '</div>';
+  html += '<div style="text-align:right;flex-shrink:0;">';
+  if (budget.actual.state === 'unknown') {
+    html += '<div style="font-size:16px;font-weight:800;color:var(--yellow);">Actual unknown</div>';
+    html += '<div class="bills-note">not $0</div>';
+  } else if (budget.actual.amount === 0) {
+    html += '<div style="font-size:16px;font-weight:800;">$0 actual</div>';
+    html += '<div class="bills-note">of ' + escHtml(B.money(budget.budget)) + ' budget</div>';
+  } else {
+    html += '<div style="font-size:16px;font-weight:800;">' + escHtml(B.money(budget.actual.amount)) + '</div>';
+    html += '<div class="bills-note">of ' + escHtml(B.money(budget.budget)) + ' budget</div>';
+  }
+  html += '</div></div>';
+  html += '<div class="bills-note">Running expense · ' + escHtml(budget.category) + ' · not a bill</div>';
+  if (budget.actual.state === 'unknown') {
+    html += '<div class="bills-track" aria-hidden="true"><span class="bills-fill unknown"></span></div>';
+    html += '<div class="bills-note">' + escHtml(budget.actual.reason || 'No import yet.') + '</div>';
+    html += '<div class="bills-note">Remaining unknown · ' + escHtml(budget.pace.text) + '</div>';
+    html += '<div class="bills-note">Budget estimate ' + escHtml(B.money(budget.budget)) + '</div>';
+  } else {
+    var width = budget.percent == null ? 0 : budget.percent;
+    var over = budget.over > 0;
+    html += '<div class="bills-track" aria-label="' + escHtml(String(width)) + ' percent of budget"><span class="bills-fill' + (over ? ' over' : '') + '" style="width:' + width + '%;"></span></div>';
+    html += '<div class="bills-note">Remaining ' + escHtml(B.money(budget.remaining)) + ' · ' + escHtml(budget.pace.text) + '</div>';
+    if (budget.actual.state === 'incomplete') {
+      html += '<div class="bills-note">Confirmed only. Unmatched charges on this account are not in this actual.</div>';
+    } else if (budget.actual.amount === 0) {
+      html += '<div class="bills-note">No confirmed charges this month. This $0 is a real actual, not a missing import.</div>';
+    }
+    if (over) html += '<div class="bills-note" style="color:var(--red);">Over the budget by ' + escHtml(B.money(budget.over)) + '</div>';
+  }
+  html += '<div class="bills-flag bills-flag-warn">Budget estimate</div>';
+  html += '</button>';
+  return html;
+}
+
 function renderBills() {
   var root = document.getElementById('bills-root');
   if (!root) return;
@@ -5234,86 +5434,135 @@ function renderBills() {
     root.innerHTML = '<div class="card">Bills could not load. Refresh and try again.</div>';
     return;
   }
-  var today = B.todayISO(new Date());
   if (!window._billsMonth) window._billsMonth = B.monthKeyOf(new Date());
   if (!window._billsFilter) window._billsFilter = 'all';
-  var ym = window._billsMonth;
-  var rows = billsCurrentInstances();
-  var summary = B.summarize(rows);
-  var chase = B.balanceView(_financeBalances && _financeBalances.chase0714, today);
-  var boa = B.balanceView(_financeBalances && _financeBalances.boa1003, today);
-  var cash = B.cashAfter(chase.amount, boa.amount, summary.unpaid);
-  var cats = B.byCategory(rows);
+  var picture = billsPicture();
+  var ym = picture.month;
+  var rows = picture.instances;
+  var summary = picture.summary;
   var filter = window._billsFilter;
-  var shown = rows.filter(function(r) { return filter === 'all' || r.status === filter; });
+  var shown = rows.filter(function(r) {
+    if (filter === 'all') return true;
+    if (filter === 'overdue') return r.status === 'overdue' || (r.status === 'partial' && r.daysOverdue > 0);
+    return r.status === filter;
+  });
   var html = '';
   if (window._dlFixtureName === 'bills') {
-    html += '<div id="bills-sample-banner" style="font-size:12px;color:var(--text);background:rgba(227,179,65,.12);border:1px solid rgba(227,179,65,.45);border-radius:10px;padding:10px 12px;margin-bottom:12px;"><b>SAMPLE DATA</b> — preview on this computer only. Not the company books. Nothing is written to Firebase.</div>';
+    html += '<div id="bills-sample-banner" style="font-size:12px;color:var(--text);background:rgba(227,179,65,.12);border:1px solid rgba(227,179,65,.45);border-radius:10px;padding:10px 12px;margin-bottom:12px;"><b>SAMPLE DATA</b> — fixture numbers on this computer only. Not the company books. Not a live bank connection. Nothing is written to Firebase.</div>';
   }
   if (window._billsUnreadable) {
     html += '<div style="font-size:12px;color:var(--yellow);background:rgba(227,179,65,.08);border:1px solid rgba(227,179,65,.3);border-radius:10px;padding:10px 12px;margin-bottom:12px;">Bills stay on this screen until the manager rules are published. They are not saved to the shared phone cache.</div>';
   }
   html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px;">';
   html += '<div><div style="font-size:20px;font-weight:800;">Bills &amp; Expenses</div>';
-  html += '<div style="font-size:12px;color:var(--text3);margin-top:2px;">Manager only. Monthly bills come back unpaid next month.</div></div>';
+  html += '<div style="font-size:12px;color:var(--text3);margin-top:2px;">Manager only. Fixed bills keep due dates. Running expenses show spend against the budget.</div></div>';
   html += '<button type="button" class="btn-sm btn-green" onclick="billsOpenEdit(\'\')" style="flex-shrink:0;">+ Bill</button></div>';
+
+  html += '<div id="bills-import-label" class="bills-note" style="margin:-4px 0 10px;">';
+  if (picture.importMeta.present) {
+    html += 'Latest actual import: ' + escHtml(billsWhen(picture.importMeta.importedAt)) + ' ET · ' + escHtml(picture.importMeta.label) + '.';
+  } else {
+    html += 'No transaction import yet. Actual spend is unknown, not $0. This is not a live bank connection.';
+  }
+  html += '</div>';
+  if (window._financeImportUnreadable) {
+    html += '<div class="bills-note" style="margin-bottom:10px;">Transaction rules are not published, so imported charges cannot load. Fixed bills on this screen still work.</div>';
+  }
 
   html += '<div class="bills-balance-row">';
   html += '<div class="card bills-bal" id="bills-box-chase">' + billsBalanceInner('chase0714', 'Chase checking ···0714') + '</div>';
   html += '<div class="card bills-bal" id="bills-box-boa">' + billsBalanceInner('boa1003', 'Bank of America ···1003') + '</div>';
   html += '<button type="button" class="card bills-bal" id="bills-box-qb" onclick="billsScrollInvoices()">' + billsQbInner() + '</button>';
   html += '</div>';
-  html += '<div class="bills-cash" id="bills-cash-line">Est. cash after unpaid bills this month <b>' + escHtml(B.money(cash)) + '</b>';
-  html += '<div style="font-size:11px;color:var(--text3);font-weight:500;">';
-  if (cash == null) html += 'Needs both account balances. Unpaid this month is ' + escHtml(B.money(summary.unpaid)) + '.';
-  else html += 'Chase + Bank of America − unpaid this month.';
-  html += '</div></div>';
 
-  html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">';
+  html += '<div class="card" id="bills-accounts"><div class="sec-title">Accounts</div>';
+  if (!picture.accounts.length) {
+    html += '<div class="bills-note">No account list yet. Chase ···0714, Bank of America ···1003, and the Capital One cards stay blank until an import file arrives.</div>';
+  } else {
+    picture.accounts.forEach(function(a) {
+      html += '<div class="bills-acct"><div style="min-width:0;"><b>' + escHtml(a.name) + '</b>';
+      html += '<div class="bills-note">' + (a.kind === 'credit' ? 'Credit card' : 'Bank') + ' · ';
+      if (!a.imported) html += 'No import yet';
+      else html += 'Through ' + escHtml(a.throughDate ? B.prettyDate(a.throughDate) : '—') + ' · ' + a.posted + ' posted · ' + a.pending + ' pending';
+      html += '</div></div>';
+      html += '<div class="bills-note" style="text-align:right;">' + (a.importedAt ? escHtml(billsWhen(a.importedAt)) : '—') + '</div></div>';
+    });
+  }
+  html += '</div>';
+
+  var forecast = picture.forecast;
+  html += '<div class="card" id="bills-forecast"><div class="sec-title">Cash still to leave the bank</div>';
+  html += '<div style="font-size:18px;font-weight:800;">' + escHtml(B.money(forecast.cashAfter)) + '</div>';
+  html += '<div class="bills-note" style="margin-bottom:6px;">' + (forecast.incomplete ? 'Cash after known items. Incomplete until the lines below are resolved.' : 'Today’s bank balances minus the lines below.') + '</div>';
+  forecast.lines.forEach(function(line) {
+    html += '<div class="bills-line"><span>' + escHtml(line.label) + (line.estimate ? ' · estimate' : '') + '</span><b>' + escHtml(B.money(line.amount)) + '</b></div>';
+    html += '<div class="bills-note" style="margin:-2px 0 6px;">' + escHtml(line.note) + '</div>';
+  });
+  (forecast.excluded || []).forEach(function(item) {
+    html += '<div class="bills-line"><span>' + escHtml(item.label) + ' · not in the total</span><b>' + escHtml(B.money(item.amount)) + '</b></div>';
+    html += '<div class="bills-note" style="margin:-2px 0 6px;">' + escHtml(item.note) + '</div>';
+  });
+  html += '</div>';
+
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:12px 0 10px;">';
   html += '<button type="button" class="btn-sm" onclick="billsShift(-1)" aria-label="Previous month" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);min-width:36px;min-height:36px;">‹</button>';
   html += '<div id="bills-month-label" style="font-size:16px;font-weight:800;">' + escHtml(B.monthLabel(ym)) + '</div>';
   html += '<button type="button" class="btn-sm" onclick="billsShift(1)" aria-label="Next month" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);min-width:36px;min-height:36px;">›</button>';
   html += '</div>';
 
   html += '<div class="bills-stats" id="bills-summary">';
-  html += billsStat('Budget', B.money(summary.budget), summary.count + ' bill' + (summary.count === 1 ? '' : 's'));
+  html += billsStat('Obligations', B.money(summary.budget), summary.count + ' fixed bill' + (summary.count === 1 ? '' : 's'));
   html += billsStat('Paid', B.money(summary.paid), '');
-  html += billsStat('Unpaid', B.money(summary.unpaid), '');
+  html += billsStat('Still to pay', B.money(summary.unpaid), '');
   html += billsStat('Overdue', B.money(summary.overdue), summary.overdueCount ? (summary.overdueCount + ' bill' + (summary.overdueCount === 1 ? '' : 's')) : 'None');
   html += billsStat('Due next 7 days', B.money(summary.dueSoon), summary.dueSoonCount ? (summary.dueSoonCount + ' bill' + (summary.dueSoonCount === 1 ? '' : 's')) : 'None');
   html += '</div>';
 
-  html += '<div class="card" id="bills-categories"><div class="sec-title">By category</div><div class="bills-split">';
-  html += '<div class="bills-donut">' + billsDonut(cats) + '</div>';
-  html += '<div class="bills-bars">' + billsBars(cats) + '</div>';
+  html += '<div class="card" id="bills-categories"><div class="sec-title">Fixed bills by category</div><div class="bills-split">';
+  html += '<div class="bills-donut">' + billsDonut(picture.categories) + '</div>';
+  html += '<div class="bills-bars">' + billsBars(picture.categories) + '</div>';
   html += '</div></div>';
 
-  html += '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:4px 0 8px;"><div style="font-size:16px;font-weight:800;">Bills</div></div>';
-  var filters = [['all', 'All'], ['overdue', 'Overdue'], ['due_soon', 'Due soon'], ['upcoming', 'Upcoming'], ['paid', 'Paid']];
+  html += '<div class="bills-section" style="font-size:16px;font-weight:800;margin:4px 0 8px;">Running expenses</div>';
+  html += '<div id="bills-budgets">';
+  if (!picture.budgets.length) {
+    html += '<div class="card bills-note">No running expense budgets this month.</div>';
+  } else {
+    picture.budgets.forEach(function(budget) { html += billsBudgetCard(budget, B); });
+  }
+  html += '</div>';
+
+  html += '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:14px 0 8px;"><div style="font-size:16px;font-weight:800;">Fixed bills</div></div>';
+  var filters = [['all', 'All'], ['overdue', 'Overdue'], ['partial', 'Partial'], ['due_soon', 'Due soon'], ['upcoming', 'Upcoming'], ['paid', 'Paid']];
   html += '<div class="pills" id="bills-filters">';
   filters.forEach(function(pair) {
     html += '<button type="button" class="pill' + (filter === pair[0] ? ' active' : '') + '" onclick="billsSetFilter(\'' + pair[0] + '\')">' + pair[1] + '</button>';
   });
   html += '</div>';
   if (!shown.length) {
-    html += '<div class="card" style="text-align:center;color:var(--text3);font-size:13px;">' + (rows.length ? 'Nothing in this filter.' : 'No bills this month. Add the ones you have to pay.') + '</div>';
+    html += '<div class="card" style="text-align:center;color:var(--text3);font-size:13px;">' + (rows.length ? 'Nothing in this filter.' : 'No fixed bills this month.') + '</div>';
   } else {
     shown.forEach(function(inst) {
       var safeId = String(inst.billId || '').replace(/[^a-zA-Z0-9_-]/g, '');
       html += '<div class="card" style="margin-bottom:8px;" data-bill="' + escHtml(safeId) + '" data-status="' + escHtml(inst.status) + '">';
       html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">';
       html += '<div style="min-width:0;"><div style="font-size:14px;font-weight:800;">' + escHtml(inst.name) + '</div>';
-      html += '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + escHtml(inst.category) + ' · due ' + escHtml(B.prettyDate(inst.dueDate)) + '</div>';
-      if (inst.notes) html += '<div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.4;">' + escHtml(inst.notes) + '</div>';
-      if (inst.paid) html += '<div style="font-size:11px;color:var(--text3);margin-top:3px;">Paid ' + escHtml(B.prettyDate(inst.paidAt)) + (inst.paidBy ? (' · ' + escHtml(inst.paidBy)) : '') + '</div>';
+      var dueBit = inst.estimateDue ? ('Estimated due date · ' + B.prettyDate(inst.dueDate)) : ('due ' + B.prettyDate(inst.dueDate));
+      html += '<div class="bills-note">' + escHtml(inst.category) + ' · ' + escHtml(dueBit) + '</div>';
+      if (inst.notes) html += '<div class="bills-note" style="color:var(--text2);margin-top:4px;">' + escHtml(inst.notes) + '</div>';
+      if (inst.review) html += '<div class="bills-flag bills-flag-warn">Needs review</div>';
+      if (inst.paid) html += '<div class="bills-note" style="margin-top:3px;">Paid ' + escHtml(B.prettyDate(inst.paidAt)) + (inst.paidBy ? (' · ' + escHtml(inst.paidBy)) : '') + '</div>';
+      else if (inst.partial) html += '<div class="bills-note" style="margin-top:3px;">Partial · ' + escHtml(B.money(inst.amountPaid)) + ' paid · ' + escHtml(B.money(inst.remaining)) + ' still open</div>';
       html += '</div><div style="text-align:right;flex-shrink:0;">';
-      html += '<div style="font-size:16px;font-weight:800;">' + escHtml(inst.paid ? B.money(inst.amountPaid) : B.money(inst.amount)) + '</div>';
-      if (inst.paid && inst.amountPaid !== inst.amount) html += '<div style="font-size:10px;color:var(--text3);">of ' + escHtml(B.money(inst.amount)) + '</div>';
+      html += '<div style="font-size:16px;font-weight:800;">' + escHtml(inst.paid || inst.partial ? B.money(inst.amountPaid) : B.money(inst.amount)) + '</div>';
+      if ((inst.paid || inst.partial) && inst.amountPaid !== inst.amount) html += '<div class="bills-note">of ' + escHtml(B.money(inst.amount)) + '</div>';
+      if (inst.estimateAmount) html += '<div class="bills-flag bills-flag-warn">Estimate</div>';
       html += billsStatusPill(inst.status);
       html += '</div></div>';
       html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">';
       if (!inst.paid) {
-        html += '<button type="button" class="btn-sm" style="background:var(--green2);color:#fff;min-height:36px;" onclick="billsMarkPaid(\'' + safeId + '\')">Mark paid</button>';
+        var payLabel = inst.partial ? 'Mark remainder paid' : 'Mark paid';
+        html += '<button type="button" class="btn-sm" style="background:var(--green2);color:#fff;min-height:36px;" onclick="billsMarkPaid(\'' + safeId + '\')">' + payLabel + '</button>';
       } else {
         html += '<button type="button" class="btn-sm" style="background:rgba(88,166,255,.15);color:var(--blue);border:1px solid rgba(88,166,255,.3);min-height:36px;" onclick="billsOpenPay(\'' + safeId + '\', true)">Edit payment</button>';
         html += '<button type="button" class="btn-sm" style="background:transparent;color:var(--text2);border:1px solid var(--border);min-height:36px;" onclick="billsUndoPaid(\'' + safeId + '\')">Undo</button>';
@@ -5323,12 +5572,35 @@ function renderBills() {
     });
   }
 
+  html += '<div style="font-size:16px;font-weight:800;margin:14px 0 8px;">Needs a decision</div>';
+  html += '<div id="bills-unmatched">';
+  if (!picture.unmatched.length) {
+    html += '<div class="card bills-note">No unmatched charges in this import.</div>';
+  } else {
+    picture.unmatched.forEach(function(tx) {
+      var safe = String(tx.id || '').replace(/[^a-zA-Z0-9_-]/g, '');
+      html += '<div class="card" data-unmatched="' + escHtml(safe) + '">';
+      html += '<div style="display:flex;justify-content:space-between;gap:8px;"><div style="min-width:0;"><b>' + escHtml(tx.merchant) + '</b>';
+      html += '<div class="bills-note">Purchased ' + escHtml(B.prettyDate(tx.purchaseDate));
+      if (tx.effectiveDate && tx.effectiveDate !== tx.purchaseDate) html += ' · bank date ' + escHtml(B.prettyDate(tx.effectiveDate));
+      html += '<br>' + escHtml(tx.accountName) + ' · ' + (tx.status === 'pending' ? 'Pending' : 'Posted') + ' · not confirmed</div>';
+      if (tx.suggestion && (tx.suggestion.category || tx.suggestion.budgetId)) {
+        html += '<div class="bills-flag bills-flag-warn">Suggested ' + escHtml(tx.suggestion.category || 'category') + ' · not confirmed</div>';
+      }
+      html += '</div><b>' + escHtml(B.money(tx.amount)) + '</b></div>';
+      html += '<button type="button" class="btn-sm" style="margin-top:8px;background:transparent;color:var(--text);border:1px solid var(--border);min-height:36px;" onclick="billsOpenAssign(\'' + safe + '\')">Assign</button>';
+      html += '</div>';
+    });
+  }
+  html += '</div>';
+
   var openInvoices = (_financeInvoices || []).filter(function(inv) { return inv && inv.status !== 'paid'; })
     .slice().sort(function(a, b) { return String(a.dueDate || '') < String(b.dueDate || '') ? -1 : 1; });
   html += '<div id="bills-invoices" style="margin-top:16px;">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">';
   html += '<div style="font-size:16px;font-weight:800;">Outstanding invoices</div>';
   html += '<button type="button" class="btn-sm" onclick="billsOpenInvoice(\'\')" style="background:rgba(88,166,255,.15);color:var(--blue);border:1px solid rgba(88,166,255,.3);">+ Invoice</button></div>';
+  var today = B.todayISO(new Date());
   if (!openInvoices.length) {
     html += '<div class="card" id="bills-qb-empty" style="text-align:center;">';
     html += '<div style="font-size:16px;font-weight:800;margin-bottom:6px;">' + escHtml(B.EMPTY_INVOICES_TITLE) + '</div>';
@@ -5341,9 +5613,9 @@ function renderBills() {
       html += '<div class="card" style="margin-bottom:8px;" data-invoice="' + escHtml(safe) + '">';
       html += '<div style="display:flex;justify-content:space-between;gap:8px;">';
       html += '<div style="min-width:0;"><div style="font-size:14px;font-weight:800;">' + escHtml(inv.customer || '') + '</div>';
-      html += '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + escHtml(inv.invoiceNumber || '') + ' · due ' + escHtml(B.prettyDate(inv.dueDate)) + '</div></div>';
+      html += '<div class="bills-note">' + escHtml(inv.invoiceNumber || '') + ' · due ' + escHtml(B.prettyDate(inv.dueDate)) + '</div></div>';
       html += '<div style="text-align:right;"><div style="font-weight:800;">' + escHtml(B.money(inv.amount)) + '</div>';
-      html += '<div style="font-size:11px;color:' + (late ? 'var(--red)' : 'var(--text3)') + ';margin-top:2px;">' + (late ? (late + ' day' + (late === 1 ? '' : 's') + ' overdue') : 'Not overdue') + '</div></div></div>';
+      html += '<div class="bills-note" style="color:' + (late ? 'var(--red)' : 'var(--text3)') + ';">' + (late ? (late + ' day' + (late === 1 ? '' : 's') + ' overdue') : 'Not overdue') + '</div></div></div>';
       html += '<button type="button" class="btn-sm" style="margin-top:8px;background:transparent;color:var(--text2);border:1px solid var(--border);" onclick="billsOpenInvoice(\'' + safe + '\')">Edit</button>';
       html += '</div>';
     });
@@ -5368,6 +5640,9 @@ function startBillsFixture() {
   _billsTemplates = data.bills;
   _billPayments = data.payments;
   _financeInvoices = data.invoices;
+  _financeTransactions = data.transactions || [];
+  _financeAccounts = data.accounts || [];
+  _financeImportMeta = data.importMeta || null;
   window._billsMonth = B.monthKeyFromDate(today);
   window._billsFilter = 'all';
   try { dismissLoginScreen('manager'); } catch (e2) { console.warn(e2); }
@@ -11705,7 +11980,7 @@ function _listenCollection(name) {
       if (name === 'jobCosting') {
         _applyJobCostDocs(docs);
       }
-      if (name === 'finance' || name === 'bills' || name === 'billPayments' || name === 'financeInvoices') {
+      if (name === 'finance' || name === 'bills' || name === 'billPayments' || name === 'financeInvoices' || name === 'financeTransactions' || name === 'financeAccounts') {
         state[name] = [];
         if (typeof _applyBillsDocs === 'function') _applyBillsDocs(name, docs);
       }
@@ -11818,6 +12093,11 @@ function _listenCollection(name) {
         // hours still calculate. Don't mark the rest of the app offline.
         window._jobCostUnreadable = true;
         try { if (state.currentTab === 'jobcost') renderJobCost(); } catch (eJc) {}
+        return;
+      }
+      if (name === 'financeTransactions' || name === 'financeAccounts') {
+        window._financeImportUnreadable = true;
+        try { if (state.currentTab === 'bills') renderBills(); } catch (eFin) {}
         return;
       }
       if (name === 'finance' || name === 'bills' || name === 'billPayments' || name === 'financeInvoices') {
@@ -12148,6 +12428,9 @@ function gsSave(table, record, _attempt) {
       if ((_attempt||0) < 3) {
         setTimeout(function() { gsSave(table, record, (_attempt||0)+1); },
           Math.pow(2, (_attempt||0)+1) * 1000);
+      } else if (typeof _financeImportTable === 'function' && _financeImportTable(table)) {
+        window._financeImportUnreadable = true;
+        console.warn('gsSave: ' + table + ' was not saved. Transaction rules are not published. Nothing was stored on this phone.', record.id);
       } else if (table === 'crewPrivate' || table === 'jobCosting' || (typeof _billsPrivateTable === 'function' && _billsPrivateTable(table))) {
         if (table === 'jobCosting') window._jobCostUnreadable = true;
         if (typeof _billsPrivateTable === 'function' && _billsPrivateTable(table)) window._billsUnreadable = true;

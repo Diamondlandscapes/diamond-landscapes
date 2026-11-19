@@ -1,0 +1,27 @@
+{
+  "_comment": "SAMPLE import file for scripts/import-finance.mjs. Not a live feed and not company books. Round figures. No account numbers beyond a 4-digit mask, and no credentials. Diamond Ops pushes a file in this shape; this app does not call that connector.",
+  "source": "diamond-ops-finance",
+  "importedAt": "2026-11-13T15:04:00.000Z",
+  "live": false,
+  "accounts": [
+    { "id": "chase-0714", "institution": "Chase", "mask": "0714", "kind": "bank", "name": "Chase checking ···0714", "balanceKey": "chase0714", "freshness": { "source": "diamond-ops-finance", "importedAt": "2026-11-13T15:04:00.000Z", "throughDate": "2026-11-12" } },
+    { "id": "boa-1003", "institution": "Bank of America", "mask": "1003", "kind": "bank", "name": "Bank of America ···1003", "balanceKey": "boa1003", "freshness": { "source": "diamond-ops-finance", "importedAt": "2026-11-13T15:04:00.000Z", "throughDate": "2026-11-12" } },
+    { "id": "capone-9618", "institution": "Capital One", "mask": "9618", "kind": "credit", "name": "Capital One ···9618", "freshness": { "source": "diamond-ops-finance", "importedAt": "2026-11-13T15:04:00.000Z", "throughDate": "2026-11-12" } },
+    { "id": "capone-2529", "institution": "Capital One", "mask": "2529", "kind": "credit", "name": "Capital One ···2529" },
+    { "id": "capone-2316", "institution": "Capital One", "mask": "2316", "kind": "credit", "name": "Capital One ···2316" },
+    { "id": "capone-2352", "institution": "Capital One", "mask": "2352", "kind": "credit", "name": "Capital One ···2352" },
+    { "id": "capone-0698", "institution": "Capital One", "mask": "0698", "kind": "credit", "name": "Capital One ···0698" }
+  ],
+  "transactions": [
+    { "sourceId": "sample-fuel-200", "accountId": "capone-9618", "amount": 200, "direction": "out", "kind": "card_purchase", "purchaseDate": "2026-11-04", "effectiveDate": "2026-11-05", "status": "posted", "merchant": "Sample Fuel Stop", "confidence": "manual", "confirmed": true, "target": "budget", "budgetId": "bill_fuel_card", "category": "Fuel" },
+    { "sourceId": "sample-fuel-200", "accountId": "capone-9618", "amount": 200, "direction": "out", "kind": "card_purchase", "purchaseDate": "2026-11-04", "effectiveDate": "2026-11-05", "status": "posted", "merchant": "Sample Fuel Stop", "confidence": "manual", "confirmed": true, "target": "budget", "budgetId": "bill_fuel_card", "category": "Fuel" },
+    { "sourceId": "sample-pending-old", "accountId": "capone-9618", "amount": 99, "direction": "out", "kind": "card_purchase", "purchaseDate": "2026-11-06", "effectiveDate": "2026-11-06", "status": "pending", "merchant": "Sample Pending Then Posted", "confidence": "manual", "confirmed": true, "target": "budget", "budgetId": "bill_fuel_card", "category": "Fuel" },
+    { "sourceId": "sample-posted-new", "accountId": "capone-9618", "amount": 40, "direction": "out", "kind": "card_purchase", "purchaseDate": "2026-11-06", "effectiveDate": "2026-11-07", "status": "posted", "merchant": "Sample Pending Then Posted", "supersedes": "sample-pending-old", "confidence": "manual", "confirmed": true, "target": "budget", "budgetId": "bill_fuel_card", "category": "Fuel" },
+    { "sourceId": "sample-fuel-refund", "accountId": "capone-9618", "amount": 20, "direction": "in", "kind": "refund", "purchaseDate": "2026-11-08", "effectiveDate": "2026-11-08", "status": "posted", "merchant": "Sample Fuel Stop refund", "confidence": "manual", "confirmed": true, "target": "budget", "budgetId": "bill_fuel_card", "category": "Fuel" },
+    { "sourceId": "sample-suggested", "accountId": "capone-9618", "amount": 25, "direction": "out", "kind": "card_purchase", "purchaseDate": "2026-11-12", "effectiveDate": "2026-11-12", "status": "pending", "merchant": "Sample Corner Store", "confidence": "high", "confirmed": true, "target": "budget", "budgetId": "bill_fuel_card", "category": "Fuel" },
+    { "sourceId": "sample-card-pay", "accountId": "capone-9618", "amount": 80, "direction": "in", "kind": "card_payment", "purchaseDate": "2026-11-07", "effectiveDate": "2026-11-07", "status": "posted", "merchant": "Payment from sample checking", "settlementGroup": "sample-pay-1" },
+    { "sourceId": "sample-bank-pay", "accountId": "chase-0714", "counterAccountId": "capone-9618", "amount": 80, "direction": "out", "kind": "card_payment", "purchaseDate": "2026-11-07", "effectiveDate": "2026-11-07", "status": "posted", "merchant": "Payment to sample card", "settlementGroup": "sample-pay-1" },
+    { "sourceId": "sample-transfer", "accountId": "chase-0714", "counterAccountId": "boa-1003", "amount": 500, "direction": "out", "kind": "transfer", "purchaseDate": "2026-11-02", "effectiveDate": "2026-11-02", "status": "posted", "merchant": "Transfer to sample checking", "settlementGroup": "sample-xfer-1" },
+    { "sourceId": "sample-dump", "accountId": "chase-0714", "amount": 40, "direction": "out", "kind": "bank_debit", "purchaseDate": "2026-11-05", "effectiveDate": "2026-11-05", "status": "posted", "merchant": "Sample Dump", "confidence": "manual", "confirmed": true, "target": "budget", "budgetId": "bill_dump", "category": "Crew operating" }
+  ]
+}
