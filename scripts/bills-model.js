@@ -985,18 +985,23 @@
     };
   }
 
+  function anyFinanceImport(accounts, transactions) {
+    if ((transactions || []).length > 0) return true;
+    return (accounts || []).some(function (a) {
+      return a && (a.kind === 'bank' || a.kind === 'credit') && accountHasImport(a.id, accounts, transactions);
+    });
+  }
+
   function budgetCoverage(budget, accounts, transactions) {
-    var funding = budget.funding;
-    if (funding === 'unknown') return { known: false, reason: 'Funding is unknown, so actual spend is unknown rather than $0.' };
+    // Actuals are month-to-date across every imported bank and card account.
+    // funding / fundingAccountId are labels only; they must not hide confirmed
+    // spend as "unknown" once any finance import exists. Card payments and
+    // transfers are not expenses (signedExpense / txMatchesBudget).
+    if (anyFinanceImport(accounts, transactions)) return { known: true, reason: '' };
     if (budget.fundingAccountId) {
-      var known = accountHasImport(budget.fundingAccountId, accounts, transactions);
-      return { known: known, reason: known ? '' : 'No import for this account yet. Actual spend is unknown, not $0.' };
+      return { known: false, reason: 'No import for this account yet. Actual spend is unknown, not $0.' };
     }
-    if (funding === 'bank') {
-      var any = (accounts || []).some(function (a) { return a && a.kind === 'bank' && accountHasImport(a.id, accounts, transactions); });
-      return { known: any, reason: any ? '' : 'No bank import yet. Actual spend is unknown, not $0.' };
-    }
-    return { known: false, reason: 'No card account is tied to this budget. Actual spend is unknown, not $0.' };
+    return { known: false, reason: 'No bank or card import yet. Actual spend is unknown, not $0.' };
   }
 
   function txMatchesBudget(tx, budget) {
@@ -1216,11 +1221,22 @@
 
     budgets.forEach(function (b) {
       if (b.funding !== 'card' || b.fundingAccountId) return;
+      if (b.actual && b.actual.state !== 'unknown') {
+        var spendAll = b.actual.amount == null ? 0 : b.actual.amount;
+        lines.push({
+          id: 'card-remaining:' + b.id,
+          label: b.name + ' still expected on cards',
+          amount: cents(Math.max(0, b.budget - spendAll)),
+          estimate: true,
+          note: 'Budget minus confirmed spend across linked cards. No single card is tied to this budget, so this is not also counted as a bank withdrawal.'
+        });
+        return;
+      }
       excluded.push({
         id: b.id,
         label: b.name,
         amount: b.budget,
-        note: 'This looks card-funded, but no card account is tied to it. It is left out of the cash total instead of being guessed. Actual spend is unknown, not $0.'
+        note: 'This looks card-funded, but no card account is tied to it and there is no import yet. It is left out of the cash total instead of being guessed. Actual spend is unknown, not $0.'
       });
       incomplete = true;
       incompleteReasons.push(b.name + ' has no card account on the budget.');
@@ -1304,8 +1320,8 @@
 
     budgets.forEach(function (b) {
       if (b.funding === 'card') return;
-      if (b.funding === 'unknown' || b.actual.state === 'unknown') {
-        excluded.push({ id: b.id, label: b.name, amount: b.budget, note: b.actual.reason || 'Left out of the cash total until funding or an import is known.' });
+      if (b.actual.state === 'unknown') {
+        excluded.push({ id: b.id, label: b.name, amount: b.budget, note: b.actual.reason || 'Left out of the cash total until an import is known.' });
         incomplete = true;
         incompleteReasons.push(b.name + ' is not in the cash total. ' + (b.actual.reason || ''));
         return;
