@@ -370,6 +370,52 @@ test('actuals stay unknown only when there is no finance import at all', functio
   assert.equal(imported.budgets[0].remaining, 102);
 });
 
+test('a card budget with no card id sums every account and ignores card payments and transfers', function() {
+  const budget = B.prepareTemplate({
+    id: 'mp_gas', name: 'Gas', category: 'Fuel', amount: 400,
+    recurrence: 'monthly', dueDay: 30, type: 'fixed', notes: 'Paid off weekly; owner estimate. Enter actual.'
+  }).bill;
+  budget.funding = 'card';
+  budget.fundingAccountId = '';
+  const manual = { confidence: 'manual', confirmed: true, target: 'budget', budgetId: 'mp_gas', category: 'Fuel' };
+  function charge(extra) {
+    return B.normalizeTransaction(Object.assign({
+      status: 'posted', direction: 'out', purchaseDate: '2026-11-03', effectiveDate: '2026-11-03'
+    }, extra, manual)).tx;
+  }
+  const cardCharge = charge({ sourceId: 'gas-card', accountId: 'capone-9618', amount: 80, kind: 'card_purchase', merchant: 'Shell' });
+  const bankCharge = charge({ sourceId: 'gas-bank', accountId: 'boa-1003', amount: 40, kind: 'bank_debit', merchant: 'Exxon' });
+  const cardPay = charge({
+    sourceId: 'gas-pay', accountId: 'boa-1003', amount: 80, kind: 'card_payment',
+    purchaseDate: '2026-11-10', effectiveDate: '2026-11-10', merchant: 'Capital One payment'
+  });
+  const transfer = B.normalizeTransaction({
+    sourceId: 'gas-xfer', accountId: 'chase-0714', amount: 500, direction: 'out', kind: 'transfer',
+    purchaseDate: '2026-11-06', effectiveDate: '2026-11-06', status: 'posted', merchant: 'Transfer to savings',
+    confidence: 'manual', confirmed: true, target: 'transfer'
+  }).tx;
+  const accounts = [
+    { id: 'capone-9618', institution: 'Capital One', mask: '9618', kind: 'credit', name: 'Capital One ···9618', freshness: { importedAt: '2026-11-20T12:00:00.000Z', throughDate: '2026-11-19', source: 'diamond-ops-finance' } },
+    { id: 'boa-1003', institution: 'Bank of America', mask: '1003', kind: 'bank', name: 'Bank of America ···1003', freshness: { importedAt: '2026-11-20T12:00:00.000Z', throughDate: '2026-11-19', source: 'diamond-ops-finance' } },
+    { id: 'chase-0714', institution: 'Chase', mask: '0714', kind: 'bank', name: 'Chase ···0714', freshness: { importedAt: '2026-11-20T12:00:00.000Z', throughDate: '2026-11-19', source: 'diamond-ops-finance' } }
+  ];
+  const picture = B.monthPicture({
+    today: TODAY, month: '2026-11', bills: [budget], payments: [],
+    transactions: [cardCharge, bankCharge, cardPay, transfer],
+    accounts: accounts, balances: {}
+  });
+  assert.equal(picture.budgets[0].funding, 'card');
+  assert.equal(picture.budgets[0].fundingAccountId, '');
+  assert.equal(picture.budgets[0].actual.state, 'ready');
+  assert.equal(picture.budgets[0].actual.amount, 120);
+  assert.equal(picture.budgets[0].remaining, 280);
+  assert.equal(picture.budgets[0].transactions.some(function(tx) { return tx.kind === 'card_payment' && tx.signed !== 0; }), false);
+  const remaining = picture.forecast.lines.find(function(l) { return l.id === 'card-remaining:mp_gas'; });
+  assert.equal(remaining.amount, 280);
+  assert.equal(picture.forecast.lines.some(function(l) { return l.id.indexOf('bank-budget:') === 0; }), false);
+  assert.equal(picture.forecast.lines.some(function(l) { return l.amount === 80 || l.amount === 500; }), false);
+});
+
 test('a high-confidence suggestion is not a confirmed expense', function() {
   const budget = B.prepareTemplate({
     id: 'bill_fuel_debit', name: 'Sample fuel debit', category: 'Fuel', amount: 100,
